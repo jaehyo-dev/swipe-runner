@@ -46,12 +46,13 @@ func test_몸_메시에_삼각형이_있고_법선이_바깥을_향함() -> void
 	assert_true(checked > 0, "검사한 점 수")
 
 
-func test_구성_요소_발_둘_꼭지_그림자_눈_둘() -> void:
+func test_구성_요소_발_없음_꼭지_그림자_눈_둘() -> void:
 	var runner := _make_runner()
 	await wait_frames()
-	assert_eq(runner._feet.size(), 2, "발")
 	assert_not_null(runner._shadow, "그림자")
 	assert_eq(runner._body.get_child_count(), 3, "머리 꼭지 1 + 눈 2")
+	# 몸통 한 덩어리: 달린 메시는 몸·그림자뿐 (러너의 직접 자식 메시 2개)
+	assert_eq(runner.get_child_count(), 2, "러너 자식: 몸 + 그림자")
 	runner.queue_free()
 
 
@@ -67,24 +68,36 @@ func test_땅에_닿는_순간이_가장_납작하고_넓음() -> void:
 	runner.queue_free()
 
 
-func test_두_발은_번갈아_움직임() -> void:
+func test_착지에서_몸이_땅에_닿고_박자마다_튐() -> void:
 	var runner := _make_runner()
-	for phase in [0.3, 1.2, 2.5, 4.0]:
-		runner.set_phase(phase)
-		var z0: float = runner._feet[0].position.z - 0.04
-		var z1: float = runner._feet[1].position.z - 0.04
-		assert_true(absf(z0 + z1) < 0.0001, "앞뒤 움직임이 서로 반대 (phase %f)" % phase)
+	runner.set_phase(0.0)
+	assert_true(absf(runner._body.position.y) < 0.001, "착지 시 몸 바닥이 땅")
 	runner.set_phase(PI / 2.0)
-	assert_true(absf(runner._feet[0].position.z - runner._feet[1].position.z) > 0.3, "발이 분명히 엇갈림")
+	assert_true(absf(runner._body.position.y - Runner.HOP_HEIGHT) < 0.001, "정점 높이")
 	runner.queue_free()
 
 
-func test_발은_몸에_붙어_있음() -> void:
-	# 몸 바닥(BODY_LIFT)과 발 위쪽이 겹쳐야 허공에 뜬 점으로 보이지 않는다
+func test_그림자는_착지에서_커졌다_공중에서_작아짐() -> void:
 	var runner := _make_runner()
-	for phase in [0.0, 0.8, PI / 2.0, 2.4, PI]:
-		runner.set_phase(phase)
-		for foot in runner._feet:
-			var foot_top: float = foot.position.y + Runner.FOOT_SIZE.y * 0.5
-			assert_true(foot_top >= runner._body.position.y, "발 위 %f, 몸 바닥 %f (phase %f)" % [foot_top, runner._body.position.y, phase])
+	runner.set_phase(PI / 2.0)
+	var air: float = runner._shadow.scale.x
+	runner.set_phase(0.0)
+	var land: float = runner._shadow.scale.x
+	runner.set_phase(0.0)
+	assert_true(land > 1.0, "착지 순간 1보다 커짐 %f" % land)
+	assert_true(air < 1.0 and air < land, "공중 %f < 착지 %f" % [air, land])
+	runner.queue_free()
+
+
+func test_오른쪽으로_가면_몸이_왼쪽으로_처졌다가_돌아옴() -> void:
+	var runner := _make_runner()
+	var peak := 0.0
+	for i in 8:  # 0.12초 동안 오른쪽 이동
+		runner.step_sway(12.0, 0.015)
+		peak = maxf(peak, runner._sway)
+	assert_true(peak > 0.1, "위가 왼쪽(회전 +)으로 처짐 %f" % peak)
+	assert_true(peak <= Runner.SWAY_MAX * 1.5, "과하지 않음 %f" % peak)
+	for i in 100:  # 멈춘 뒤 1.5초
+		runner.step_sway(0.0, 0.015)
+	assert_true(absf(runner._sway) < 0.01, "다시 똑바로 %f" % runner._sway)
 	runner.queue_free()
