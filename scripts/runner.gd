@@ -7,7 +7,8 @@ const MINT := Color("7FE0C8")
 const BODY_RADIUS := 0.42           # 가장 넓은 곳의 반지름 (아래쪽에서 퍼짐)
 const BODY_HEIGHT := 1.0            # 아래(0)에서 위 끝까지
 const WIDEST_T := 0.3086            # 가장 넓은 높이 비율 (0.5^(1/0.6) 근처)
-const HOP_HEIGHT := 0.2   # 튀어 오르는 높이
+const HOP_HEIGHT := 0.07  # 튀어 오르는 높이 (조절: 더 약하게=값↓, 더 강하게=값↑. 예전 값 0.2)
+const SQUASH_SCALE := 0.35 # 눌림·늘어남 폭 배율 (1.0 = v0.1.5 이전의 큰 눌림)
 const MOVE_TIME := 0.18   # 레인 이동 시간(초): 처음과 끝이 부드러운 푸딩 같은 이동
 const STEP_RATE := 9.0    # 튀는 박자 속도 (라디안/초)
 const SWAY_GAIN := 0.03   # 옆 속도(유닛/초) 1당 흔들림 목표 각도(라디안)
@@ -162,8 +163,8 @@ func _step_squish(target: float, delta: float) -> void:
 func _animate() -> void:
 	var hop := absf(sin(_phase))   # 0 = 바닥에 닿음, 1 = 가장 높음
 	# 눌리면 옆으로 퍼지고 늘어나면 가늘어진다 (부피 느낌 유지)
-	var sy := 1.0 - 0.28 * _squish + 0.08 * hop
-	var sxz := 1.0 + 0.22 * _squish - 0.05 * hop
+	var sy := 1.0 + SQUASH_SCALE * (-0.28 * _squish + 0.08 * hop)
+	var sxz := 1.0 + SQUASH_SCALE * (0.22 * _squish - 0.05 * hop)
 	_body.scale = Vector3(sxz, sy, sxz)
 	_body.position.y = hop * HOP_HEIGHT
 	_body.rotation.z = _sway

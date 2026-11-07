@@ -66,3 +66,15 @@ func test_화면에_거리와_버전만_있음() -> void:
 	var version: Label = main.find_child("VersionLabel", true, false)
 	assert_eq(version.text, "v" + str(ProjectSettings.get_setting("application/config/version")))
 	main.queue_free()
+
+
+func test_카메라는_주인공의_위아래_튀기를_따라가지_않음() -> void:
+	var main := _make_main()
+	await wait_frames()
+	var cam: Camera3D = main._camera
+	assert_false(main.runner.is_ancestor_of(cam), "카메라는 주인공의 자식이 아님")
+	main.runner.set_phase(0.0)
+	var low := cam.global_position
+	main.runner.set_phase(PI / 2.0)
+	assert_true(cam.global_position.is_equal_approx(low), "주인공이 튀어도 카메라는 고정")
+	main.queue_free()

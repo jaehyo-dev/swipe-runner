@@ -64,7 +64,7 @@ func test_땅에_닿는_순간이_가장_납작하고_넓음() -> void:
 	var high := runner._body.scale
 	assert_true(low.y < high.y, "납작 %f < 길쭉 %f" % [low.y, high.y])
 	assert_true(low.x > high.x, "넓음 %f > 좁음 %f" % [low.x, high.x])
-	assert_true(low.y <= 0.8, "눌림 폭이 충분히 큼: %f" % low.y)
+	assert_true(low.y <= 0.95 and low.y >= 0.85, "눌림이 은은함(존재감만): %f" % low.y)
 	runner.queue_free()
 
 
@@ -139,3 +139,8 @@ func test_레인_이동은_출발이_부드러움() -> void:
 	# 처음엔 천천히 출발해야 한다 (예전 ease-out은 첫 프레임에 30% 넘게 점프함)
 	assert_true(runner.position.x < dist * 0.2, "출발 직후 이동량 %f / %f" % [runner.position.x, dist])
 	runner.queue_free()
+
+
+func test_튀는_높이는_작게_유지됨() -> void:
+	# 집중을 깨지 않도록 정점도 몸 높이의 10% 이하
+	assert_true(Runner.HOP_HEIGHT <= Runner.BODY_HEIGHT * 0.1 and Runner.HOP_HEIGHT > 0.03, "HOP_HEIGHT %f" % Runner.HOP_HEIGHT)
