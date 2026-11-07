@@ -6,7 +6,8 @@ const FLOOR_SHADER := preload("res://shaders/floor.gdshader")
 const GLASS_SHADER := preload("res://shaders/glass.gdshader")
 const FONT := preload("res://assets/fonts/Poppins-ExtraLight.ttf")
 const CUBE_SIZE := 1.1
-const EDGE_COLOR := Color(0.75, 0.95, 1.0)
+# 1을 넘는 밝은 청록: 안개 속 먼 거리에서도 보이고 글로우로 살짝 번진다
+const EDGE_COLOR := Color(0.5, 1.5, 1.8)
 
 ## 0이면 실행할 때마다 무작위. 테스트에서는 0이 아닌 값을 줘서 장애물 레인을 고정한다.
 @export var seed_value := 0
