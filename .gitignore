@@ -1,0 +1,39 @@
+# Godot 생성물
+.godot/
+# 내보내기 결과물. build/.gdignore는 Godot가 이 폴더를 리소스로 가져오지 않게 하므로 커밋한다.
+build/*
+!build/.gdignore
+_site/
+*.translation
+mono_crash.*.json
+
+# Python 캐시
+__pycache__/
+*.pyc
+
+# 비밀 정보 (비밀번호, API 키, 토큰)
+.env
+.env.*
+!.env.example
+*.pem
+*.key
+*.p12
+*.pfx
+credentials.json
+secrets.json
+
+# Claude Code 개인 설정
+.claude/settings.local.json
+
+# 로그
+*.log
+
+# 운영체제와 편집기 파일
+.DS_Store
+Thumbs.db
+desktop.ini
+.vscode/
+.idea/
+
+# Codex 작업 로그
+logs/

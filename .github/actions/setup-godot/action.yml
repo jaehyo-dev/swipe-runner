@@ -1,0 +1,46 @@
+# Godot 편집기(리눅스)와 웹 내보내기 템플릿(스레드 없음)만 설치한다.
+# 공식 GitHub 릴리스에서 받고, 같은 릴리스의 SHA512-SUMS.txt로 파일을 확인한다.
+name: Godot 설치
+description: Godot 편집기와 웹 내보내기 템플릿 설치
+inputs:
+  version:
+    description: Godot 버전 (예 4.7.2)
+    required: true
+runs:
+  using: composite
+  steps:
+    - uses: actions/cache@v4
+      id: cache
+      with:
+        path: |
+          ~/godot
+          ~/.local/share/godot/export_templates/${{ inputs.version }}.stable
+        key: godot-${{ inputs.version }}-web-nothreads
+
+    - name: Godot 내려받기
+      if: steps.cache.outputs.cache-hit != 'true'
+      shell: bash
+      env:
+        V: ${{ inputs.version }}
+      run: |
+        set -euo pipefail
+        base="https://github.com/godotengine/godot/releases/download/${V}-stable"
+        editor="Godot_v${V}-stable_linux.x86_64.zip"
+        templates="Godot_v${V}-stable_export_templates.tpz"
+        work="$(mktemp -d)"
+        cd "$work"
+        curl -sSfL -O "$base/$editor" -O "$base/$templates" -O "$base/SHA512-SUMS.txt"
+        grep -E " ($editor|$templates)\$" SHA512-SUMS.txt | sha512sum -c -
+        mkdir -p ~/godot
+        unzip -q -o "$editor" -d ~/godot
+        mv ~/godot/"Godot_v${V}-stable_linux.x86_64" ~/godot/godot
+        dest=~/.local/share/godot/export_templates/"${V}.stable"
+        mkdir -p "$dest"
+        unzip -q -j -o "$templates" templates/web_nothreads_release.zip templates/web_nothreads_debug.zip templates/version.txt -d "$dest"
+        rm -rf "$work"
+
+    - name: PATH에 추가
+      shell: bash
+      run: |
+        echo "$HOME/godot" >> "$GITHUB_PATH"
+        "$HOME/godot/godot" --version

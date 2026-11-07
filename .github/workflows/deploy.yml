@@ -1,0 +1,178 @@
+# 테스트와 배포
+# - 모든 브랜치 푸시와 PR: 자동 테스트 + 웹 내보내기가 되는지 확인
+# - main 푸시 (테스트 통과 후):
+#   1) CHANGELOG.md 최신 버전의 태그(v메이저.마이너.패치)가 없으면 푸시된 커밋에 태그를 만들고,
+#      태그는 있는데 릴리스가 없는 버전마다 GitHub Release를 만든다.
+#      (클라우드 작업 환경에서는 태그 푸시가 막혀 있어서, 태그 생성은 여기서 맡는다.)
+#   2) 현재 버전을 사이트 루트에, 이전 버전 태그들을 versions/v버전/ 에 빌드해 GitHub Pages에 배포한다.
+name: 테스트와 배포
+
+on:
+  push:
+    branches: ['**']
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+env:
+  GODOT_VERSION: "4.7.2"
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: ./.github/actions/setup-godot
+        with:
+          version: ${{ env.GODOT_VERSION }}
+
+      - name: 리소스 가져오기
+        run: godot --headless --path . --import
+
+      - name: 게임 자동 테스트
+        run: bash tests/run_tests.sh
+
+      - name: 도구·버전 자동 테스트
+        run: python3 -m unittest discover -s tools -p "test_*.py" -v
+
+      - name: 웹 내보내기 확인
+        run: |
+          set -euo pipefail
+          mkdir -p build/web
+          godot --headless --path . --export-release "Web" "$PWD/build/web/index.html"
+          for f in index.html index.js index.wasm index.pck; do test -s "build/web/$f"; done
+
+      # 작업 브랜치에서도 웹 빌드를 내려받아 실제 화면(PC·휴대폰 크기)을 확인할 수 있게 올려 둔다
+      - name: 웹 빌드 올리기 (화면 확인용)
+        uses: actions/upload-artifact@v4
+        with:
+          name: web-build
+          path: build/web
+          retention-days: 3
+
+  publish:
+    needs: test
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+      pages: write
+      id-token: write
+    environment:
+      name: github-pages
+      url: ${{ steps.deploy.outputs.page_url }}
+    # 연속 푸시가 겹쳐도 태그·릴리스·배포를 한 번에 하나씩 처리한다(실행 중인 것은 취소하지 않음).
+    # 단, GitHub은 대기 중인 실행을 하나만 남기므로 실행 중에 버전을 올린 푸시가 두 번 이상 몰리면
+    # 가운데 버전은 건너뛸 수 있다. 버전을 올리는 푸시는 한 번에 하나씩 하고 결과를 확인한다.
+    concurrency:
+      group: publish
+      cancel-in-progress: false
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.sha }}
+          fetch-depth: 0
+
+      - name: 최신 버전 태그가 없으면 만들기
+        run: |
+          set -euo pipefail
+          git fetch --tags --force
+          # CHANGELOG 최신 버전이 project.godot 버전과 다르면 여기서 실패한다.
+          version=$(python3 tools/changelog.py latest)
+          tag="v$version"
+          if git rev-parse -q --verify "refs/tags/$tag" >/dev/null; then
+            echo "$tag: 태그가 이미 있음 ($(git rev-list -n 1 "$tag"))"
+            exit 0
+          fi
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git tag -a "$tag" -m "$tag" HEAD
+          # 기본 토큰으로 올린 태그는 워크플로를 다시 실행시키지 않으므로 반복되지 않는다.
+          git push origin "refs/tags/$tag"
+          echo "$tag: 태그 생성 ($(git rev-parse HEAD))"
+
+      - name: 릴리스가 없는 태그에 릴리스 만들기
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          # 새로 만든 릴리스가 'Latest'가 되므로, 오래된 버전부터 만들어 최신 버전이 마지막에 오게 한다.
+          for version in $(python3 tools/changelog.py versions | tac); do
+            tag="v$version"
+            if ! git rev-parse -q --verify "refs/tags/$tag" >/dev/null; then
+              echo "$tag: 태그가 아직 없어 건너뜀"
+              continue
+            fi
+            if gh release view "$tag" >/dev/null 2>&1; then
+              echo "$tag: 이미 릴리스가 있음"
+              continue
+            fi
+            python3 tools/changelog.py notes "$version" > "$RUNNER_TEMP/notes.md"
+            gh release create "$tag" --verify-tag --title "$tag" --notes-file "$RUNNER_TEMP/notes.md"
+            echo "$tag: 릴리스 생성"
+          done
+
+      - uses: ./.github/actions/setup-godot
+        with:
+          version: ${{ env.GODOT_VERSION }}
+
+      - name: 사이트 빌드 (현재 버전 + 이전 버전)
+        run: |
+          set -euo pipefail
+          site="$PWD/_site"
+          current=$(python3 tools/changelog.py latest)
+
+          # 현재 버전 → 사이트 루트
+          # 내보내기 결과물을 Godot가 리소스로 가져오지 않게 한다.
+          mkdir -p "$site"
+          touch "$site/.gdignore"
+          godot --headless --path . --import
+          godot --headless --path . --export-release "Web" "$site/index.html"
+          test -s "$site/index.wasm"
+
+          # 라이선스 문구 (Godot 엔진 + 서드파티 에셋)
+          mkdir -p "$site/licenses"
+          godot --headless --path . -s res://tools/export_licenses.gd -- "$site/licenses/godot.txt"
+          test -s "$site/licenses/godot.txt"
+          cp CREDITS.md "$site/licenses/CREDITS.md"
+          find assets -iname 'LICENSE*' -type f | while read -r f; do
+            mkdir -p "$site/licenses/$(dirname "$f")"
+            cp "$f" "$site/licenses/$f"
+          done
+
+          # 이전 버전 → versions/v버전/ (태그가 있는 버전만)
+          older=()
+          for version in $(python3 tools/changelog.py versions); do
+            [ "$version" = "$current" ] && continue
+            tag="v$version"
+            if ! git rev-parse -q --verify "refs/tags/$tag" >/dev/null; then
+              echo "::warning::$tag 태그가 없어 이전 버전 목록에서 뺌"
+              continue
+            fi
+            dir="$RUNNER_TEMP/old/$version"
+            git worktree add --detach "$dir" "$tag"
+            godot --headless --path "$dir" --import
+            mkdir -p "$site/versions/$tag"
+            godot --headless --path "$dir" --export-release "Web" "$site/versions/$tag/index.html"
+            test -s "$site/versions/$tag/index.wasm"
+            older+=("$version")
+          done
+          python3 tools/versions_page.py "$site/versions/index.html" "$current" "${older[@]}"
+          # GitHub Pages가 파일을 그대로 내보내도록 Jekyll 처리를 끈다.
+          touch "$site/.nojekyll"
+          rm -f "$site/.gdignore"
+          du -sh "$site"
+
+      - uses: actions/configure-pages@v5
+        with:
+          enablement: true
+
+      - uses: actions/upload-pages-artifact@v3
+        with:
+          path: _site
+
+      - id: deploy
+        uses: actions/deploy-pages@v4
