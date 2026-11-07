@@ -14,7 +14,7 @@ func test_몸_메시는_바닥이_y0이고_높이가_BODY_HEIGHT() -> void:
 	assert_true(absf(box.size.y - Runner.BODY_HEIGHT) < 0.001, "높이 %f" % box.size.y)
 
 
-func test_몸은_아래쪽이_가장_넓고_위는_뾰족한_물방울() -> void:
+func test_몸은_아래쪽이_가장_넓고_위는_둥근_돔() -> void:
 	var mesh := Runner.build_body_mesh(24, 32)
 	var verts: PackedVector3Array = mesh.surface_get_arrays(0)[Mesh.ARRAY_VERTEX]
 	var widest_y := 0.0
@@ -28,7 +28,7 @@ func test_몸은_아래쪽이_가장_넓고_위는_뾰족한_물방울() -> void
 		if v.y > Runner.BODY_HEIGHT * 0.95:
 			top = maxf(top, r)
 	assert_true(widest_y < Runner.BODY_HEIGHT * 0.5, "가장 넓은 높이 %f" % widest_y)
-	assert_true(top < widest * 0.3, "위 끝 반지름 %f, 최대 %f" % [top, widest])
+	assert_true(top > widest * 0.3 and top < widest, "정수리가 뾰족하지 않고 둥긂: 위 반지름 %f, 최대 %f" % [top, widest])
 
 
 func test_몸_메시에_삼각형이_있고_법선이_바깥을_향함() -> void:
@@ -95,7 +95,7 @@ func test_오른쪽으로_가면_몸이_왼쪽으로_처졌다가_돌아옴() ->
 	for i in 8:  # 0.12초 동안 오른쪽 이동
 		runner.step_sway(12.0, 0.015)
 		peak = maxf(peak, runner._sway)
-	assert_true(peak > 0.1, "위가 왼쪽(회전 +)으로 처짐 %f" % peak)
+	assert_true(peak > 0.05, "위가 왼쪽(회전 +)으로 처짐 %f" % peak)
 	assert_true(peak <= Runner.SWAY_MAX * 1.5, "과하지 않음 %f" % peak)
 	for i in 100:  # 멈춘 뒤 1.5초
 		runner.step_sway(0.0, 0.015)
@@ -112,4 +112,19 @@ func test_착지_뒤_몸이_출렁이며_목표로_돌아옴() -> void:
 		min_squish = minf(min_squish, runner._squish)
 	assert_true(min_squish < -0.05, "목표를 지나쳐 길쭉하게 튕김 %f" % min_squish)
 	assert_true(absf(runner._squish) < 0.01, "결국 목표로 안정 %f" % runner._squish)
+	runner.queue_free()
+
+
+func test_이동_시작에_몸이_덜컹이지_않고_부드럽게_기움() -> void:
+	var runner := _make_runner()
+	var prev := 0.0
+	var prev_step := 0.0
+	var max_jump := 0.0  # 프레임 간 각도 변화량의 변화(=덜컹임)
+	for i in 30:
+		runner.step_sway(12.0, 1.0 / 60.0)
+		var step: float = runner._sway - prev
+		max_jump = maxf(max_jump, absf(step - prev_step))
+		prev_step = step
+		prev = runner._sway
+	assert_true(max_jump < 0.007, "프레임마다 변화가 급하지 않음 %f" % max_jump)
 	runner.queue_free()

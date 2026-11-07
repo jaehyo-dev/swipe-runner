@@ -6,13 +6,15 @@ extends Node3D
 const MINT := Color("7FE0C8")
 const BODY_RADIUS := 0.42           # 가장 넓은 곳의 반지름 (아래쪽에서 퍼짐)
 const BODY_HEIGHT := 1.0            # 아래(0)에서 위 끝까지
+const WIDEST_T := 0.3086            # 가장 넓은 높이 비율 (0.5^(1/0.6) 근처)
 const HOP_HEIGHT := 0.2   # 튀어 오르는 높이
 const MOVE_TIME := 0.12   # 레인 이동 시간(초)
 const STEP_RATE := 9.0    # 튀는 박자 속도 (라디안/초)
-const SWAY_GAIN := 0.045  # 옆 속도(유닛/초) 1당 흔들림 목표 각도(라디안)
+const SWAY_GAIN := 0.03   # 옆 속도(유닛/초) 1당 흔들림 목표 각도(라디안)
 const SWAY_MAX := 0.5     # 흔들림 최대 각도
-const SWAY_STIFF := 260.0 # 스프링 세기 (클수록 빨리 따라옴)
-const SWAY_DAMP := 8.0    # 감쇠 (작을수록 출렁임이 오래감)
+const SWAY_STIFF := 150.0 # 스프링 세기 (클수록 빨리 따라옴)
+const SWAY_DAMP := 14.0   # 감쇠: 거의 임계 감쇠라 덜컹거리지 않고 한 번 부드럽게 되돌아옴
+const SWAY_SMOOTH := 14.0 # 옆 속도를 거르는 속도 (클수록 즉각 반응, 작을수록 완만)
 const JELLY_STIFF := 170.0 # 눌림 스프링 세기
 const JELLY_DAMP := 7.0    # 눌림 감쇠: 작게 둬서 착지 뒤 길쭉↔납작이 두어 번 출렁임
 const SHADOW_SIZE := 1.35
@@ -22,15 +24,16 @@ var _shadow: MeshInstance3D
 var _phase := 0.0
 var _sway := 0.0      # 몸의 현재 흔들림 각도 (z축 회전)
 var _sway_vel := 0.0
+var _vx_smooth := 0.0 # 거른 옆 속도: 이동 시작의 급격한 속도 점프가 몸을 덜컹이게 하지 않게 함
 var _prev_x := 0.0
 var _squish := 0.0    # 스프링으로 따라가는 눌림 정도 (0 = 보통, 1 = 가장 납작, 음수 = 길쭉하게 튕김)
 var _squish_vel := 0.0
 var _move_tween: Tween
 
 
-## 위가 살짝 뾰족한 물방울 + 아래는 납작하게 퍼진 바닥. 바닥이 y=0이라 눌려도 땅에 붙어 있다.
-## 반지름 곡선 r(t)=R·sin(π·t^0.6): t^0.6=0.5(t≈0.31)에서 가장 넓고 위로 갈수록 뾰족해진다.
-static func build_body_mesh(rings: int = 24, segments: int = 32) -> ArrayMesh:
+## 아래는 납작하게 퍼지고 위는 둥근 돔인 물방울. 바닥이 y=0이라 눌려도 땅에 붙어 있다.
+## 반지름: t<TOP_START는 sin(π·t^0.6)로 가장 넓은 곳(t≈0.31)까지 퍼지고, 그 위는 타원 돔으로 둥글게 닫는다.
+static func build_body_mesh(rings: int = 32, segments: int = 32) -> ArrayMesh:
 	var st := SurfaceTool.new()
 	st.begin(Mesh.PRIMITIVE_TRIANGLES)
 	st.set_smooth_group(0)
@@ -53,6 +56,9 @@ static func build_body_mesh(rings: int = 24, segments: int = 32) -> ArrayMesh:
 
 static func _blob_point(t: float, angle: float) -> Vector3:
 	var r := BODY_RADIUS * sin(PI * pow(t, 0.6))
+	if t > WIDEST_T:
+		var u := (t - WIDEST_T) / (1.0 - WIDEST_T)
+		r = BODY_RADIUS * sqrt(1.0 - u * u)  # 타원 돔: 맨 위가 뾰족하지 않고 둥글다
 	return Vector3(cos(angle) * r, t * BODY_HEIGHT, sin(angle) * r)
 
 
@@ -111,10 +117,11 @@ func _process(delta: float) -> void:
 ## 옆 속도 vx에 반대쪽으로 몸 윗부분이 늦게 따라오는 스프링 (오른쪽으로 가면 위가 왼쪽에 처짐).
 ## 큰 delta에서도 터지지 않게 작게 쪼개 적분한다.
 func step_sway(vx: float, delta: float) -> void:
-	var target := clampf(vx * SWAY_GAIN, -SWAY_MAX, SWAY_MAX)
 	var steps := ceili(delta / 0.008)
 	var h := delta / steps
 	for i in steps:
+		_vx_smooth += (vx - _vx_smooth) * minf(1.0, SWAY_SMOOTH * h)
+		var target := clampf(_vx_smooth * SWAY_GAIN, -SWAY_MAX, SWAY_MAX)
 		_sway_vel += (SWAY_STIFF * (target - _sway) - SWAY_DAMP * _sway_vel) * h
 		_sway += _sway_vel * h
 

@@ -22,7 +22,7 @@ void fragment() {
 	float f = pow(1.0 - clamp(dot(n, normalize(VIEW)), 0.0, 1.0), 2.5);
 	vec3 body = mint * mix(bottom_dark, 1.0, smoothstep(0.0, 0.7, vy));
 	// 하이라이트: 카메라 쪽 위 왼쪽을 향한 면에 작은 반점 하나
-	float spot = smoothstep(0.955, 0.975, dot(n, normalize(vec3(-0.35, 0.45, 0.82)))) * smoothstep(0.5, 0.58, vy) * (1.0 - smoothstep(0.66, 0.74, vy)) * highlight;
+	float spot = smoothstep(0.92, 0.95, dot(n, normalize(vec3(-0.35, 0.45, 0.82)))) * smoothstep(0.5, 0.58, vy) * (1.0 - smoothstep(0.66, 0.74, vy)) * highlight;
 	vec3 col = body + rim_color * rim_energy * f + vec3(spot);
 	ALBEDO = col;
 	ALPHA = clamp(mix(alpha_center, 1.0, f) + spot, 0.0, 1.0);
