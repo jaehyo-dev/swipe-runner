@@ -128,3 +128,14 @@ func test_이동_시작에_몸이_덜컹이지_않고_부드럽게_기움() -> v
 		prev = runner._sway
 	assert_true(max_jump < 0.007, "프레임마다 변화가 급하지 않음 %f" % max_jump)
 	runner.queue_free()
+
+
+func test_레인_이동은_출발이_부드러움() -> void:
+	var runner := _make_runner()
+	await wait_frames()
+	var dist: float = RunLogic.lane_x(2) - runner.position.x
+	runner.move_to_lane(2)
+	await wait_frames(2)
+	# 처음엔 천천히 출발해야 한다 (예전 ease-out은 첫 프레임에 30% 넘게 점프함)
+	assert_true(runner.position.x < dist * 0.2, "출발 직후 이동량 %f / %f" % [runner.position.x, dist])
+	runner.queue_free()

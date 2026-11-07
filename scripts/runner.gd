@@ -8,13 +8,13 @@ const BODY_RADIUS := 0.42           # 가장 넓은 곳의 반지름 (아래쪽�
 const BODY_HEIGHT := 1.0            # 아래(0)에서 위 끝까지
 const WIDEST_T := 0.3086            # 가장 넓은 높이 비율 (0.5^(1/0.6) 근처)
 const HOP_HEIGHT := 0.2   # 튀어 오르는 높이
-const MOVE_TIME := 0.12   # 레인 이동 시간(초)
+const MOVE_TIME := 0.18   # 레인 이동 시간(초): 처음과 끝이 부드러운 푸딩 같은 이동
 const STEP_RATE := 9.0    # 튀는 박자 속도 (라디안/초)
 const SWAY_GAIN := 0.03   # 옆 속도(유닛/초) 1당 흔들림 목표 각도(라디안)
 const SWAY_MAX := 0.5     # 흔들림 최대 각도
-const SWAY_STIFF := 150.0 # 스프링 세기 (클수록 빨리 따라옴)
-const SWAY_DAMP := 14.0   # 감쇠: 거의 임계 감쇠라 덜컹거리지 않고 한 번 부드럽게 되돌아옴
-const SWAY_SMOOTH := 14.0 # 옆 속도를 거르는 속도 (클수록 즉각 반응, 작을수록 완만)
+const SWAY_STIFF := 110.0 # 스프링 세기 (클수록 빨리 따라옴)
+const SWAY_DAMP := 12.0   # 감쇠: 거의 임계 감쇠라 덜컹거리지 않고 한 번 부드럽게 되돌아옴
+const SWAY_SMOOTH := 9.0  # 옆 속도를 거르는 속도 (클수록 즉각 반응, 작을수록 완만)
 const JELLY_STIFF := 170.0 # 눌림 스프링 세기
 const JELLY_DAMP := 7.0    # 눌림 감쇠: 작게 둬서 착지 뒤 길쭉↔납작이 두어 번 출렁임
 const SHADOW_SIZE := 1.35
@@ -140,7 +140,7 @@ func move_to_lane(lane: int) -> void:
 	if _move_tween:
 		_move_tween.kill()
 	_move_tween = create_tween()
-	_move_tween.tween_property(self, "position:x", x, MOVE_TIME).set_trans(Tween.TRANS_QUAD).set_ease(Tween.EASE_OUT)
+	_move_tween.tween_property(self, "position:x", x, MOVE_TIME).set_trans(Tween.TRANS_SINE).set_ease(Tween.EASE_IN_OUT)
 
 
 ## 박자가 정한 눌림 목표: 바닥에 닿을 때 1, 공중에서 0
