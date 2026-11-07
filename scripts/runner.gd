@@ -12,7 +12,9 @@ const STEP_RATE := 9.0    # 튀는 박자 속도 (라디안/초)
 const SWAY_GAIN := 0.045  # 옆 속도(유닛/초) 1당 흔들림 목표 각도(라디안)
 const SWAY_MAX := 0.5     # 흔들림 최대 각도
 const SWAY_STIFF := 260.0 # 스프링 세기 (클수록 빨리 따라옴)
-const SWAY_DAMP := 11.0   # 감쇠 (작을수록 출렁임이 오래감)
+const SWAY_DAMP := 8.0    # 감쇠 (작을수록 출렁임이 오래감)
+const JELLY_STIFF := 170.0 # 눌림 스프링 세기
+const JELLY_DAMP := 7.0    # 눌림 감쇠: 작게 둬서 착지 뒤 길쭉↔납작이 두어 번 출렁임
 const SHADOW_SIZE := 1.35
 
 var _body: MeshInstance3D
@@ -21,6 +23,8 @@ var _phase := 0.0
 var _sway := 0.0      # 몸의 현재 흔들림 각도 (z축 회전)
 var _sway_vel := 0.0
 var _prev_x := 0.0
+var _squish := 0.0    # 스프링으로 따라가는 눌림 정도 (0 = 보통, 1 = 가장 납작, 음수 = 길쭉하게 튕김)
+var _squish_vel := 0.0
 var _move_tween: Tween
 
 
@@ -58,17 +62,6 @@ func _ready() -> void:
 	_body.mesh = build_body_mesh()
 	_body.material_override = body_mat
 	add_child(_body)
-
-	# 머리 위 작은 물방울 꼭지: 뒷모습에서도 알아보는 포인트
-	var nub_mesh := SphereMesh.new()
-	nub_mesh.radius = 0.07
-	nub_mesh.height = 0.2
-	var nub := MeshInstance3D.new()
-	nub.mesh = nub_mesh
-	nub.material_override = body_mat
-	nub.position = Vector3(0.0, BODY_HEIGHT - 0.03, 0.0)
-	nub.rotation.z = -0.35
-	_body.add_child(nub)
 
 	# 점 눈: 앞쪽(-z)에 있어서 뒤에서 보면 거의 안 보인다
 	var eye_mesh := SphereMesh.new()
@@ -111,6 +104,7 @@ func _process(delta: float) -> void:
 	if delta > 0.0:
 		step_sway((position.x - _prev_x) / delta, delta)
 	_prev_x = position.x
+	_step_squish(_squish_target(), delta)
 	_animate()
 
 
@@ -128,6 +122,8 @@ func step_sway(vx: float, delta: float) -> void:
 ## 걸음 위상을 직접 정한다 (테스트용).
 func set_phase(phase: float) -> void:
 	_phase = phase
+	_squish = _squish_target()  # 스프링 없이 바로 목표 모양으로
+	_squish_vel = 0.0
 	_animate()
 
 
@@ -140,14 +136,29 @@ func move_to_lane(lane: int) -> void:
 	_move_tween.tween_property(self, "position:x", x, MOVE_TIME).set_trans(Tween.TRANS_QUAD).set_ease(Tween.EASE_OUT)
 
 
-## 박자(위상)에 맞춰 튀기, 착지 눌림, 흔들림, 그림자 크기를 적용한다.
+## 박자가 정한 눌림 목표: 바닥에 닿을 때 1, 공중에서 0
+func _squish_target() -> float:
+	var squash := 1.0 - absf(sin(_phase))
+	return squash * squash
+
+
+## 눌림이 목표를 출렁이며 따라가게 한다 (착지 뒤에 몸이 말랑하게 되튐).
+func _step_squish(target: float, delta: float) -> void:
+	var steps := ceili(delta / 0.008)
+	var h := delta / steps
+	for i in steps:
+		_squish_vel += (JELLY_STIFF * (target - _squish) - JELLY_DAMP * _squish_vel) * h
+		_squish += _squish_vel * h
+
+
+## 박자(위상)에 맞춰 튀기, 눌림, 흔들림, 그림자 크기를 적용한다.
 func _animate() -> void:
-	var hop := absf(sin(_phase))   # 0 = 바닥에 닿음(가장 납작), 1 = 가장 높음(가장 길쭉)
-	var squash := 1.0 - hop
-	var sy := 1.0 - 0.26 * squash * squash + 0.08 * hop
-	var sxz := 1.0 + 0.2 * squash * squash - 0.05 * hop
+	var hop := absf(sin(_phase))   # 0 = 바닥에 닿음, 1 = 가장 높음
+	# 눌리면 옆으로 퍼지고 늘어나면 가늘어진다 (부피 느낌 유지)
+	var sy := 1.0 - 0.28 * _squish + 0.08 * hop
+	var sxz := 1.0 + 0.22 * _squish - 0.05 * hop
 	_body.scale = Vector3(sxz, sy, sxz)
 	_body.position.y = hop * HOP_HEIGHT
 	_body.rotation.z = _sway
-	# 높이 뛸수록 작아지고, 착지 순간(squash↑)에 살짝 커졌다 줄어든다
-	_shadow.scale = Vector3.ONE * (1.0 - 0.18 * hop + 0.14 * pow(squash, 3.0))
+	# 높이 뛸수록 작아지고, 착지 순간(눌림↑)에 살짝 커졌다 줄어든다
+	_shadow.scale = Vector3.ONE * (1.0 - 0.18 * hop + 0.14 * clampf(_squish, 0.0, 1.0))

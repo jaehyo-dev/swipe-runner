@@ -46,11 +46,11 @@ func test_몸_메시에_삼각형이_있고_법선이_바깥을_향함() -> void
 	assert_true(checked > 0, "검사한 점 수")
 
 
-func test_구성_요소_발_없음_꼭지_그림자_눈_둘() -> void:
+func test_구성_요소_발_꼭지_없음_그림자_눈_둘() -> void:
 	var runner := _make_runner()
 	await wait_frames()
 	assert_not_null(runner._shadow, "그림자")
-	assert_eq(runner._body.get_child_count(), 3, "머리 꼭지 1 + 눈 2")
+	assert_eq(runner._body.get_child_count(), 2, "눈 2 (꼭지 없음)")
 	# 몸통 한 덩어리: 달린 메시는 몸·그림자뿐 (러너의 직접 자식 메시 2개)
 	assert_eq(runner.get_child_count(), 2, "러너 자식: 몸 + 그림자")
 	runner.queue_free()
@@ -100,4 +100,16 @@ func test_오른쪽으로_가면_몸이_왼쪽으로_처졌다가_돌아옴() ->
 	for i in 100:  # 멈춘 뒤 1.5초
 		runner.step_sway(0.0, 0.015)
 	assert_true(absf(runner._sway) < 0.01, "다시 똑바로 %f" % runner._sway)
+	runner.queue_free()
+
+
+func test_착지_뒤_몸이_출렁이며_목표로_돌아옴() -> void:
+	var runner := _make_runner()
+	runner.set_phase(0.0)  # 납작하게 착지한 모양 (눌림 1)
+	var min_squish := 1.0
+	for i in 200:  # 목표가 0(공중)으로 바뀌고 1.6초
+		runner._step_squish(0.0, 0.008)
+		min_squish = minf(min_squish, runner._squish)
+	assert_true(min_squish < -0.05, "목표를 지나쳐 길쭉하게 튕김 %f" % min_squish)
+	assert_true(absf(runner._squish) < 0.01, "결국 목표로 안정 %f" % runner._squish)
 	runner.queue_free()
