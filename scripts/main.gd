@@ -5,9 +5,16 @@ extends Node3D
 const FLOOR_SHADER := preload("res://shaders/floor.gdshader")
 const GLASS_SHADER := preload("res://shaders/glass.gdshader")
 const FONT := preload("res://assets/fonts/Poppins-ExtraLight.ttf")
-const CUBE_SIZE := 1.1
-# 1을 넘는 밝은 청록: 안개 속 먼 거리에서도 보이고 글로우로 살짝 번진다
-const EDGE_COLOR := Color(0.5, 1.5, 1.8)
+## 장애물 종류별 색조 (ART_BIBLE.md 4번 표). 파랑 = 옆으로, 앰버 = 위로, 핑크 = 아래로.
+## glass: 유리 면 색(연하게 보임), edge: 모서리 선 HDR 색(1을 넘어 안개 속에서도 보이고 글로우로 살짝 번짐)
+## 화면은 1을 넘는 채널을 1로 자르므로, 앰버·핑크는 빨강만 1을 넘겨야 노랑·자홍으로 바뀌지 않는다.
+const KIND_COLORS := {
+	ObstacleField.Kind.BLOCK: {"glass": Color("9edbff"), "edge": Color(0.5, 1.5, 1.8)},
+	ObstacleField.Kind.LOW: {"glass": Color("ffc38a"), "edge": Color(1.6, 0.7, 0.35)},
+	ObstacleField.Kind.HIGH: {"glass": Color("ff8fc8"), "edge": Color(1.6, 0.45, 0.73)},
+}
+
+const RESTART_DELAY := 0.5
 
 ## 0이면 실행할 때마다 무작위. 테스트에서는 0이 아닌 값을 줘서 장애물 레인을 고정한다.
 @export var seed_value := 0
@@ -16,20 +23,24 @@ var lane := RunLogic.START_LANE
 var elapsed := 0.0
 var field: ObstacleField
 var runner: Runner
+var player := PlayerAction.new()
+var dead := false
 
 var _swipe := SwipeDetector.new()
 var _obstacles := {}  # id -> 장애물 노드
 var _floor_material: ShaderMaterial
-var _glass_material: ShaderMaterial
-var _edge_mesh: ArrayMesh
-var _edge_material: StandardMaterial3D
-var _cube_mesh: BoxMesh
+var _kind_meshes := {}  # Kind -> {y:float, mesh:BoxMesh, edges:ArrayMesh, glass:ShaderMaterial, edge:StandardMaterial3D}
+var _dead_time := 0.0
+var _restart_label: Label
 var _camera: Camera3D
 var _distance_label: Label
 var _scroll := 0.0
 
 
 func _ready() -> void:
+	if seed_value == 0 and OS.has_feature("web"):
+		# 화면 확인 기록(review/)을 같은 배치로 다시 찍을 수 있게 주소의 ?seed=숫자를 읽는다
+		seed_value = int(str(JavaScriptBridge.eval("new URLSearchParams(location.search).get('seed') || 0")))
 	if seed_value == 0:
 		seed_value = randi() | 1
 	field = ObstacleField.new(seed_value)
@@ -51,7 +62,13 @@ func _process(delta: float) -> void:
 
 ## delta초만큼 게임을 진행한다 (테스트에서도 직접 호출).
 func advance(delta: float) -> void:
+	if dead:
+		_dead_time += delta
+		return
 	elapsed += delta
+	player.step(delta)
+	runner.lift = player.height()
+	runner.crouch = player.crouch()
 	_scroll += RunLogic.SPEED * delta
 	_floor_material.set_shader_parameter("scroll", _scroll)
 	var result := field.step(delta)
@@ -63,9 +80,31 @@ func advance(delta: float) -> void:
 	for item in field.items:
 		_obstacles[item["id"]].position.z = item["z"]
 	_distance_label.text = str(RunLogic.distance(elapsed))
+	for item in field.items:
+		var dx := runner.position.x - RunLogic.lane_x(item["lane"])
+		if PlayerAction.hits(item["kind"], dx, item["z"], player.height(), player.is_ducking()):
+			_game_over()
+			return
+
+
+## 부딪혔다: 모든 게 멈추고 안내 글자가 뜬다. 실수로 바로 넘기지 않게 잠깐 뒤부터 다시 시작할 수 있다.
+func _game_over() -> void:
+	dead = true
+	runner.running = false
+	runner.crouch = 0.6
+	_restart_label.visible = true
+
+
+func restart() -> void:
+	get_tree().reload_current_scene()
 
 
 func _input(event: InputEvent) -> void:
+	if dead:
+		var pressed: bool = (event is InputEventScreenTouch or event is InputEventKey) and event.pressed
+		if pressed and _dead_time >= RESTART_DELAY:
+			restart()
+		return
 	if event is InputEventScreenTouch:
 		if event.pressed:
 			_swipe.press(event.position)
@@ -90,8 +129,10 @@ func apply_swipe(dir: SwipeDetector.Dir) -> void:
 			_change_lane(-1)
 		SwipeDetector.Dir.RIGHT:
 			_change_lane(1)
-		SwipeDetector.Dir.UP, SwipeDetector.Dir.DOWN:
-			pass  # 점프·슬라이드는 v0.2.0에서 구현 (지금은 입력만 받음)
+		SwipeDetector.Dir.UP:
+			player.jump()
+		SwipeDetector.Dir.DOWN:
+			player.slide()
 
 
 func _change_lane(direction: int) -> void:
@@ -103,13 +144,14 @@ func _change_lane(direction: int) -> void:
 
 
 func _spawn_node(item: Dictionary) -> void:
+	var shape: Dictionary = _kind_meshes[item["kind"]]
 	var cube := MeshInstance3D.new()
-	cube.mesh = _cube_mesh
-	cube.material_override = _glass_material
-	cube.position = Vector3(RunLogic.lane_x(item["lane"]), CUBE_SIZE * 0.5, item["z"])
+	cube.mesh = shape["mesh"]
+	cube.material_override = shape["glass"]
+	cube.position = Vector3(RunLogic.lane_x(item["lane"]), shape["y"], item["z"])
 	var edges := MeshInstance3D.new()
-	edges.mesh = _edge_mesh
-	edges.material_override = _edge_material
+	edges.mesh = shape["edges"]
+	edges.material_override = shape["edge"]
 	cube.add_child(edges)
 	add_child(cube)
 	_obstacles[item["id"]] = cube
@@ -172,15 +214,28 @@ func _build_floor() -> void:
 
 
 func _build_obstacle_resources() -> void:
-	_cube_mesh = BoxMesh.new()
-	_cube_mesh.size = Vector3.ONE * CUBE_SIZE
-	_glass_material = ShaderMaterial.new()
-	_glass_material.shader = GLASS_SHADER
-	# 얇은 모서리 선: 큐브 12개 모서리를 선 하나의 메시로 (모든 장애물이 공유)
-	var h := CUBE_SIZE * 0.5
+	var bar := ObstacleField.BAR_WIDTH
+	var d := ObstacleField.BAR_DEPTH
+	var b := ObstacleField.BLOCK_SIZE
+	_add_kind(ObstacleField.Kind.BLOCK, Vector3(b, b, b), 0.0)
+	_add_kind(ObstacleField.Kind.LOW, Vector3(bar, ObstacleField.LOW_TOP, d), 0.0)
+	_add_kind(ObstacleField.Kind.HIGH, Vector3(bar, ObstacleField.HIGH_TOP - ObstacleField.HIGH_BOTTOM, d), ObstacleField.HIGH_BOTTOM)
+
+
+## 종류별 상자 메시·모서리 선 메시·색 재질 (같은 종류끼리 공유). bottom은 바닥에서 아랫면까지 높이.
+func _add_kind(kind: ObstacleField.Kind, size: Vector3, bottom: float) -> void:
+	var glass := ShaderMaterial.new()
+	glass.shader = GLASS_SHADER
+	glass.set_shader_parameter("tint", KIND_COLORS[kind]["glass"])
+	var edge := StandardMaterial3D.new()
+	edge.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
+	edge.albedo_color = KIND_COLORS[kind]["edge"]
+	var box := BoxMesh.new()
+	box.size = size
+	var h := size * 0.5
 	var corners := PackedVector3Array()
 	for i in 8:
-		corners.append(Vector3(h if i & 1 else -h, h if i & 2 else -h, h if i & 4 else -h))
+		corners.append(Vector3(h.x if i & 1 else -h.x, h.y if i & 2 else -h.y, h.z if i & 4 else -h.z))
 	var indices := PackedInt32Array()
 	for i in 8:
 		for bit in [1, 2, 4]:
@@ -190,11 +245,9 @@ func _build_obstacle_resources() -> void:
 	arrays.resize(Mesh.ARRAY_MAX)
 	arrays[Mesh.ARRAY_VERTEX] = corners
 	arrays[Mesh.ARRAY_INDEX] = indices
-	_edge_mesh = ArrayMesh.new()
-	_edge_mesh.add_surface_from_arrays(Mesh.PRIMITIVE_LINES, arrays)
-	_edge_material = StandardMaterial3D.new()
-	_edge_material.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
-	_edge_material.albedo_color = EDGE_COLOR
+	var edges := ArrayMesh.new()
+	edges.add_surface_from_arrays(Mesh.PRIMITIVE_LINES, arrays)
+	_kind_meshes[kind] = {"mesh": box, "edges": edges, "y": bottom + h.y, "glass": glass, "edge": edge}
 
 
 func _build_ui() -> void:
@@ -213,6 +266,24 @@ func _build_ui() -> void:
 	settings.font_color = Color.WHITE
 	_distance_label.label_settings = settings
 	layer.add_child(_distance_label)
+
+	# 게임 오버 안내 (Poppins에 한글이 없어 영문)
+	_restart_label = Label.new()
+	_restart_label.name = "RestartLabel"
+	_restart_label.text = "TAP TO RESTART"
+	_restart_label.set_anchors_and_offsets_preset(Control.PRESET_CENTER)
+	_restart_label.offset_top = 260.0
+	_restart_label.offset_left = -360.0
+	_restart_label.offset_right = 360.0
+	_restart_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	_restart_label.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	var rs := LabelSettings.new()
+	rs.font = FONT
+	rs.font_size = 48
+	rs.font_color = Color(1, 1, 1, 0.85)
+	_restart_label.label_settings = rs
+	_restart_label.visible = false
+	layer.add_child(_restart_label)
 
 	# 아주 흐린 버전 표시 (project.godot 버전을 읽음)
 	var version := Label.new()

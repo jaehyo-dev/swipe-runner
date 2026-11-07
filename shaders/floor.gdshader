@@ -8,7 +8,7 @@ uniform float lane_width = 1.5;
 uniform vec3 base_color : source_color = vec3(0.025, 0.03, 0.09);
 uniform vec3 road_color : source_color = vec3(0.05, 0.06, 0.16);
 uniform vec3 line_color : source_color = vec3(0.45, 1.0, 0.9);
-uniform float energy = 2.2;
+uniform float energy = 1.5;  // 밝기 순서: 장애물 모서리 선(가장 센 채널 1.6~1.8)보다 낮게
 
 varying vec3 wpos;
 

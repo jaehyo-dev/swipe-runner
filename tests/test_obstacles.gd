@@ -68,3 +68,16 @@ func test_큰_시간_조각이_들어와도_생성_간격을_지킴() -> void:
 	var field := ObstacleField.new(1)
 	var r := field.step(3.0)  # 처음 1개 + 3초치 3개
 	assert_eq(r["spawned"].size(), 4)
+
+
+func test_세_종류가_모두_나오고_같은_시드면_같은_종류_순서() -> void:
+	var a := ObstacleField.new(5)
+	var b := ObstacleField.new(5)
+	var seen := {}
+	for i in 600:
+		var sa: Array = a.step(0.1)["spawned"]
+		var sb: Array = b.step(0.1)["spawned"]
+		assert_eq(sa.map(func(x): return x["kind"]), sb.map(func(x): return x["kind"]))
+		for item in sa:
+			seen[item["kind"]] = true
+	assert_eq(seen.size(), 3)

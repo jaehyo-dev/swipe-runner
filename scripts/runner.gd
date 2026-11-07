@@ -30,6 +30,11 @@ var _prev_x := 0.0
 var _squish := 0.0    # 스프링으로 따라가는 눌림 정도 (0 = 보통, 1 = 가장 납작, 음수 = 길쭉하게 튕김)
 var _squish_vel := 0.0
 var _move_tween: Tween
+## 점프로 뜬 높이와 슬라이드로 낮아진 정도(0~1). main이 매 프레임 넣어 준다.
+var lift := 0.0
+var crouch := 0.0
+## false면 달리기 박자가 멈춘다 (게임 오버)
+var running := true
 
 
 ## 아래는 납작하게 퍼지고 위는 둥근 돔인 물방울. 바닥이 y=0이라 눌려도 땅에 붙어 있다.
@@ -107,7 +112,8 @@ func _jelly_material(color: Color, highlight: float) -> ShaderMaterial:
 
 
 func _process(delta: float) -> void:
-	_phase += delta * STEP_RATE
+	if running:
+		_phase += delta * STEP_RATE
 	if delta > 0.0:
 		step_sway((position.x - _prev_x) / delta, delta)
 	_prev_x = position.x
@@ -162,11 +168,14 @@ func _step_squish(target: float, delta: float) -> void:
 ## 박자(위상)에 맞춰 튀기, 눌림, 흔들림, 그림자 크기를 적용한다.
 func _animate() -> void:
 	var hop := absf(sin(_phase))   # 0 = 바닥에 닿음, 1 = 가장 높음
+	if lift > 0.0:
+		hop = 1.0  # 공중에서는 박자 튀기 없이 늘어난 모양
 	# 눌리면 옆으로 퍼지고 늘어나면 가늘어진다 (부피 느낌 유지)
 	var sy := 1.0 + SQUASH_SCALE * (-0.28 * _squish + 0.08 * hop)
 	var sxz := 1.0 + SQUASH_SCALE * (0.22 * _squish - 0.05 * hop)
-	_body.scale = Vector3(sxz, sy, sxz)
-	_body.position.y = hop * HOP_HEIGHT
+	# 슬라이드: 낮고 넓게 납작해진다
+	_body.scale = Vector3(sxz * (1.0 + 0.35 * crouch), sy * lerpf(1.0, PlayerAction.CROUCH_SCALE, crouch), sxz * (1.0 + 0.35 * crouch))
+	_body.position.y = (hop * HOP_HEIGHT if lift <= 0.0 else 0.0) + lift
 	_body.rotation.z = _sway
 	# 높이 뛸수록 작아지고, 착지 순간(눌림↑)에 살짝 커졌다 줄어든다
-	_shadow.scale = Vector3.ONE * (1.0 - 0.18 * hop + 0.14 * clampf(_squish, 0.0, 1.0))
+	_shadow.scale = Vector3.ONE * (1.0 - 0.18 * hop + 0.14 * clampf(_squish, 0.0, 1.0)) * (1.0 - 0.25 * minf(lift, 1.0))
