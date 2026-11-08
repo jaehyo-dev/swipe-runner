@@ -1,21 +1,25 @@
 shader_type spatial;
-// 빛나는 푸딩 슬라임 (ART_BIBLE.md 2-1): 반투명 + 두께 색(밝은 테두리 → 진한 청록 띠 → 밝은 속빛)
-// + 숨 쉬는 속빛 + 떠오르는 기포 + 긴 반사광·작은 반사점 + 일렁이는 표면 + 몸 뒤가 살짝 휘어 보이는 굴절.
+// 빛나는 푸딩 슬라임 (ART_BIBLE.md 2-1, 2-2): 맑은 반투명 + 두께 색(밝은 테두리 → 진한 청록 띠 → 맑은 민트)
+// + 작고 진한 숨 쉬는 심지 + 속이 빈 기포 + 긴 반사광·작은 반사점 + 일렁이는 표면 + 몸 뒤가 살짝 휘어 보이는 굴절.
+// 글로우 기준(HDR 0.9)을 넘는 곳은 테두리·반사광·심지뿐이다. 몸 색이 0.9를 넘으면 몸 전체가 번져 안개처럼 뿌옇게 된다.
 // 기포·반사광은 따로 메시를 겹치지 않고 여기서 몸 좌표(뒤에서 본 x·y)로 그린다.
 // 굴절: 화면 텍스처(불투명 물체까지 그린 화면)를 휘어 읽고 직접 섞으므로 ALPHA는 1이다.
-render_mode unshaded, depth_draw_always, cull_back;
+render_mode unshaded, depth_draw_always, cull_back, fog_disabled;  // 안개: 뒤 화면(screen_tex)에 이미 들어 있어 한 번 더 씌우면 몸이 보라·회색으로 탁해진다
 
 uniform sampler2D screen_tex : hint_screen_texture, filter_linear;
 
 // --- 조절하기 쉬운 값 ---
-uniform float alpha_center = 0.62;  // 가운데 투명도 (0 = 완전 투명, 1 = 불투명)
-uniform float alpha_edge = 0.95;    // 가장자리 투명도 (프레넬)
-uniform float core_strength = 1.15; // 속빛 세기
-uniform float core_breath = 0.18;   // 속빛이 박자에 맞춰 숨 쉬는 폭 (0 = 고정)
+uniform float alpha_center = 0.5;   // 가운데 투명도 (0 = 완전 투명, 1 = 불투명). 낮을수록 뒤가 또렷이 비침
+uniform float alpha_edge = 0.92;    // 가장자리 투명도 (프레넬)
+uniform float core_strength = 1.0;  // 심지 세기
+uniform float core_size = 0.12;     // 심지 반지름 (m). 0.12면 보이는 지름이 몸 높이의 약 1/3
+uniform float core_breath = 0.18;   // 심지가 박자에 맞춰 숨 쉬는 폭 (0 = 고정)
+uniform float rim_start = 0.8;      // 테두리 빛이 시작하는 프레넬 값 (클수록 테두리가 얇아짐, 0.85를 넘으면 점선처럼 깨짐)
+uniform float ground_dark = 0.55;   // 바닥에 닿은 부분이 진해지는 정도 (액체가 아래로 모인 느낌)
 uniform float refraction = 0.025;   // 굴절 세기 (화면 비율, 0 = 휘지 않음)
 uniform float ripple = 0.006;       // 표면 물결 높이
 uniform float bubble_strength = 0.8;
-uniform vec3 transmit_tint : source_color = vec3(0.55, 1.0, 0.88);  // 몸을 통과해 보이는 뒤 화면이 물드는 색 (보라 배경이 회색으로 섞이지 않게)
+uniform vec3 transmit_tint : source_color = vec3(0.3, 1.0, 0.45);  // 몸을 통과해 보이는 뒤 화면이 물드는 색 (보라 배경이 회색으로 섞이지 않게)
 
 // --- 색 (ART_BIBLE.md 팔레트) ---
 uniform vec3 rim_color : source_color = vec3(0.749, 1.0, 0.929);   // #BFFFED 얇은 가장자리
@@ -54,11 +58,16 @@ void fragment() {
 	// 두께 색: 가운데 민트 → 진한 청록 띠 → 밝은 테두리
 	// 위에서 내려다보는 정수리가 띠 색으로 칠해져 뚜껑처럼 보이지 않게, 띠는 옆면(위로 갈수록 약하게)에만 둔다
 	float band = smoothstep(0.3, 0.68, f) * (1.0 - smoothstep(0.55, 0.9, vy));
-	vec3 col = mix(mint * 1.1, band_color, band);
-	col = mix(col, rim_color * rim_energy, smoothstep(0.7, 0.98, f));  // 너무 얇으면 가장자리가 점점이 깨져 보임
+	// 맑은 몸은 어두운 보라 바닥과 섞이며 파랑이 올라오므로, 초록 쪽으로 살짝 당겨 민트로 읽히게 한다
+	vec3 col = mix(mint * vec3(0.88, 1.04, 0.93), band_color, band);
+	// 바닥에 닿은 부분: 진한 청록으로 모인다
+	float ground = (1.0 - smoothstep(0.0, 0.22, vy)) * ground_dark;
+	col = mix(col, band_color * 0.75, ground);
+	float rim = smoothstep(rim_start, rim_start + 0.14, f);  // 끝까지 가파르면 1픽셀 안에서 켜졌다 꺼져 점선처럼 깨짐
+	col = mix(col, rim_color * rim_energy, rim);
 
-	// 속빛: 몸 가운데 약간 아래, 박자에 맞춰 아주 약하게 밝아졌다 어두워짐
-	vec2 cq = vec2(lp.x / 0.3, (lp.y - 0.36 * height) / 0.26);
+	// 심지: 몸 가운데 약간 아래의 작고 진한 빛, 박자에 맞춰 아주 약하게 밝아졌다 어두워짐
+	vec2 cq = vec2(lp.x, lp.y - 0.32 * height) / core_size;
 	float core = exp(-dot(cq, cq)) * (1.0 - f) * core_strength * (1.0 + core_breath * sin(beat));
 	col += core_color * core;
 
@@ -77,16 +86,18 @@ void fragment() {
 	for (int i = 0; i < 4; i++) {
 		float fi = float(i);
 		float t = fract(TIME * (0.18 + 0.07 * fract(fi * 0.618)) + fi * 0.29);
-		float r = 0.032 + 0.02 * fract(fi * 0.71 + 0.3);
+		float r = 0.045 + 0.022 * fract(fi * 0.71 + 0.3);
 		vec2 c = vec2((fract(fi * 0.618 + 0.15) - 0.5) * 0.36 + 0.02 * sin(TIME * 2.0 + fi * 3.0), mix(0.1, 0.72, t) * height);
 		float fade = smoothstep(0.0, 0.12, t) * (1.0 - smoothstep(0.7, 1.0, t));
-		bub = max(bub, ring(length(lp.xy - c), r, 0.009) * fade);
+		float d = length(lp.xy - c);
+		bub = max(bub, ring(d, r, max(0.006, fwidth(d))) * fade);  // 화면에서 1픽셀보다 얇아지지 않게
 	}
-	col = mix(col, core_color * 1.3, bub * bubble_strength);
+	// 기포 테두리는 글로우 기준(0.9) 아래 색: 번지면 흰 얼룩이 된다
+	col = mix(col, rim_color * 0.85, bub * bubble_strength);
 	col += vec3(hl) * 2.4;
 
 	// 굴절: 가운데(두꺼운 곳)일수록 뒤 화면을 법선 쪽으로 휘어 읽는다 (렌즈처럼)
 	vec3 behind = texture(screen_tex, SCREEN_UV - n.xy * refraction * (1.0 - f)).rgb * transmit_tint;
-	float alpha = clamp(mix(alpha_center, alpha_edge, smoothstep(0.5, 0.95, f)) + hl + bub * 0.3, 0.0, 1.0);
+	float alpha = clamp(mix(alpha_center, alpha_edge, smoothstep(0.5, 0.95, f)) + ground * 0.4 + min(core, 1.0) * 0.5 + hl + bub * 0.5, 0.0, 1.0);
 	ALBEDO = mix(behind, col, alpha);
 }
