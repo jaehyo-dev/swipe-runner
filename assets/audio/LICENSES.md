@@ -1,6 +1,6 @@
 # 게임 소리 출처와 라이선스
 
-`tools/make_final_sounds.py`가 `review/v0.2.8/`의 후보에서 만든다. 공통 가공: 재생 속도 변경(높이와 길이가 같이 바뀌는 직선 보간 리샘플), 로우패스(Q 0.5), 끝 30ms 페이드 아웃. 음악은 형식 변환만 한다.
+`tools/make_final_sounds.py`가 `review/v0.2.8/`의 후보에서 만든다. 공통 가공: 재생 속도 변경(높이와 길이가 같이 바뀌는 직선 보간 리샘플), 로우패스(Q 0.5), 끝 30ms 페이드 아웃.
 
 | 파일 | 원본 | 가공 | 라이선스 |
 |---|---|---|---|
@@ -9,7 +9,7 @@
 | `sfx/slide.wav` | `sounds_v3/slide_a.wav` | +7반음, 12kHz, 끝 페이드 | 직접 합성, 프로젝트 소유 |
 | `sfx/land.wav` | `sounds_v2/land_c.wav` | -10반음, 12kHz, 끝 페이드 | Kenney CC0 소리 가공 + 프로젝트 가공 (아래) |
 | `sfx/crash.wav` | `sounds_v3/crash_c.wav` | +9반음, 9.5kHz, 끝 페이드 | rubberduck CC0 소리 가공 + 직접 합성 몸통 (아래) |
-| `music/bgm.ogg` | `sounds/bgm/bgm_3.flac` | Vorbis q6 변환, 반복은 `bgm.ogg.import`의 `loop=true` | 직접 합성, 프로젝트 소유 |
+| `music/bgm_<BPM>_<편곡>.ogg` 7개 | `tools/make_ladder_music.py` (`review/v0.3.1/music/make_music.py`의 합성) | 템포별로 다시 합성, Vorbis q5 | 직접 합성, 프로젝트 소유 |
 
 ## 착지: Kenney CC0
 

@@ -18,48 +18,44 @@ const HIGH_TOP := 1.32
 const SPAWN_Z := -60.0
 ## 이 z를 넘으면 지나간 것으로 보고 제거 (카메라 뒤)
 const REMOVE_Z := 6.0
-## 생성 지점에서 주인공(z=0)까지 걸리는 시간. 도착 박에서 이만큼 거꾸로 계산해 생성한다.
-const TRAVEL := -SPAWN_Z / RunLogic.SPEED
-## 시작·재시작 뒤 첫 장애물까지 최소 1마디 (다음 마디 첫 박이므로 2.4~4.8초 안에 도착)
-const START_LEAD := BeatClock.BAR
+## 시작·재시작 뒤 첫 장애물은 1마디 뒤 첫 박에 도착한다
+const FIRST_BEAT := BeatClock.BEATS_PER_BAR
 
-var speed := RunLogic.SPEED
-## 현재 살아 있는 장애물: {id:int, lane:int, z:float, kind:Kind, beat:int}
+## 현재 살아 있는 장애물: {id:int, lane:int, z:float, kind:Kind, beat:int, arrive:float}. arrive: 주인공(z=0)에 닿을 때의 이동 거리
 var items: Array[Dictionary] = []
-## 음악 시간. 패턴의 박은 이 시간 기준으로 도착한다.
-var time := 0.0
+## 지금까지 이동한 거리
+var travel := 0.0
 
 var _pattern: BeatPattern
 var _coming: Dictionary  # 아직 생성하지 않은 다음 장애물
 var _next_id := 0
 
 
-## 시드를 주면 순서가 고정된다. start_time: 음악 시간. 패턴은 이 시각 뒤 마디 첫 박부터 시작한다.
-func _init(seed_value: int = 0, start_time: float = 0.0) -> void:
-	time = start_time
-	_pattern = BeatPattern.new(seed_value, BeatPattern.first_beat(start_time, START_LEAD))
+## 시드를 주면 순서가 고정된다.
+func _init(seed_value: int = 0) -> void:
+	_pattern = BeatPattern.new(seed_value, FIRST_BEAT)
 	_coming = _pattern.next()
 
 
-## dt초 진행한다. 이번에 생긴 것과 지워진 것의 id를 돌려준다.
-## step(0)은 앞으로 도착할 장애물 중 z -60보다 가까운 것을 지금 시각에 맞는 자리에 미리 놓는다 (시작·재시작).
-func step(dt: float) -> Dictionary:
+## 이동 거리를 now로 옮긴다. 이번에 생긴 것과 지워진 것의 id를 돌려준다.
+## step(travel)은 앞으로 도착할 장애물 중 z -60보다 가까운 것을 지금 거리에 맞는 자리에 미리 놓는다 (시작·재시작).
+func step(now: float) -> Dictionary:
 	var spawned: Array[Dictionary] = []
 	var removed: Array[int] = []
-	time += dt
-	for item in items:
-		item["z"] += speed * dt
+	travel = now
 	var kept: Array[Dictionary] = []
 	for item in items:
+		item["z"] = now - item["arrive"]
 		if item["z"] > REMOVE_Z:
 			removed.append(item["id"])
 		else:
 			kept.append(item)
 	items = kept
-	while _coming["beat"] * BeatClock.BEAT - time <= TRAVEL:
-		var z: float = speed * (time - _coming["beat"] * BeatClock.BEAT)
+	while _coming["beat"] * MusicLadder.BEAT_DISTANCE - now <= -SPAWN_Z:
+		var arrive: float = _coming["beat"] * MusicLadder.BEAT_DISTANCE
+		var z := now - arrive
 		if z <= REMOVE_Z:  # 시간이 크게 건너뛰면(탭 전환 등) 이미 지나간 것은 만들지 않는다
-			var item := {"id": _next_id, "lane": _coming["lane"], "z": z, "kind": _coming["kind"], "beat": _coming["beat"]}
+			var item := {"id": _next_id, "lane": _coming["lane"], "z": z, "kind": _coming["kind"], "beat": _coming["beat"], "arrive": arrive}
 			_next_id += 1
 			items.append(item)
 			spawned.append(item)

@@ -4,9 +4,14 @@ extends TestCase
 const Dir := SwipeDetector.Dir
 
 
+const TEST_BEST := "user://test_best_main.txt"
+
+
 func _make_main() -> Node3D:
 	var main: Node3D = load("res://scenes/main.tscn").instantiate()
 	main.seed_value = 1234
+	DirAccess.remove_absolute(TEST_BEST)
+	main.best_path = TEST_BEST
 	add_child(main)
 	main.set_process(false)  # 시간은 advance()로만 흘려 결과를 고정한다
 	main.started = true  # 음악 시작(begin)은 따로 테스트한다
@@ -81,16 +86,16 @@ func test_장애물에_부딪히면_멈추고_안내가_뜸() -> void:
 	await wait_frames()
 	var item := _add_obstacle(main)
 	main.runner.position.x = RunLogic.lane_x(item["lane"])
-	item["z"] = 0.0
+	_place(main, item, 0.0)
 	main.advance(0.0)
 	assert_true(main.dead, "아무 동작 없이 부딪히면 어떤 종류든 게임 오버")
 	var label: Label = main.find_child("RestartLabel", true, false)
 	assert_false(label.visible, "충돌 모션을 가리지 않게 바로는 안 뜸")
 	main.advance(main.RESTART_DELAY)
 	assert_true(label.visible, "0.5초 뒤 안내")
-	var t: float = main.elapsed
+	var t: float = main.travel
 	main.advance(1.0)
-	assert_eq(main.elapsed, t, "게임 오버 뒤엔 시간이 멈춤")
+	assert_eq(main.travel, t, "게임 오버 뒤엔 거리가 멈춤")
 	main.queue_free()
 
 
@@ -99,7 +104,7 @@ func test_피하면_계속_달림() -> void:
 	await wait_frames()
 	var item := _add_obstacle(main)
 	main.runner.position.x = RunLogic.lane_x((item["lane"] + 1) % 3)  # 다른 레인
-	item["z"] = 0.0
+	_place(main, item, 0.0)
 	main.advance(0.0)
 	assert_false(main.dead)
 	main.queue_free()
@@ -116,9 +121,9 @@ func test_시간이_가면_거리가_늘고_장애물_노드가_생기고_지나
 	assert_true(cubes_now.size() > 0)
 	main.advance(12.0)
 	await wait_frames()  # 지워진 노드(queue_free)가 정리될 때까지
-	assert_eq(main.elapsed, 12.0)
+	assert_eq(main.travel, RunLogic.SPEED * 12.0)
 	var label: Label = main.find_child("DistanceLabel", true, false)
-	assert_eq(label.text, str(RunLogic.distance(12.0)))
+	assert_eq(label.text, "108")
 	var cubes := main.get_children().filter(func(c): return c is MeshInstance3D and c.get_child_count() == 1)
 	assert_eq(cubes.size(), main.field.items.size(), "노드 수 = 살아 있는 장애물 수")
 	main.queue_free()
@@ -171,7 +176,7 @@ func test_화면에_거리와_버전_안내_글자만_있음() -> void:
 		await wait_frames()
 	await wait_frames()
 	var labels := main.find_children("*", "Label", true, false)
-	assert_eq(labels.size(), 3, "거리 + 버전 + (숨겨진) 다시 시작 안내")
+	assert_eq(labels.size(), 4, "거리 + 최고 + 버전 + (숨겨진) 다시 시작 안내")
 	var version: Label = main.find_child("VersionLabel", true, false)
 	assert_eq(version.text, "v" + str(ProjectSettings.get_setting("application/config/version")))
 	main.queue_free()
@@ -206,13 +211,19 @@ func _put_in_front(main: Node3D, kind: ObstacleField.Kind, z := -0.75) -> Dictio
 	var item := _add_obstacle(main)
 	item["lane"] = main.lane
 	item["kind"] = kind
-	item["z"] = z
+	_place(main, item, z)
 	return item
+
+
+## 장애물을 z에 옮긴다. z는 이동 거리에서 계산되므로 도착 거리를 함께 바꾼다.
+func _place(main: Node3D, item: Dictionary, z: float) -> void:
+	item["z"] = z
+	item["arrive"] = main.travel - z
 
 
 ## 장애물을 하나 바로 놓는다 (패턴의 첫 장애물은 몇 초 뒤에나 온다)
 func _add_obstacle(main: Node3D) -> Dictionary:
-	var item := {"id": 9000 + main._obstacles.size(), "lane": 1, "z": ObstacleField.SPAWN_Z, "kind": ObstacleField.Kind.BLOCK, "beat": 0}
+	var item := {"id": 9000 + main._obstacles.size(), "lane": 1, "z": ObstacleField.SPAWN_Z, "kind": ObstacleField.Kind.BLOCK, "beat": 0, "arrive": main.travel - ObstacleField.SPAWN_Z}
 	main.field.items.append(item)
 	main._spawn_node(item)
 	return item
@@ -293,7 +304,7 @@ func test_다시_시작은_장면을_유지하고_상태만_초기화() -> void:
 	assert_false(main.dead)
 	assert_eq(main.runner, runner_node, "주인공 노드 그대로")
 	assert_true(is_instance_valid(main) and main.is_inside_tree(), "장면 그대로")
-	assert_eq(main.elapsed, 0.0)
+	assert_true(main.travel <= 0.0 and main.travel > -2.0, "거리는 0(출력 지연만큼 앞)에서 다시")
 	assert_eq(main.lane, 0, "레인 그대로")
 	assert_eq(main.find_child("DistanceLabel", true, false).text, "0")
 	assert_false(main.find_child("RestartLabel", true, false).visible)
@@ -304,7 +315,7 @@ func test_다시_시작은_장면을_유지하고_상태만_초기화() -> void:
 	main.apply_swipe(Dir.UP)
 	assert_true(main.player.is_jumping(), "바로 입력")
 	main.advance(STEP)
-	assert_true(main.elapsed > 0.0, "바로 달림")
+	assert_true(main.travel > 0.0, "바로 달림")
 	assert_true(main._scroll > floor_scroll)
 	main.queue_free()
 
@@ -401,11 +412,10 @@ func test_레인_이동_중_옆면에_부딪히면_옆면에_붙음() -> void:
 	main.queue_free()
 
 
-func test_고정_시드면_음악의_같은_자리에서_다시_시작할_때_같은_배치() -> void:
+func test_고정_시드면_다시_시작해도_같은_배치() -> void:
 	var main := _make_main()
 	await wait_frames()
 	var first := _arrivals(main)
-	main._music_t = BeatClock.LOOP  # 한 바퀴 돈 같은 자리
 	main.restart()
 	var second := _arrivals(main)
 	assert_eq(second, first)
@@ -414,7 +424,7 @@ func test_고정_시드면_음악의_같은_자리에서_다시_시작할_때_�
 
 func _arrivals(main: Node3D) -> Array:
 	var result := []
-	for item in main.field.step(30.0)["spawned"]:
+	for item in main.field.step(RunLogic.SPEED * 30.0)["spawned"]:
 		result.append([posmod(item["beat"], 64), item["lane"], item["kind"]])
 	return result
 
@@ -430,20 +440,17 @@ func test_시드를_정하지_않으면_판마다_다른_배치() -> void:
 	main.queue_free()
 
 
-func test_다시_시작하면_앞_판을_지우고_다음_마디_첫_박에_1마디_넘게_뒤_도착() -> void:
+func test_다시_시작하면_앞_판을_지우고_1마디_뒤_첫_박에_도착() -> void:
 	var main := _make_main()
 	await wait_frames()
 	_run(main, 11.3)
 	var old_ids: Array = main.field.items.map(func(i): return main._obstacles[i["id"]])
 	main.dead = true
 	main.restart()
-	var t: float = main._music_t
 	var first: Dictionary = main.field.items[0]
-	assert_eq(first["beat"] % BeatClock.BEATS_PER_BAR, 0, "마디 첫 박")
-	var wait: float = first["beat"] * BeatClock.BEAT - t
-	assert_true(wait >= BeatClock.BAR and wait < BeatClock.BAR * 2.0, "2.4~4.8초 안 %f" % wait)
+	assert_eq(first["beat"], BeatClock.BEATS_PER_BAR, "1마디 뒤 첫 박")
 	for item in main.field.items:
-		assert_true(absf(item["z"] + RunLogic.SPEED * (item["beat"] * BeatClock.BEAT - t)) < 0.001, "박에서 거꾸로 계산한 자리")
+		assert_true(absf(item["z"] + item["beat"] * MusicLadder.BEAT_DISTANCE - main.travel) < 0.001, "박에서 거꾸로 계산한 자리")
 		assert_true(item["z"] >= ObstacleField.SPAWN_Z, "z -60보다 가까운 것만")
 		assert_false(old_ids.has(main._obstacles[item["id"]]), "새 노드")
 	main.queue_free()
@@ -482,11 +489,11 @@ func test_첫_판_대기_화면의_장애물은_솟아오르지_않고_제_크�
 
 
 func test_재시작_뒤_0_82초_동안_어떤_장애물도_닿을_수_없음() -> void:
-	# 판정을 끄는 규칙 대신, 어느 시각에 재시작해도 첫 도착이 2.4초 뒤라 닿을 수 없음을 확인한다
+	# 판정을 끄는 규칙 대신, 어떤 판을 달린 뒤 재시작해도 첫 도착이 1마디 뒤라 닿을 수 없음을 확인한다
 	var main := _make_main()
 	await wait_frames()
-	for start in 40:
-		main._music_t = start * 0.37
+	for start in 8:
+		_run(main, start * 0.37)
 		main.dead = true
 		main.restart()
 		for i in int(0.82 / STEP):
@@ -514,14 +521,14 @@ func test_첫_화면_전에_세_종류와_물방울과_글자를_가림막_뒤�
 		assert_true(drawn.has(main._kind_meshes[kind]["edge"]), "모서리 %d" % kind)
 	var cover: ColorRect = main.find_children("*", "ColorRect", true, false)[0]
 	assert_true(cover.get_parent().layer > 1, "화면 맨 위 가림막")
-	assert_eq(main.find_children("*", "Label", true, false).size(), 5, "숫자·안내 글자도 그림")
+	assert_eq(main.find_children("*", "Label", true, false).size(), 7, "숫자·안내·최고 글자도 그림")
 	var nodes_during: int = _count_nodes(main)
 	while not main.prewarmed:
 		await wait_frames()
 	await wait_frames()
 	assert_eq(main.find_children("*", "ColorRect", true, false).size(), 0, "가림막 사라짐")
 	assert_true(_count_nodes(main) < nodes_during, "준비용 노드 정리")
-	assert_eq(main.find_children("*", "Label", true, false).size(), 3)
+	assert_eq(main.find_children("*", "Label", true, false).size(), 4)
 	main.queue_free()
 
 
@@ -642,3 +649,90 @@ func test_레인_이동은_공중에서도_바로이고_저장된_입력을_지�
 	_run(main, 0.12)
 	assert_true(main.player.is_jumping(), "저장된 점프가 실행됨")
 	main.queue_free()
+
+
+func _best_label(main: Node3D) -> Label:
+	return main.find_child("BestLabel", true, false)
+
+
+func _run_past(main: Node3D, distance: float) -> void:
+	while main.travel <= distance:
+		main.field.items.clear()  # 부딪히지 않고 거리만 늘린다
+		for id in main._obstacles:
+			main._obstacles[id].queue_free()
+		main._obstacles.clear()
+		main.advance(STEP)
+
+
+func test_첫_판에는_최고_줄을_숨기고_게임_오버에_거리를_보여_줌() -> void:
+	var main := _make_main()
+	await wait_frames()
+	assert_false(_best_label(main).visible, "기록 없음")
+	_run_past(main, 25.0)
+	assert_false(_best_label(main).visible, "첫 판 내내 숨김")
+	assert_true(main.record.best >= 25)
+	_place(main, _add_obstacle(main), 0.0)
+	main.advance(0.0)
+	assert_true(main.dead)
+	assert_true(_best_label(main).visible)
+	assert_eq(_best_label(main).text, "BEST %d" % main.record.best, "첫 기록은 NEW 표시 없음")
+	main.queue_free()
+
+
+func test_최고를_넘는_순간_숫자가_커졌다_돌아오고_NEW_BEST로_바뀌며_바로_저장() -> void:
+	var main := _make_main()
+	await wait_frames()
+	_run_past(main, 20.0)
+	main.dead = true
+	main.restart()
+	var old: int = main.record.best
+	assert_eq(_best_label(main).text, "BEST %d" % old)
+	assert_true(_best_label(main).visible)
+	_run_past(main, old - 1.0)
+	assert_eq(_best_label(main).text, "BEST %d" % old, "넘기 전")
+	assert_eq(main._distance_label.scale, Vector2.ONE)
+	_run_past(main, old + 1.0)
+	assert_eq(_best_label(main).text, "NEW BEST")
+	assert_eq(FileAccess.get_file_as_string(TEST_BEST).to_int(), main.record.best, "게임이 끝나기 전에 저장")
+	await get_tree().create_timer(main.POP_UP).timeout
+	assert_true(main._distance_label.scale.x > 1.1, "말랑 커짐 %f" % main._distance_label.scale.x)
+	await get_tree().create_timer(main.POP_DOWN + 0.1).timeout
+	assert_eq(main._distance_label.scale, Vector2.ONE, "돌아옴")
+	_place(main, _add_obstacle(main), 0.0)
+	main.advance(0.0)
+	assert_eq(_best_label(main).text, "NEW BEST %d" % main.record.best)
+	main.queue_free()
+
+
+func test_단계가_오를_때만_길_선이_0_3초_빛남() -> void:
+	var main := _make_main()
+	await wait_frames()
+	main.field.items.clear()
+	var ladder := MusicLadder.new(0)
+	AudioManager.ladder = ladder
+	ladder.segments.append({"start": 10.0, "beat": 64, "step": 1})  # BPM만 오름
+	ladder.segments.append({"start": 20.0, "beat": 128, "step": 2})  # 원본 → A
+	var flash := func(t: float) -> float:
+		main._music_t = t
+		main._move_world()
+		return main._floor_material.get_shader_parameter("flash")
+	assert_eq(flash.call(10.05), 0.0, "BPM만 오르면 신호 없음")
+	assert_eq(flash.call(19.99), 0.0)
+	assert_true(flash.call(20.0) > 0.99, "경계 박에 바로 밝음")
+	assert_true(absf(flash.call(20.15) - 0.5) < 0.01)
+	assert_eq(flash.call(20.31), 0.0, "0.3초 뒤 끝")
+	AudioManager.ladder = MusicLadder.new(0)
+	main.queue_free()
+
+
+func test_빛나는_길_선도_장애물_선보다_어두움() -> void:
+	var source := FileAccess.get_file_as_string("res://shaders/floor.gdshader")
+	var re := RegEx.create_from_string("flash_energy = ([\\d.]+)")
+	var line_max: float = re.search(source).get_string(1).to_float() * 1.0  # line_color 초록 채널이 1.0
+	for kind in main_kind_colors():
+		var e: Color = kind["edge"]
+		assert_true(line_max < maxf(e.r, maxf(e.g, e.b)), "길 선 %f" % line_max)
+
+
+func main_kind_colors() -> Array:
+	return load("res://scripts/main.gd").KIND_COLORS.values()

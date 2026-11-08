@@ -10,7 +10,7 @@
 - 배포 주소: https://jaehyo-dev.github.io/swipe-runner/ (이전 버전: /versions/)
 - 테스트: `godot --headless --path . --import` 후 `bash tests/run_tests.sh` (종료 코드 확인), 도구 테스트 `python3 -m unittest discover -s tools -p "test_*.py"`
 - 웹 내보내기: `godot --headless --path . --export-release "Web" "$PWD/build/web/index.html"` (Compatibility 렌더러, 스레드 없음)
-- 구조: 계산은 `scripts/logic/`(화면과 분리, 자동 테스트), 화면은 `scripts/main.gd`·`runner.gd`·`shaders/`, 소리는 오토로드 `scripts/audio_manager.gd`(파일은 `tools/make_final_sounds.py`로 재현). 텍스처 그림은 쓰지 않는다.
+- 구조: 계산은 `scripts/logic/`(화면과 분리, 자동 테스트), 화면은 `scripts/main.gd`·`runner.gd`·`shaders/`, 소리는 오토로드 `scripts/audio_manager.gd`와 `scripts/web_music.gd`(효과음은 `tools/make_final_sounds.py`, 음악은 `tools/make_ladder_music.py`로 재현). 텍스처 그림은 쓰지 않는다.
 
 ## 진행 방식
 - 큰 작업은 단계로 나누고 한 번에 한 단계만 만들어. 끝나면 멈추고 보고해. 다음 단계 기능을 미리 만들지 마.
@@ -41,3 +41,4 @@
 | v0.2.8 | 충돌 모션, 공중 아래 스와이프, 입력 저장, 그 자리 재시작, 소리 후보 | 완료 |
 | v0.3.0 | 소리 확정·적용, 장애물을 박자에 맞추기 | 완료 |
 | v0.3.1 | 빈 시간 없애기, 소리 균형, 첫 시작 렉, 배경 음악 후보 | 완료 |
+| v0.4.0 | 속도와 템포가 같이 오르기(원본 → A → B), 최고 거리 기록 | 완료 |

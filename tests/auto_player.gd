@@ -8,15 +8,15 @@ const SLIDE_LOOK := 0.28
 
 
 ## 지금 내야 할 입력 (SwipeDetector.Dir)
-static func decide(items: Array, lane: int, player: PlayerAction) -> int:
+static func decide(items: Array, lane: int, player: PlayerAction, speed := RunLogic.SPEED) -> int:
 	for item: Dictionary in items:
 		if item["lane"] != lane or item["z"] > ObstacleField.BLOCK_SIZE:
 			continue
-		var eta: float = -item["z"] / RunLogic.SPEED
+		var eta: float = -item["z"] / speed
 		match item["kind"]:
 			ObstacleField.Kind.BLOCK:
 				if eta < LANE_LOOK:
-					return _dodge(items, lane)
+					return _dodge(items, lane, speed)
 			ObstacleField.Kind.LOW:
 				if eta < JUMP_LOOK and not player.is_jumping():
 					return SwipeDetector.Dir.UP
@@ -27,11 +27,11 @@ static func decide(items: Array, lane: int, player: PlayerAction) -> int:
 
 
 ## 곧 장애물이 오지 않는 옆 레인으로
-static func _dodge(items: Array, lane: int) -> int:
+static func _dodge(items: Array, lane: int, speed: float) -> int:
 	for dir: int in ([-1, 1] if lane == 1 else ([1] if lane == 0 else [-1])):
 		var free := true
 		for item: Dictionary in items:
-			var eta: float = -item["z"] / RunLogic.SPEED
+			var eta: float = -item["z"] / speed
 			if item["lane"] == lane + dir and eta > -0.15 and eta < 0.45:
 				free = false
 		if free:

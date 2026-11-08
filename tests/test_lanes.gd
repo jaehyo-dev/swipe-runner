@@ -38,7 +38,3 @@ func test_레인_좌표는_가운데가_0이고_폭_1_5() -> void:
 	assert_eq(RunLogic.lane_x(2), 1.5)
 
 
-func test_거리는_달린_시간에_비례해_정수로_늘어남() -> void:
-	assert_eq(RunLogic.distance(0.0), 0)
-	assert_eq(RunLogic.distance(10.0), 90)
-	assert_true(RunLogic.distance(20.0) > RunLogic.distance(10.0))

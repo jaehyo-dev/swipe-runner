@@ -20,13 +20,23 @@ const POP_TIME := 0.25       # 다시 시작할 때 새 장애물이 바닥에�
 const PREWARM_FRAMES := 3    # 가림막 뒤에서 이만큼 연달아 빠른 프레임이 나오면 준비 끝 (셰이더는 그래픽 쪽에서 늦게 끝날 수 있다)
 const PREWARM_FAST_MS := 50
 const PREWARM_MAX_FRAMES := 120  # 아주 느린 기기도 언젠가는 화면을 연다
+const FLASH_TIME := 0.3      # 음악 단계가 오를 때 길 선이 빛나는 시간(초)
+const POP_SCALE := 1.22      # 새 기록 순간 거리 숫자가 커지는 배율 (말랑)
+const POP_UP := 0.08
+const POP_DOWN := 0.32
 const BOOT_COLOR := Color(0.027, 0.04, 0.14)  # project.godot boot_splash/bg_color와 같은 색: 로딩에서 가림막으로 이어져 보이게
 
 ## 0이면 실행할 때마다 무작위. 테스트에서는 0이 아닌 값을 줘서 장애물 레인을 고정한다.
 @export var seed_value := 0
+## 최고 기록 파일. 테스트는 임시 파일을 준다.
+@export var best_path := BestRecord.PATH
 
 var lane := RunLogic.START_LANE
-var elapsed := 0.0
+## 이번 판에 이동한 거리. 화면 숫자는 이 값의 정수 부분.
+var travel := 0.0
+## 지금 세상이 다가오는 속도
+var speed := RunLogic.SPEED
+var record: BestRecord
 var field: ObstacleField
 var runner: Runner
 var player := PlayerAction.new()
@@ -44,19 +54,21 @@ var _dead_time := 0.0
 var _restart_label: Label
 var _camera: Camera3D
 var _distance_label: Label
+var _best_label: Label
 var _scroll := 0.0
 var _music_t := 0.0  # 박자 기준 시간
 
 
 ## 시드를 고정했으면(주소의 ?seed, 테스트) 판마다 같은 배치, 아니면 판마다 새 배치
 func _new_field() -> void:
-	field = ObstacleField.new(seed_value if seed_value != 0 else randi() | 1, _music_t)
+	field = ObstacleField.new(seed_value if seed_value != 0 else randi() | 1)
 
 
 func _ready() -> void:
 	if seed_value == 0 and OS.has_feature("web"):
 		# 화면 확인 기록(review/)을 같은 배치로 다시 찍을 수 있게 주소의 ?seed=숫자를 읽는다
 		seed_value = int(str(JavaScriptBridge.eval("new URLSearchParams(location.search).get('seed') || 0")))
+	record = BestRecord.new(best_path)
 	_new_field()
 	_build_environment()
 	_build_camera()
@@ -81,19 +93,13 @@ func begin() -> void:
 	started = true
 	AudioManager.start_music()
 	_music_t = AudioManager.music_time
-	_apply_step(field.step(_music_t - field.time))
+	_move_world()
 
 
 ## delta초만큼 게임을 진행한다 (테스트에서도 직접 호출). music_t: 음악 시간. 안 주면(테스트) delta만큼 흐른 것으로 친다.
-## 세상은 음악 시간의 차이만큼 움직이고, 주인공 동작은 프레임 시간으로 움직인다.
+## 세상은 음악 시간에서 계산한 이동 거리만큼 움직이고, 주인공 동작은 프레임 시간으로 움직인다.
 func advance(delta: float, music_t := NAN) -> void:
-	var world_dt := delta
-	if is_nan(music_t):
-		_music_t += delta
-	else:
-		if started:
-			world_dt = music_t - _music_t
-		_music_t = music_t
+	_music_t = _music_t + delta if is_nan(music_t) else music_t
 	if dead:
 		_advance_dead(delta)
 		return
@@ -103,16 +109,28 @@ func advance(delta: float, music_t := NAN) -> void:
 	runner.crouch = player.crouch()
 	if not started:
 		return
-	_scroll += RunLogic.SPEED * world_dt
-	_floor_material.set_shader_parameter("scroll", _scroll)
-	elapsed += world_dt
-	_apply_step(field.step(world_dt))
-	_distance_label.text = str(RunLogic.distance(elapsed))
+	_move_world()
+	_distance_label.text = str(int(travel))
+	if record.update(int(travel)):
+		_on_new_record()
 	for item in field.items:
 		var dx := runner.position.x - RunLogic.lane_x(item["lane"])
 		if not item.has("cleared") and PlayerAction.hits(item["kind"], dx, item["z"], player.height(), player.is_ducking()):
 			_game_over(item)
 			return
+
+
+## 음악 시간에서 이동 거리·속도·길 선 빛남을 구해 세상에 옮긴다.
+func _move_world() -> void:
+	var ladder := AudioManager.ladder
+	var now := ladder.distance_at(_music_t)
+	_scroll += now - travel
+	travel = now
+	speed = ladder.speed_at(_music_t)
+	_floor_material.set_shader_parameter("scroll", _scroll)
+	var age := ladder.stage_up_age(_music_t)
+	_floor_material.set_shader_parameter("flash", 1.0 - age / FLASH_TIME if age >= 0.0 and age < FLASH_TIME else 0.0)
+	_apply_step(field.step(travel))
 
 
 ## field.step() 결과를 장애물 노드에 옮긴다.
@@ -128,7 +146,7 @@ func _apply_step(result: Dictionary) -> void:
 
 ## 앞으로 도착할 장애물을 이미 길 위에 놓는다. pop: 다시 시작할 때처럼 바닥에서 솟아오르게 한다.
 func _place_ahead(pop: bool) -> void:
-	for item in field.step(0.0)["spawned"]:
+	for item in field.step(travel)["spawned"]:
 		_spawn_node(item)
 		if pop:
 			_pop_in(_obstacles[item["id"]], _kind_meshes[item["kind"]]["y"])
@@ -147,10 +165,10 @@ func _pop_in(node: Node3D, y: float) -> void:
 func _advance_dead(delta: float) -> void:
 	var slow := CrashMotion.slow_delta(_dead_time, delta)
 	_dead_time += delta
-	_scroll += RunLogic.SPEED * slow
+	_scroll += speed * slow
 	_floor_material.set_shader_parameter("scroll", _scroll)
 	for item in field.items:
-		item["z"] += RunLogic.SPEED * slow
+		item["z"] += speed * slow
 		_obstacles[item["id"]].position.z = item["z"]
 	runner.crash_t = _dead_time
 	var shake := CrashMotion.shake(_dead_time)
@@ -164,8 +182,12 @@ func _game_over(item: Dictionary) -> void:
 	dead = true
 	_dead_time = 0.0
 	AudioManager.play_crash()
+	_floor_material.set_shader_parameter("flash", 0.0)
+	record.save()
+	_best_label.visible = true
+	_best_label.text = ("NEW BEST %d" if record.broken else "BEST %d") % record.best
 	# 느려지는 동안 장애물이 조금 더 다가오므로 그만큼 앞으로 간 면에 붙는다
-	var z: float = item["z"] + RunLogic.SPEED * CrashMotion.SLOW_SCALE * CrashMotion.SLOW_TIME
+	var z: float = item["z"] + speed * CrashMotion.SLOW_SCALE * CrashMotion.SLOW_TIME
 	runner.crash(CrashMotion.contact(item["kind"], RunLogic.lane_x(item["lane"]), runner.position.x, z, player.height()))
 
 
@@ -173,7 +195,9 @@ func _game_over(item: Dictionary) -> void:
 func restart() -> void:
 	dead = false
 	_dead_time = 0.0
-	elapsed = 0.0
+	AudioManager.restart_music()
+	_music_t = AudioManager.music_time
+	travel = AudioManager.ladder.distance_at(_music_t)  # 출력 지연만큼 음수에서 출발: 다음 프레임에 길이 뒤로 튀지 않게
 	player = PlayerAction.new()
 	_swipe = SwipeDetector.new()
 	var old_nodes := _obstacles.values()
@@ -183,14 +207,31 @@ func restart() -> void:
 	for node: Node3D in old_nodes:
 		var fade := node.create_tween().set_parallel()
 		fade.tween_property(node, "scale", Vector3.ONE * 0.01, OBSTACLE_FADE)
-		fade.tween_property(node, "position:z", node.position.z + RunLogic.SPEED * OBSTACLE_FADE, OBSTACLE_FADE)
+		fade.tween_property(node, "position:z", node.position.z + speed * OBSTACLE_FADE, OBSTACLE_FADE)
 		fade.chain().tween_callback(node.queue_free)
 	_place_ahead(true)
 	_camera.h_offset = 0.0
 	_camera.v_offset = 0.0
 	_restart_label.visible = false
 	_distance_label.text = "0"
+	record.begin_run()
+	_show_best()
 	runner.reform(lane)
+
+
+## 기록이 있으면 숫자 아래에 작게. 첫 판에는 숨긴다.
+func _show_best() -> void:
+	_best_label.visible = record.previous > 0
+	_best_label.text = "BEST %d" % record.previous
+
+
+## 예전 기록을 넘은 순간: 숫자가 한 번 말랑하게 커졌다 돌아온다. 소리는 내지 않는다.
+func _on_new_record() -> void:
+	_best_label.text = "NEW BEST"
+	_distance_label.pivot_offset = _distance_label.size * 0.5
+	var pop := create_tween()
+	pop.tween_property(_distance_label, "scale", Vector2.ONE * POP_SCALE, POP_UP).set_trans(Tween.TRANS_SINE).set_ease(Tween.EASE_OUT)
+	pop.tween_property(_distance_label, "scale", Vector2.ONE, POP_DOWN).set_trans(Tween.TRANS_BACK).set_ease(Tween.EASE_OUT)
 
 
 func _input(event: InputEvent) -> void:
@@ -295,10 +336,10 @@ func _prewarm() -> void:
 	var cover := CanvasLayer.new()
 	cover.layer = 100
 	add_child(cover)
-	for text in ["0123456789", _restart_label.text]:  # 글자 그림도 미리 만든다
+	for pair in [["0123456789", _distance_label], [_restart_label.text, _restart_label], ["NEW BEST 0123456789", _best_label]]:  # 글자 그림도 미리 만든다
 		var label := Label.new()
-		label.text = text
-		label.label_settings = _distance_label.label_settings if text[0] == "0" else _restart_label.label_settings
+		label.text = pair[0]
+		label.label_settings = pair[1].label_settings
 		cover.add_child(label)
 	var curtain := ColorRect.new()
 	curtain.color = BOOT_COLOR
@@ -430,6 +471,21 @@ func _build_ui() -> void:
 	settings.font_color = Color.WHITE
 	_distance_label.label_settings = settings
 	layer.add_child(_distance_label)
+
+	# 최고 기록: 거리 숫자 아래에 작게 (Poppins에 한글이 없어 영문)
+	_best_label = Label.new()
+	_best_label.name = "BestLabel"
+	_best_label.set_anchors_and_offsets_preset(Control.PRESET_TOP_WIDE)
+	_best_label.offset_top = 290.0
+	_best_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	_best_label.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	var bs := LabelSettings.new()
+	bs.font = FONT
+	bs.font_size = 40
+	bs.font_color = Color(1, 1, 1, 0.7)
+	_best_label.label_settings = bs
+	layer.add_child(_best_label)
+	_show_best()
 
 	# 게임 오버 안내 (Poppins에 한글이 없어 영문)
 	_restart_label = Label.new()

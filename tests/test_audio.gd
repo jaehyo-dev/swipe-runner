@@ -27,9 +27,13 @@ func _exit_tree() -> void:
 	AudioManager.unblock()
 
 
+const TEST_BEST := "user://test_best_audio.txt"
+
+
 func _make_main(started := true) -> Node3D:
 	var main: Node3D = load("res://scenes/main.tscn").instantiate()
 	main.seed_value = 1234
+	main.best_path = TEST_BEST
 	add_child(main)
 	main.set_process(false)
 	main.started = started
@@ -57,10 +61,30 @@ func test_소리_파일_길이와_음악_반복_설정() -> void:
 	for sound in want:
 		var stream: AudioStreamWAV = AudioManager.SFX[sound]
 		assert_true(absf(stream.get_length() - want[sound]) < 0.02, "%s %f" % [sound, stream.get_length()])
-	var bgm: AudioStreamOggVorbis = AudioManager.BGM
-	assert_true(bgm.loop, "반복")
-	assert_eq(bgm.loop_offset, 0.0)
-	assert_true(absf(bgm.get_length() - BeatClock.LOOP) < 0.001, "길이 %f" % bgm.get_length())
+	assert_eq(AudioManager.TRACKS.size(), MusicLadder.STEPS.size())
+	for i in AudioManager.TRACKS.size():
+		var bgm: AudioStreamOggVorbis = AudioManager.TRACKS[i]
+		assert_true(bgm.resource_path.ends_with(MusicLadder.STEPS[i]["file"] + ".ogg"), bgm.resource_path)
+		assert_true(bgm.loop, "반복")
+		assert_true(absf(bgm.get_length() - MusicLadder.lap_time(i)) < 0.001, "길이 %f" % bgm.get_length())
+
+
+## 반복 이음매에 틈이 없으려면 곡을 읽은 표본이 한 바퀴 뒤에도 똑같아야 한다 (mix_audio 앞머리 빈 표본을 버린 결과)
+func test_곡을_표본_단위로_읽으면_첫_표본부터_소리가_있고_한_바퀴_뒤_그대로_이어짐() -> void:
+	for i in AudioManager.TRACKS.size():
+		var frames := roundi(MusicLadder.lap_time(i) * AudioServer.get_mix_rate())
+		var playback: AudioStreamPlayback = AudioManager.open_track(AudioManager.TRACKS[i])
+		var head := playback.mix_audio(1.0, 64)
+		assert_true(head[0] != Vector2.ZERO, "곡 %d 첫 표본" % i)
+		var left := frames - 64
+		while left > 0:
+			var got := playback.mix_audio(1.0, mini(left, 4096))
+			left -= got.size()
+		var again := playback.mix_audio(1.0, 64)
+		var worst := 0.0
+		for k in 64:
+			worst = maxf(worst, (again[k] - head[k]).length())
+		assert_true(worst < 0.002, "곡 %d 이음매 차이 %f" % [i, worst])
 
 
 func test_효과음은_6개_이상_겹쳐_남() -> void:
@@ -175,7 +199,7 @@ func test_충돌_소리_뒤_막혔다가_다시_시작하면_풀림_음악은_�
 	var main := _make_main()
 	await wait_frames()
 	_start_log()
-	var item := {"id": 9000, "lane": main.lane, "z": -0.6, "kind": ObstacleField.Kind.BLOCK, "beat": 0}
+	var item := {"id": 9000, "lane": main.lane, "z": -0.6, "kind": ObstacleField.Kind.BLOCK, "beat": 0, "arrive": main.travel + 0.6}
 	main.field.items.append(item)
 	main._spawn_node(item)
 	main.advance(STEP)
@@ -204,7 +228,7 @@ func test_첫_입력_전에는_세상이_멈춰_있고_첫_입력이_음악을_�
 	var waiting_z: Array = main.field.items.map(func(i): return i["z"])
 	assert_true(waiting_z.size() > 0, "장애물이 미리 놓여 있음")
 	main.advance(30.0)
-	assert_eq(main.elapsed, 0.0, "거리는 아직")
+	assert_eq(main.travel, 0.0, "거리는 아직")
 	assert_eq(main.field.items.map(func(i): return i["z"]), waiting_z, "장애물은 멈춰 있음")
 	assert_eq(main._scroll, scroll, "길도 멈춰 있음")
 	assert_false(AudioManager.music.playing, "음악은 아직")
@@ -219,9 +243,9 @@ func test_첫_입력_전에는_세상이_멈춰_있고_첫_입력이_음악을_�
 	# 박 계산은 첫 입력(음악 0초) 기준이다
 	var t: float = AudioManager.music_time
 	assert_true(absf(t) < 0.2, "음악 0초 근처 %f" % t)
-	assert_eq(main.field.time, t, "장애물 시간 = 음악 시간")
+	assert_eq(main.field.travel, AudioManager.ladder.distance_at(t), "장애물 거리 = 음악 시간의 이동 거리")
 	for item in main.field.items:
-		assert_true(absf(item["z"] + RunLogic.SPEED * (item["beat"] * BeatClock.BEAT - t)) < 0.001, "자기 박에 맞는 자리")
+		assert_true(absf(item["z"] + RunLogic.SPEED * (item["beat"] * 0.6 - t)) < 0.001, "자기 박에 맞는 자리")
 		assert_true(absf(main._obstacles[item["id"]].position.z - item["z"]) < 0.0001, "노드도 같은 자리")
 	AudioManager.music.stop()
 	main.queue_free()
@@ -254,7 +278,7 @@ func test_음악_시간을_받으면_세상이_그_차이만큼_움직임() -> v
 	var z: float = main.field.items[0]["z"]
 	main.advance(0.001, 1.5)  # 프레임 시간과 상관없이
 	assert_true(absf(main.field.items[0]["z"] - (z + RunLogic.SPEED * 0.5)) < 0.000001)
-	assert_true(absf(main.elapsed - 1.5) < 0.000001)
+	assert_true(absf(main.travel - RunLogic.SPEED * 1.5) < 0.000001)
 	main.queue_free()
 
 
@@ -262,4 +286,49 @@ func test_음악을_시작하면_시간은_지연만큼_앞에서_출발() -> vo
 	AudioManager.music.stop()
 	AudioManager.start_music()
 	assert_eq(AudioManager.music_time, -AudioServer.get_output_latency())
+	AudioManager.music.stop()
+
+
+func test_재시작하면_곡과_템포_구간이_처음으로_돌아감() -> void:
+	AudioManager.start_music()
+	AudioManager.ladder.plan(MusicLadder.lap_time(0) - 0.8, AudioManager.SCHEDULE_LEAD, AudioManager.SCHEDULE_MIN, true)
+	assert_eq(AudioManager.ladder.segments.size(), 2)
+	var old: AudioStreamPlayer = AudioManager.music
+	AudioManager.restart_music()
+	assert_true(AudioManager.music != old, "새 플레이어로 겹쳐 넘어감")
+	assert_true(old.playing, "지금 곡은 페이드 동안 남음")
+	assert_true(AudioManager.music.playing)
+	assert_eq(AudioManager.ladder.segments.size(), 1)
+	assert_eq(AudioManager.ladder.segments[0]["step"], AudioManager.start_step)
+	assert_true(AudioManager.music_time <= 0.0, "박 계산은 0초부터")
+	AudioManager.music.stop()
+	old.stop()
+
+
+func test_부딪힌_뒤에는_다음_곡을_예약하지_않음() -> void:
+	AudioManager.start_music()
+	AudioManager.music_time = MusicLadder.lap_time(0) - 0.8
+	AudioManager._blocked = true
+	AudioManager._process(0.0)
+	assert_eq(AudioManager.ladder.segments.size(), 1)
+	AudioManager._blocked = false
+	AudioManager.music.stop()
+
+
+## 제너레이터 안에서 곡이 바뀌는 표본을 직접 확인한다 (데스크톱·녹화 경로)
+func test_데스크톱은_경계_표본에서_다음_곡으로_틈_없이_바뀜() -> void:
+	AudioManager.start_music()
+	var rate := AudioServer.get_mix_rate()
+	AudioManager._pushed = roundi(40.0 * rate)  # 넣은 표본 수를 경계 바로 앞으로
+	AudioManager._switch_frame = AudioManager._pushed + 100
+	AudioManager._switch_step = 1
+	var before: AudioStreamPlayback = AudioManager._feed
+	# 버퍼가 가득 차 있으면 경계까지 못 넣으므로 새 제너레이터로 다시 연다
+	AudioManager.music.stop()
+	AudioManager.music.play()
+	AudioManager._gen = AudioManager.music.get_stream_playback()
+	AudioManager._pump_generator()
+	assert_true(AudioManager._feed != before, "곡이 바뀜")
+	assert_eq(AudioManager._switch_frame, -1)
+	assert_true(AudioManager._pushed > roundi(40.0 * rate) + 100, "경계 뒤로도 이어서 넣음")
 	AudioManager.music.stop()

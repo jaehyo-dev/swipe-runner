@@ -26,7 +26,6 @@ import make_sounds_v2 as v2  # 후보 보고서와 같은 자로 재려고 측�
 SR = 44100
 FADE_SEC = 0.030
 Q_DB = 0.5
-BGM_FRAMES = int(38.4 * SR)
 # 이름: (원본, 높이(반음), 밝기(로우패스 Hz, 없으면 None), 예상 길이(초))
 SOUNDS = {
     "lane": ("sounds/sfx/lane_c.wav", 0, None, 0.10),
@@ -79,16 +78,6 @@ def self_test():
     assert np.std(lowpass(high, 5000)) < 0.1 * np.std(high), "로우패스는 높은 소리를 줄임"
 
 
-def make_bgm():
-    """FLAC → Vorbis. bitexact로 다시 실행해도 같은 파일. 반복(loop)은 .import 파일에서 켠다."""
-    path = OUT / "music/bgm.ogg"
-    subprocess.run(["ffmpeg", "-y", "-v", "error", "-i", str(SRC / "sounds/bgm/bgm_3.flac"), "-map_metadata", "-1",
-                    "-c:a", "libvorbis", "-q:a", "6", "-fflags", "+bitexact", "-flags:a", "+bitexact", str(path)], check=True)
-    pcm = subprocess.run(["ffmpeg", "-v", "error", "-i", str(path), "-f", "s16le", "-acodec", "pcm_s16le", "-"],
-                         check=True, capture_output=True).stdout
-    return np.frombuffer(pcm, dtype=np.int16).reshape(-1, 2) / 32768.0
-
-
 def low_band_tail(x, low=100.0, high=150.0, sec=FADE_SEC):
     """끝 sec초의 low~high Hz 크기(dBFS). 저음 덩어리가 끝에 남았는지 본다."""
     tail = x[-int(sec * SR):] * np.hanning(int(sec * SR))
@@ -125,15 +114,14 @@ def write_graph(before, after):
     fig.savefig(REPORT / "audio_fade.png", dpi=110)
 
 
-def write_report(rows, bgm):
+def write_report(rows):
     lines = ["# v0.3.0 확정 소리 측정", "",
              "`python3 tools/make_final_sounds.py`가 만든 파일을 다시 읽어 쟀다. A 가중 크기·중심 주파수는 후보 보고서와 같은 함수(`make_sounds_v2.py`).", "",
              "| 파일 | 원본 | 높이 | 밝기 | 길이 (예상) | 중심 주파수 | A 가중 크기 | 피크 | 끝 30ms 100~150Hz 전 → 후 |",
              "|---|---|---|---|---|---|---|---|---|"]
     for r in rows:
         lines.append(f"| sfx/{r['name']}.wav | {r['src']} | {r['st']:+d} | {r['hz'] or '없음'} | {r['len']:.3f}초 ({r['want']:.2f}) | {r['c']:.0f}Hz | {r['a']:.1f}dB | {r['peak']:.1f}dBFS | {r['t0']:.1f} → {r['t1']:.1f}dBFS |")
-    lines += ["", f"배경 음악 `music/bgm.ogg`: 원본 bgm_3.flac, 디코딩 {len(bgm)}표본 = {len(bgm) / SR:.4f}초 (기준 {BGM_FRAMES}표본), 스테레오, Vorbis q6.",
-              f"반복 이음매: 마지막→첫 표본 차이 {np.abs(bgm[0] - bgm[-1]).max():.4f}, 곡 안 이웃 표본 차이 99.9% 지점 {np.quantile(np.abs(np.diff(bgm, axis=0)), 0.999):.4f}.", "",
+    lines += ["",
               "그래프: `audio_fade.png` (위 페이드 전, 가운데 페이드 후, 아래 끝 80ms 파형을 크게).", "",
               "## 끝부분 저음", "",
               "끝 30ms 페이드로 모든 효과음의 마지막 표본이 정확히 0이 된다(자체 검사). 표의 100~150Hz 크기는 착지(원래 소리 없음) 말고 모두 7dB 이상 줄었다.",
@@ -162,14 +150,10 @@ def main():
             errors.append(f"{name}: 마지막 표본이 0이 아님")
         rows.append({"name": name, "src": src, "st": st, "hz": hz, "want": want, "len": len(y) / SR, "c": v2.centroid_hz(y),
                      "a": v2.a_weighted_db(y), "peak": 20 * np.log10(np.abs(y).max()), "t0": low_band_tail(raw), "t1": low_band_tail(y)})
-    bgm = make_bgm()
-    if len(bgm) != BGM_FRAMES:
-        errors.append(f"bgm: 디코딩 표본 {len(bgm)}, 기준 {BGM_FRAMES}")
     write_graph(before, after)
-    write_report(rows, bgm)
+    write_report(rows)
     for r in rows:
         print(f"{r['name']:6} {r['len']:.3f}초 중심 {r['c']:.0f}Hz A {r['a']:.1f}dB 피크 {r['peak']:.1f}dBFS 끝저음 {r['t0']:.1f}→{r['t1']:.1f}dBFS")
-    print(f"bgm    {len(bgm)}표본 {len(bgm) / SR:.4f}초")
     for e in errors:
         print("실패:", e, file=sys.stderr)
     return 1 if errors else 0

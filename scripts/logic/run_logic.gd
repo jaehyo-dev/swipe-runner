@@ -5,7 +5,7 @@ extends RefCounted
 const LANE_COUNT := 3
 const LANE_WIDTH := 1.5
 const START_LANE := 1
-## 장애물이 다가오는 일정한 속도 (월드 단위/초). 속도 상승은 이후 버전.
+## 100BPM일 때 세상이 다가오는 속도 (월드 단위/초). 속도 = SPEED × BPM ÷ 100 (MusicLadder)
 const SPEED := 9.0
 
 
@@ -17,8 +17,3 @@ static func move_lane(lane: int, direction: int) -> int:
 ## 레인 번호의 가로 좌표 (가운데 레인이 0)
 static func lane_x(lane: int) -> float:
 	return (lane - (LANE_COUNT - 1) / 2.0) * LANE_WIDTH
-
-
-## 달린 시간(초)으로 만든 거리. 화면에는 정수로 보인다.
-static func distance(elapsed: float) -> int:
-	return int(elapsed * SPEED)

@@ -23,11 +23,6 @@ func _init(seed_value: int, first_beat: int) -> void:
 	beat = first_beat
 
 
-## start_time 뒤 lead초 이상 지난 첫 마디 첫 박
-static func first_beat(start_time: float, lead: float) -> int:
-	return ceili((start_time + lead) / BeatClock.BAR) * BeatClock.BEATS_PER_BAR
-
-
 static func is_intro(at_beat: int) -> bool:
 	return posmod(at_beat, BeatClock.BEATS_PER_BAR * BeatClock.LOOP_BARS) < BeatClock.BEATS_PER_BAR * INTRO_BARS
 

@@ -13,13 +13,6 @@ func _sequence(seed_value: int, count: int, first := 0) -> Array[Dictionary]:
 	return items
 
 
-func test_첫_박은_항상_마디_첫_박() -> void:
-	for t in [0.0, 0.1, 7.3, 38.39, 100.0]:
-		var beat := BeatPattern.first_beat(t, 6.67)
-		assert_eq(beat % 4, 0, "시각 %f" % t)
-		assert_true(beat * BeatClock.BEAT >= t + 6.67, "시각 %f" % t)
-
-
 func test_간격_규칙_점프_슬라이드_뒤_2박_레인_이동은_1박_이상() -> void:
 	for s in SEEDS:
 		var items := _sequence(s, 3000)
@@ -83,33 +76,50 @@ func test_한_박에_장애물은_하나뿐이라_세_레인이_동시에_막히
 		seen[item["beat"]] = true
 
 
-## 실제 판정·동작 코드로 3분을 달려 본다. 사람이 낼 수 있는 입력만으로 한 번도 부딪히지 않아야 공정하다.
-func test_자동_플레이어가_3분_동안_부딪히지_않음() -> void:
+## 실제 판정·동작 코드로 달려 본다. 사람이 낼 수 있는 입력만으로 한 번도 부딪히지 않아야 공정하다.
+## 시작 단계마다 곡이 오르는 경계까지 게임과 같은 예약 규칙으로 넘고, 130BPM에서 두 바퀴 더 달린다.
+func test_자동_플레이어가_모든_BPM과_경계에서_부딪히지_않음() -> void:
 	var dt := 1.0 / 60.0
 	for s in SEEDS:
-		var field := ObstacleField.new(s)
-		var player := PlayerAction.new()
-		var lane := 1
-		var x := RunLogic.lane_x(lane)
-		var hits := 0
-		var seen := 0
-		for frame in int(180.0 / dt):
-			seen += field.step(dt)["spawned"].size()
-			player.step(dt)
-			var dir := AutoPlayer.decide(field.items, lane, player)
-			match dir:
-				SwipeDetector.Dir.LEFT:
-					lane = RunLogic.move_lane(lane, -1)
-				SwipeDetector.Dir.RIGHT:
-					lane = RunLogic.move_lane(lane, 1)
-				SwipeDetector.Dir.UP:
-					player.jump()
-				SwipeDetector.Dir.DOWN:
-					player.slide()
-			x = move_toward(x, RunLogic.lane_x(lane), RunLogic.LANE_WIDTH / Runner.MOVE_TIME * dt)
-			for item in field.items:
-				if PlayerAction.hits(item["kind"], x - RunLogic.lane_x(item["lane"]), item["z"], player.height(), player.is_ducking()):
-					hits += 1
-					break
-		assert_eq(hits, 0, "시드 %d" % s)
-		assert_true(seen > 120, "장애물 수 %d" % seen)
+		for start in MusicLadder.STEPS.size():
+			var ladder := MusicLadder.new(start)
+			var field := ObstacleField.new(s)
+			var player := PlayerAction.new()
+			var lane := 1
+			var x := RunLogic.lane_x(lane)
+			var hits := 0
+			var crossed := 0
+			var t := 0.0
+			var end := 0.0
+			for step in range(start, MusicLadder.STEPS.size()):
+				end += MusicLadder.lap_time(step)
+			end += MusicLadder.lap_time(MusicLadder.STEPS.size() - 1)
+			while t < end:
+				t += dt
+				ladder.plan(t, AudioManager.SCHEDULE_LEAD, AudioManager.SCHEDULE_MIN, true)
+				field.step(ladder.distance_at(t))
+				player.step(dt)
+				var dir := AutoPlayer.decide(field.items, lane, player, ladder.speed_at(t))
+				match dir:
+					SwipeDetector.Dir.LEFT:
+						lane = RunLogic.move_lane(lane, -1)
+					SwipeDetector.Dir.RIGHT:
+						lane = RunLogic.move_lane(lane, 1)
+					SwipeDetector.Dir.UP:
+						player.jump()
+					SwipeDetector.Dir.DOWN:
+						player.slide()
+				x = move_toward(x, RunLogic.lane_x(lane), RunLogic.LANE_WIDTH / Runner.MOVE_TIME * dt)
+				for item in field.items:
+					if PlayerAction.hits(item["kind"], x - RunLogic.lane_x(item["lane"]), item["z"], player.height(), player.is_ducking()):
+						hits += 1
+						break
+			assert_eq(hits, 0, "시드 %d 시작 %d" % [s, MusicLadder.STEPS[start]["bpm"]])
+			assert_eq(ladder.segments[-1]["step"], MusicLadder.STEPS.size() - 1, "130까지 오름")
+
+
+## 130BPM에서도 패턴이 비워 두는 2박이 동작 시간보다 길어야 연달아 피할 수 있다.
+func test_130BPM의_2박이_점프와_슬라이드보다_김() -> void:
+	var two_beats := MusicLadder.beat_time(MusicLadder.STEPS.size() - 1) * BeatPattern.GAP_AFTER_BIG
+	assert_true(absf(two_beats - 0.923) < 0.001)
+	assert_true(two_beats > PlayerAction.SLIDE_TIME and two_beats > PlayerAction.JUMP_TIME)

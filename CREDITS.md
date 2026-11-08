@@ -24,7 +24,8 @@
 | Impact Sounds (impactGeneric_light_000) | 1.0 | Kenney | CC0 1.0 | https://kenney.nl/assets/impact-sounds | `sfx/land.wav` | 있음 |
 | Interface Sounds (scratch_001, drop_001) | 1.0 | Kenney | CC0 1.0 | https://kenney.nl/assets/interface-sounds | `sfx/land.wav` | 있음 |
 | 40 CC0 water / splash / slime SFX (splash_02) | 받은 날 2026-11-08 | rubberduck | CC0 1.0 (페이지 표시가 근거) | https://opengameart.org/content/40-cc0-water-splash-slime-sfx | `sfx/crash.wav` | 있음 |
-| 레인 이동·점프·슬라이드 효과음, 배경 음악 Jelly Pulse | - | 이 프로젝트 (직접 합성) | 프로젝트 소유 | `review/v0.2.8/` | `sfx/lane.wav`, `jump.wav`, `slide.wav`, `music/bgm.ogg` | - |
+| 레인 이동·점프·슬라이드 효과음 | - | 이 프로젝트 (직접 합성) | 프로젝트 소유 | `review/v0.2.8/` | `sfx/lane.wav`, `jump.wav`, `slide.wav` | - |
+| 배경 음악 Jelly Pulse (원본·A Drive·B Drive+ 7곡) | - | 이 프로젝트 (직접 합성) | 프로젝트 소유 | `tools/make_ladder_music.py` | `music/bgm_*.ogg` | - |
 
 ## 배경 음악 후보 (v0.3.1, 화면 확인 기록)
 
