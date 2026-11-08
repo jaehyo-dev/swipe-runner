@@ -297,15 +297,31 @@ func test_점프는_입력_즉시_뜨고_세로로_약_1_25배_늘어나며_옆�
 	runner.queue_free()
 
 
-func test_점프_꼭대기에서는_둥글고_내려올_때_다시_늘어남() -> void:
-	var runner := _jump_runner()
-	var base: float = runner._body.scale.y
-	var frames := _simulate_actions(runner, {0: "jump"}, 36)
-	var apex: float = frames[17]["y"] / base  # 0.3초 = 꼭대기
-	assert_true(absf(apex - 1.0) < 0.06, "꼭대기에서 둥긂 %f" % apex)
-	var before_land: float = frames[34]["y"] / base
-	assert_true(before_land > 1.05 and before_land < 1.2, "내려올 때 조금 늘어남 %f" % before_land)
-	runner.queue_free()
+func test_공중에서는_화면_키가_폭_이상이고_뜬_직후와_내려올_때_약_1_2에서_1_3() -> void:
+	# 실제 게임 카메라로 본 키/폭 (ART_BIBLE.md 2-4 공중 비율). v0.2.4는 꼭대기 0.87이라 불합격
+	var main: Node3D = load("res://scenes/main.tscn").instantiate()
+	main.seed_value = 136
+	add_child(main)
+	main.set_process(false)
+	await wait_frames()
+	main.runner.running = false  # 달리기 박자를 멈춰 점프 모양만 본다
+	main.apply_swipe(SwipeDetector.Dir.UP)
+	var air: Array[float] = []
+	for f in 120:  # 점프는 0.6초(36프레임): 착지하지 못해도 테스트가 멈추지 않게 상한을 둔다
+		main.advance(1.0 / 60.0)
+		main.runner._process(1.0 / 60.0)
+		if main.runner.lift <= 0.0:
+			break
+		air.append(main.runner.screen_aspect(main._camera))
+	assert_true(air.size() >= 30, "공중 프레임 수 %d" % air.size())
+	for i in air.size():
+		assert_true(air[i] >= 1.0, "공중 %d프레임 키/폭 %f" % [i, air[i]])
+	var takeoff: float = air.slice(0, 6).max()
+	assert_true(takeoff > 1.2 and takeoff < 1.3, "뜬 직후 %f" % takeoff)
+	var apex: float = air[air.size() / 2]
+	assert_true(apex >= 1.0 and apex < takeoff, "꼭대기 %f" % apex)
+	assert_true(air[-1] > 1.2 and air[-1] < 1.3, "착지 직전 %f" % air[-1])
+	main.queue_free()
 
 
 func test_착지는_납작하게_퍼지고_2에서_3번_출렁이며_0_4초_안에_멈춤() -> void:

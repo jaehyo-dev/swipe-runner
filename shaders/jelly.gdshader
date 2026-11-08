@@ -19,7 +19,8 @@ uniform float ground_dark = 0.55;   // 바닥에 닿은 부분이 진해지는 �
 uniform float refraction = 0.025;   // 굴절 세기 (화면 비율, 0 = 휘지 않음)
 uniform float ripple = 0.006;       // 표면 물결 높이
 uniform float bubble_strength = 0.8;
-uniform vec3 transmit_tint : source_color = vec3(0.18, 1.0, 0.58);  // 몸을 통과해 보이는 뒤 화면이 물드는 색 (보라 배경이 회색·초록이 아니라 하늘빛 민트로 섞이게)
+uniform vec3 transmit_tint : source_color = vec3(0.18, 1.0, 0.58);  // 몸을 통과해 보이는 어두운 뒤 화면이 물드는 색 (보라 배경이 회색·초록이 아니라 하늘빛 민트로 섞이게)
+uniform vec3 line_tint : source_color = vec3(0.6, 1.0, 1.0);        // 비쳐 보이는 밝은 길 선의 색: 위 색을 곱하면 파랑이 빠져 진한 초록 줄이 되므로 하늘빛 민트로 따로 칠한다
 
 // --- 색 (ART_BIBLE.md 팔레트) ---
 uniform vec3 rim_color : source_color = vec3(0.784, 1.0, 0.980);   // #C8FFFA 얇은 가장자리
@@ -118,7 +119,9 @@ void fragment() {
 	col += vec3(hl) * 2.4;
 
 	// 굴절: 가운데(두꺼운 곳)일수록 뒤 화면을 법선 쪽으로 휘어 읽는다 (렌즈처럼)
-	vec3 behind = texture(screen_tex, SCREEN_UV - n.xy * refraction * (1.0 - f)).rgb * transmit_tint;
+	vec3 back = texture(screen_tex, SCREEN_UV - n.xy * refraction * (1.0 - f)).rgb;
+	float lum = max(back.g, back.b);
+	vec3 behind = mix(back * transmit_tint, line_tint * lum, smoothstep(0.35, 0.8, lum));  // 어두운 배경은 물들이고 밝은 선은 밝기만 살려 하늘빛 민트로
 	float alpha = clamp(mix(alpha_center, alpha_edge, smoothstep(0.5, 0.95, f)) + ground * 0.4 + min(core, 1.0) * 0.5 + hl + bub * 0.5, 0.0, 1.0);
 	ALBEDO = mix(behind, col, alpha);
 }

@@ -23,10 +23,12 @@ const SHADOW_SIZE := 2.26 # 발밑 판 지름: 접촉 그림자 + 몸 둘레 빛
 ## 점프 모양: 세로 늘어남(1 = 보통) 하나를 스프링으로 움직인다. 옆 폭은 1/√(세로)로 줄어 부피가 유지되는 느낌.
 ## 순간(뛰기·꼭대기·착지)에는 스프링 속도를 툭 쳐서(킥) 모양이 한 프레임에 튀지 않고 이어진다.
 const SHAPE_STIFF := 900.0       # 모양 스프링 세기 (900 ≈ 초당 5번 출렁)
-const JUMP_STRETCH_KICK := 16.0  # 뛰는 순간 세로로 늘어나는 세기 (조절: 16 ≈ 1.25배)
-const JUMP_APEX_KICK := 2.0      # 꼭대기에서 동그랗게 살짝 출렁이는 세기
-const JUMP_FALL_STRETCH := 0.12  # 내려올 때 세로로 늘어나는 정도 (착지 직전 약 1.1배)
-const AIR_DAMP := 30.0           # 공중 감쇠: 커서 올라가며 금방 둥글게 돌아옴
+## 공중 비율(ART_BIBLE.md 2-4): 화면에서 보이는 키/폭이 공중 내내 1.0 이상. 뜬 직후 약 1.22, 꼭대기 약 1.09, 착지 직전 약 1.26 (screen_aspect)
+const AIR_STRETCH := 0.18        # 공중 내내 세로로 늘어난 기본값: 꼭대기에서도 넓적한 렌즈가 아닌 동그란 물방울 (조절: 클수록 꼭대기가 길쭉)
+const JUMP_STRETCH_KICK := 9.0   # 뛰는 순간 기본값 위로 더 늘어나는 세기 (조절: 9 ≈ 세로 1.25배)
+const JUMP_APEX_KICK := 1.0      # 꼭대기에서 살짝 출렁이는 세기
+const JUMP_FALL_STRETCH := 0.15  # 내려올 때 기본값 위로 더 늘어나는 정도 (착지 직전 약 1.33배)
+const AIR_DAMP := 30.0           # 공중 감쇠: 뜬 직후 늘어남이 금방 기본값으로 돌아옴
 const LAND_SQUASH_KICK := 16.0   # 착지 순간 납작해지는 세기 (조절: 16 ≈ 키 0.72배)
 const LAND_WOBBLE_DAMP := 18.0   # 착지 출렁임 감쇠 (조절: 작을수록 더 세고 오래 출렁임, 18 ≈ 2~3번 출렁이고 0.4초에 멈춤)
 ## 슬라이드 모양: 앞으로 미끄러지는 액체
@@ -110,6 +112,28 @@ static func _blob_point(t: float, angle: float) -> Vector3:
 	return Vector3(cos(angle) * r, t * BODY_HEIGHT, sin(angle) * r)
 
 
+## 화면에서 보이는 몸의 키/폭: 몸 표면 점(셰이더의 둥근 바닥까지 반영)을 카메라로 투영한 테두리 상자 비율.
+## 표면 물결·출렁임 기울기는 작아서 뺀다. 테스트와 화면 확인 기록(review/)에서 쓴다.
+func screen_aspect(cam: Camera3D) -> float:
+	var k := FOOT_RATIO * smoothstep(0.0, 1.0, _flat)
+	var lo := Vector2(INF, INF)
+	var hi := -lo
+	for i in 33:
+		var t := i / 32.0
+		var c := 1.0 - minf(t / WIDEST_T, 1.0)
+		var s := sqrt(1.0 - c * c)
+		for j in 32:
+			var p := _blob_point(t, TAU * j / 32)
+			if t < WIDEST_T:  # jelly.gdshader vertex()와 같은 바닥 둥글기
+				var m := (k + (1.0 - k) * s) / (FOOT_RATIO + (1.0 - FOOT_RATIO) * s)
+				p.x *= m
+				p.z *= m
+			var q := cam.unproject_position(_body.global_transform * p)
+			lo = lo.min(q)
+			hi = hi.max(q)
+	return (hi.y - lo.y) / (hi.x - lo.x)
+
+
 func _ready() -> void:
 	_mat = ShaderMaterial.new()
 	_mat.shader = preload("res://shaders/jelly.gdshader")
@@ -178,7 +202,7 @@ func step_shape(delta: float) -> void:
 	_prev_lift = lift
 	_prev_lift_vel = vy
 	var v0 := 4.0 * PlayerAction.JUMP_HEIGHT / PlayerAction.JUMP_TIME  # 뛰는 순간 속도
-	var target := JUMP_FALL_STRETCH * maxf(-vy, 0.0) / v0 if air else 0.0
+	var target := AIR_STRETCH + JUMP_FALL_STRETCH * maxf(-vy, 0.0) / v0 if air else 0.0
 	var damp := AIR_DAMP if air else LAND_WOBBLE_DAMP
 	var spread_target := (SLIDE_STRETCH - 1.0) * _crouch_vis
 	var steps := ceili(delta / 0.004)
