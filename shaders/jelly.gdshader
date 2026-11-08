@@ -39,7 +39,8 @@ uniform float rim_wave = 0.0; // 착지 팬케이크 테두리 물결 세기 (�
 uniform float beat = 0.0;    // 달리기 박자 위상
 uniform float flat_bottom = 1.0;  // 바닥 평평함: 1 = 땅에 닿은 평평한 푸딩 바닥, 0 = 공중의 둥근 물방울 바닥 (ART_BIBLE.md 2-4)
 uniform float foot_ratio = 0.8;   // runner.gd FOOT_RATIO: 메시의 평평한 바닥 반지름 비율
-uniform float widest_t = 0.375;   // runner.gd WIDEST_T: 가장 넓은 높이 비율 (이 아래만 둥글게 바꾼다)
+uniform float widest_t = 0.375;   // runner.gd WIDEST_T: 메시(땅 위)의 가장 넓은 높이 비율. 0 이하면 몸 모양 바꾸기를 끈다(물방울)
+uniform float air_widest_t = 0.49; // runner.gd AIR_WIDEST_T: 공중의 가장 넓은 높이 비율 (ART_BIBLE.md 2-4 계란형)
 
 varying vec3 lp;  // 출렁이기 전 몸 좌표: 반사광·기포가 표면에 붙어 같이 흔들린다
 
@@ -47,26 +48,48 @@ float ring(float d, float r, float w) {
 	return smoothstep(r - w * 2.0, r - w, d) * (1.0 - smoothstep(r, r + w, d));
 }
 
+// 높이 비율 t의 반지름 / 가장 넓은 반지름. wt = 가장 넓은 높이 비율, k = 바닥 평평함. runner.gd _profile과 같은 식
+float profile(float t, float wt, float k) {
+	if (t < wt) {
+		float c = 1.0 - t / wt;
+		return k + (1.0 - k) * sqrt(max(1.0 - c * c, 0.0));
+	}
+	float u = (t - wt) / (1.0 - wt);
+	return sqrt(max(1.0 - u * u, 0.0));
+}
+
 void vertex() {
-	// 바닥 둥글기: 메시는 평평한 바닥(반지름 = 가장 넓은 폭 × foot_ratio)으로 만들어져 있다.
-	// 가장 넓은 곳 아래의 반지름을 R·(k + (1-k)·√(1-c²))로 바꾼다. k = foot_ratio·flat_bottom, k=0이면 아래가 타원으로 둥글게 닫힌다.
-	// runner.gd _blob_point와 같은 식이라 flat_bottom = 1이면 메시 그대로다. 바닥 원판은 반지름이 k배로 줄어 한 점이 된다.
-	float wh = widest_t * height;
-	if (VERTEX.y < wh) {
-		float c = 1.0 - VERTEX.y / wh;
-		float s = sqrt(max(1.0 - c * c, 0.0));
+	// 공중 계란형: flat_bottom이 0으로 가면 가장 넓은 높이가 air_widest_t로 올라가고 바닥이 타원으로 둥글게 닫힌다.
+	// 메시 반지름에 (지금 모양 / 땅 위 모양)을 곱하므로 flat_bottom = 1이면 배율이 정확히 1이다. 바닥 원판은 반지름이 k배로 줄어 한 점이 된다.
+	if (widest_t > 0.0) {
+		float t0 = clamp(VERTEX.y / height, 0.0, 1.0);
+		// 공중에서는 층을 양 끝으로 모은다: 층 간격이 같으면 타원 끝의 첫 층이 넓게 벌어져 바닥·정수리에 납작한 면이 보인다
+		float t = mix(0.5 - 0.5 * cos(PI * t0), t0, flat_bottom);
+		float wt = mix(air_widest_t, widest_t, flat_bottom);
 		float k = foot_ratio * flat_bottom;
-		VERTEX.xz *= (k + (1.0 - k) * s) / (foot_ratio + (1.0 - foot_ratio) * s);
-		// 회전체 법선 (cosθ, -dr/dy, sinθ)에 s·wh를 곱한 꼴: 맨 아래(s=0)에서도 나눗셈 없이 아래를 향한다
+		VERTEX.xz *= profile(t, wt, k) / max(profile(t0, widest_t, foot_ratio), 1e-5);
+		VERTEX.y = t * height;
 		vec2 d = VERTEX.xz / max(length(VERTEX.xz), 1e-5);
-		NORMAL = normalize(vec3(d.x * s * wh, -radius * (1.0 - k) * c, d.y * s * wh));
+		// 회전체 법선 (cosθ, -dr/dy, sinθ)에 s·반쪽 높이를 곱한 꼴: 맨 아래·맨 위(s=0)에서도 나눗셈 없이 위아래를 향한다
+		if (t < wt) {
+			float wh = wt * height;
+			float c = 1.0 - t / wt;
+			float s = sqrt(max(1.0 - c * c, 0.0));
+			NORMAL = normalize(vec3(d.x * s * wh, -radius * (1.0 - k) * c, d.y * s * wh));
+		} else if (flat_bottom < 1.0) {  // 돔: 땅 위에서는 메시 법선 그대로
+			float dh = (1.0 - wt) * height;
+			float u = (t - wt) / (1.0 - wt);
+			float s = sqrt(max(1.0 - u * u, 0.0));
+			NORMAL = normalize(mix(vec3(d.x * s * dh, radius * u, d.y * s * dh), NORMAL, flat_bottom));
+		}
 	}
 	lp = VERTEX;
 	float vy = clamp(VERTEX.y / height, 0.0, 1.0);
 	// 표면 물결: 서로 다른 두 물결을 겹쳐 계속 일렁이게. 바닥은 땅에 붙어 있게 움직이지 않는다
 	float ang = atan(VERTEX.z, VERTEX.x);
 	float w = sin(ang * 3.0 + vy * 9.0 + TIME * 5.0) * 0.6 + sin(ang * 5.0 - vy * 6.0 - TIME * 6.5) * 0.4;
-	VERTEX += NORMAL * w * ripple * smoothstep(0.05, 0.3, vy);
+	// 공중에서는 정수리 끝도 고정한다: 층이 촘촘해져 맨 끝 점의 물결이 작은 패임으로 보인다
+	VERTEX += NORMAL * w * ripple * smoothstep(0.05, 0.3, vy) * mix(1.0 - smoothstep(0.85, 1.0, vy), 1.0, flat_bottom);
 	// 팬케이크 테두리 물결: 아래쪽 둘레가 살짝 들쭉날쭉 일렁인다
 	VERTEX.xz *= 1.0 + rim_wave * sin(ang * 7.0 + TIME * 9.0) * (1.0 - vy);
 	// 높이별 기울기: 바닥은 그대로, 위로 갈수록 크게 밀린다 (푸딩처럼 위가 늦게 따라옴)

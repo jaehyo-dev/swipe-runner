@@ -8,6 +8,9 @@ const BODY_RADIUS := 0.5            # 가장 넓은 곳의 반지름: 폭 약 1.
 const BODY_HEIGHT := 0.8            # 아래(0)에서 위 끝까지
 const WIDEST_T := 0.375             # 가장 넓은 높이 비율: 그 위 돔 높이(0.5)가 반지름과 같아 반구처럼 둥글다
 const FOOT_RATIO := 0.8             # 땅에 닿는 바닥 반지름 / 가장 넓은 반지름 (푸딩처럼 넓고 평평한 바닥)
+## 공중 계란형 (ART_BIBLE.md 2-4): 가장 넓은 높이 비율 (조절: 0.45~0.5). 바닥이 y=0에 있어 아래 깊이/위 돔은 이 값으로 정해진다
+const AIR_WIDEST_T := 0.49
+const AIR_LOWER_DEPTH := AIR_WIDEST_T / (1.0 - AIR_WIDEST_T)  # 아래 둥근 깊이 / 위 돔 높이 = 0.96 (시차가 가장 클 때도 0.9 이상)
 const SQUASH_SCALE := 0.35 # 눌림·늘어남 폭 배율 (1.0 = v0.1.5 이전의 큰 눌림)
 const MOVE_TIME := 0.18   # 레인 이동 시간(초): 처음과 끝이 부드러운 푸딩 같은 이동
 const STEP_RATE := 9.0    # 튀는 박자 속도 (라디안/초)
@@ -127,35 +130,45 @@ static func build_body_mesh(rings: int = 32, segments: int = 32) -> ArrayMesh:
 
 static func _blob_point(t: float, angle: float) -> Vector3:
 	# 아래 모서리: 1/4 타원. t=0에서 바닥과 수평으로 이어지고 가장 넓은 곳에서 수직이 되어 돔과 매끈하게 붙는다
-	var c := 1.0 - minf(t / WIDEST_T, 1.0)
-	var r := BODY_RADIUS * (FOOT_RATIO + (1.0 - FOOT_RATIO) * sqrt(1.0 - c * c))
-	if t > WIDEST_T:
-		var u := (t - WIDEST_T) / (1.0 - WIDEST_T)
-		r = BODY_RADIUS * sqrt(1.0 - u * u)  # 타원 돔: 맨 위가 뾰족하지 않고 둥글다
+	var r := BODY_RADIUS * _profile(t, 1.0)
 	return Vector3(cos(angle) * r, t * BODY_HEIGHT, sin(angle) * r)
+
+
+## 높이 비율 t의 반지름 / 가장 넓은 반지름. flat = 1이면 땅 위 찹쌀떡, 0이면 공중 계란형. jelly.gdshader profile과 같은 식
+static func _profile(t: float, flat: float) -> float:
+	var w := lerpf(AIR_WIDEST_T, WIDEST_T, flat)
+	if t < w:
+		var c := 1.0 - t / w
+		var k := FOOT_RATIO * flat
+		return k + (1.0 - k) * sqrt(1.0 - c * c)
+	var u := (t - w) / (1.0 - w)
+	return sqrt(maxf(1.0 - u * u, 0.0))  # 타원 돔: 맨 위가 뾰족하지 않고 둥글다
 
 
 ## 화면에서 보이는 몸의 키/폭: 몸 표면 점(셰이더의 둥근 바닥까지 반영)을 카메라로 투영한 테두리 상자 비율.
 ## 표면 물결·출렁임 기울기는 작아서 뺀다. 테스트와 화면 확인 기록(review/)에서 쓴다.
 func screen_aspect(cam: Camera3D) -> float:
-	var k := FOOT_RATIO * smoothstep(0.0, 1.0, _flat)
+	var flat := smoothstep(0.0, 1.0, _flat)
 	var lo := Vector2(INF, INF)
 	var hi := -lo
 	for i in 33:
 		var t := i / 32.0
-		var c := 1.0 - minf(t / WIDEST_T, 1.0)
-		var s := sqrt(1.0 - c * c)
+		var r := BODY_RADIUS * _profile(t, flat)
+		var y := t * BODY_HEIGHT + sag() * t * t  # 셰이더와 같은 위아래 시차
 		for j in 32:
-			var p := _blob_point(t, TAU * j / 32)
-			if t < WIDEST_T:  # jelly.gdshader vertex()와 같은 바닥 둥글기
-				var m := (k + (1.0 - k) * s) / (FOOT_RATIO + (1.0 - FOOT_RATIO) * s)
-				p.x *= m
-				p.z *= m
-			p.y += sag() * t * t  # 셰이더와 같은 위아래 시차
-			var q := cam.unproject_position(_body.global_transform * p)
+			var a := TAU * j / 32
+			var q := cam.unproject_position(_body.global_transform * Vector3(cos(a) * r, y, sin(a) * r))
 			lo = lo.min(q)
 			hi = hi.max(q)
 	return (hi.y - lo.y) / (hi.x - lo.x)
+
+
+## 지금 몸 모양 측정 (시차 포함, 몸 좌표): x = 가장 넓은 높이 / 몸 높이, y = 아래 둥근 깊이 / 위 돔 높이. 테스트와 review/ 기록에서 쓴다.
+func body_shape() -> Vector2:
+	var w := lerpf(AIR_WIDEST_T, WIDEST_T, smoothstep(0.0, 1.0, _flat))
+	var top := BODY_HEIGHT + sag()
+	var wide_y := w * BODY_HEIGHT + sag() * w * w
+	return Vector2(wide_y / top, wide_y / (top - wide_y))
 
 
 func _ready() -> void:
@@ -165,6 +178,7 @@ func _ready() -> void:
 	_mat.set_shader_parameter("radius", BODY_RADIUS)
 	_mat.set_shader_parameter("foot_ratio", FOOT_RATIO)
 	_mat.set_shader_parameter("widest_t", WIDEST_T)
+	_mat.set_shader_parameter("air_widest_t", AIR_WIDEST_T)
 	_body = MeshInstance3D.new()
 	_body.mesh = build_body_mesh()
 	_body.material_override = _mat

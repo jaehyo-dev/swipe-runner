@@ -592,3 +592,84 @@ func test_점프_그림자는_꼭대기에서_진하기_약_30퍼센트_크기_�
 	runner._animate()
 	assert_eq(runner._shadow_mat.get_shader_parameter("opacity"), 1.0, "착지하면 다시 진함")
 	runner.queue_free()
+
+
+## 공중 프레임마다 몸 모양을 모은다: {flat, shape(body_shape)}. 달리기 박자는 켠 실제 게임 상태
+func _air_shapes() -> Array[Dictionary]:
+	var main: Node3D = load("res://scenes/main.tscn").instantiate()
+	main.seed_value = 136
+	add_child(main)
+	main.set_process(false)
+	await wait_frames()
+	main.apply_swipe(SwipeDetector.Dir.UP)
+	var air: Array[Dictionary] = []
+	for f in 200:
+		main.advance(1.0 / 60.0)
+		main.runner._process(1.0 / 60.0)
+		if main.runner.lift <= 0.0:
+			break
+		air.append({"flat": main.runner._flat, "shape": main.runner.body_shape()})
+	main.queue_free()
+	return air
+
+
+func test_공중에서_아래_둥근_깊이는_위_돔의_0_9배_이상이고_가장_넓은_곳은_45에서_50퍼센트() -> void:
+	# ART_BIBLE.md 2-4 계란형. 바닥이 둥글게 말리는 시간(FLAT_CURL_TIME) 뒤 공중 모든 프레임, 위아래 시차까지 포함
+	var air: Array[Dictionary] = await _air_shapes()
+	assert_true(air.size() >= 30, "공중 프레임 수 %d" % air.size())
+	var checked := 0
+	for a in air:
+		if a["flat"] > 0.0:
+			continue
+		checked += 1
+		assert_true(a["shape"].y >= 0.9, "아래 깊이/위 돔 %f" % a["shape"].y)
+		assert_true(a["shape"].x >= 0.45 and a["shape"].x <= 0.5, "가장 넓은 높이 %f" % a["shape"].x)
+	assert_true(checked >= 25, "둥글어진 공중 프레임 수 %d" % checked)
+	assert_true(air[air.size() / 2]["flat"] == 0.0, "꼭대기에서는 다 둥글어짐")
+
+
+func test_시차가_가장_클_때도_아래_둥근_깊이는_위_돔의_0_9배_이상() -> void:
+	var runner := Runner.new()
+	add_child(runner)
+	runner._flat = 0.0
+	assert_true(absf(runner.body_shape().y - Runner.AIR_LOWER_DEPTH) < 1e-6, "시차 없을 때 %f" % runner.body_shape().y)
+	runner._sag = Runner.SAG_MAX / Runner.SAG_GAIN  # 윗부분이 가장 위로 밀림 = 위 돔이 가장 길다
+	assert_true(runner.body_shape().y >= 0.9, "최대 시차 %f" % runner.body_shape().y)
+	runner.queue_free()
+
+
+func test_땅_위_모양은_v0_2_6과_같음() -> void:
+	# v0.2.6 _blob_point 식을 그대로 옮겨 비교: 가장 넓은 곳 37.5%, 평평한 바닥 80%
+	for i in 257:
+		var t := i / 256.0
+		var c := 1.0 - minf(t / 0.375, 1.0)
+		var expected := 0.8 + 0.2 * sqrt(1.0 - c * c)
+		if t > 0.375:
+			var u := (t - 0.375) / 0.625
+			expected = sqrt(1.0 - u * u)
+		assert_true(absf(Runner._profile(t, 1.0) - expected) < 1e-6, "t=%f: %f != %f" % [t, Runner._profile(t, 1.0), expected])
+		assert_true(absf(Runner._blob_point(t, 0.0).x - expected * Runner.BODY_RADIUS) < 1e-6, "메시 t=%f" % t)
+	var runner := Runner.new()
+	add_child(runner)
+	assert_true(absf(runner.body_shape().x - 0.375) < 1e-6, "땅 위 가장 넓은 높이 %f" % runner.body_shape().x)
+	assert_true(runner._mat.get_shader_parameter("air_widest_t") == Runner.AIR_WIDEST_T, "셰이더에 공중 값 전달")
+	runner.queue_free()
+
+
+func test_공중_모양은_뜰때와_착지할때_툭_튀지_않음() -> void:
+	# 프로필 전체(높이별 반지름)가 프레임마다 조금씩만 바뀐다: 뜰 때 0.1초, 착지 0.05초에 걸친 flat 변화
+	var runner := Runner.new()
+	add_child(runner)
+	for air in [true, false]:
+		runner.lift = 1.0 if air else 0.0
+		var prev := smoothstep(0.0, 1.0, runner._flat)
+		for f in 12:
+			runner.step_shape(1.0 / 60.0)
+			var now := smoothstep(0.0, 1.0, runner._flat)
+			for i in 65:
+				var d := absf(Runner._profile(i / 64.0, now) - Runner._profile(i / 64.0, prev))
+				# 맨 아래·맨 위 끝은 √ 곡선이라 원래 빠르게 바뀌므로 몸통(높이 10~90%)만 본다
+				if i >= 7 and i <= 57:
+					assert_true(d < 0.2, "%s %d프레임 t=%f 변화 %f" % ["뜰 때" if air else "착지", f, i / 64.0, d])
+			prev = now
+	runner.queue_free()
