@@ -39,6 +39,10 @@ func test_내보내기_결과물_폴더는_리소스로_가져오지_않음() ->
 	assert_true(FileAccess.file_exists("res://build/.gdignore"), "build/.gdignore")
 
 
+func test_화면_확인_기록과_소리_후보는_웹_빌드에_들어가지_않음() -> void:
+	assert_true(FileAccess.file_exists("res://review/.gdignore"), "review/.gdignore")
+
+
 func test_시작_씬이_존재함() -> void:
 	var main_scene := str(ProjectSettings.get_setting("application/run/main_scene", ""))
 	assert_eq(main_scene, "res://scenes/main.tscn")

@@ -673,3 +673,37 @@ func test_공중_모양은_뜰때와_착지할때_툭_튀지_않음() -> void:
 					assert_true(d < 0.2, "%s %d프레임 t=%f 변화 %f" % ["뜰 때" if air else "착지", f, i / 64.0, d])
 			prev = now
 	runner.queue_free()
+
+
+# ---------- 공중 아래 스와이프 모양 ----------
+
+func test_공중_아래_스와이프는_아래로_늘어나고_팬케이크_없이_슬라이드() -> void:
+	var main: Node3D = load("res://scenes/main.tscn").instantiate()
+	main.seed_value = 136
+	add_child(main)
+	main.set_process(false)
+	await wait_frames()
+	main.runner.set_process(false)
+	main.runner.running = false
+	main.apply_swipe(SwipeDetector.Dir.UP)
+	for i in 18:  # 꼭대기까지
+		main.advance(1.0 / 60.0)
+		main.runner._process(1.0 / 60.0)
+	main.apply_swipe(SwipeDetector.Dir.DOWN)
+	var peak := 0.0
+	var natural_max := 1.47  # 보통 점프 키 배율 상한 근처
+	while main.player.is_dropping():
+		main.advance(1.0 / 60.0)
+		main.runner._process(1.0 / 60.0)
+		peak = maxf(peak, main.runner._body.scale.y)
+	assert_true(peak > natural_max, "보통 점프보다 더 쭉 늘어남 %f" % peak)
+	assert_true(main.player.is_sliding(), "닿자마자 슬라이드")
+	assert_eq(main.runner._land_t, -1.0, "팬케이크 건너뜀")
+	var body: MeshInstance3D = main.runner._body
+	for i in 6:  # 0.1초 안에 슬라이드 모양
+		main.advance(1.0 / 60.0)
+		main.runner._process(1.0 / 60.0)
+	assert_true(absf(body.scale.y - Runner.SLIDE_SQUASH) < 0.02, "녹아 흐르는 키 %f" % body.scale.y)
+	assert_true(absf(body.scale.x - Runner.SLIDE_WIDEN) < 0.06, "옆으로 퍼짐 %f" % body.scale.x)
+	assert_eq(main.runner._land_t, -1.0, "슬라이드 내내 팬케이크 없음")
+	main.queue_free()

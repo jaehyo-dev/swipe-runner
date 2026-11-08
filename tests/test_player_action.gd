@@ -14,14 +14,13 @@ func test_점프는_포물선이고_끝나면_땅으로() -> void:
 	assert_eq(a.height(), 0.0)
 
 
-func test_점프_중_또_점프하거나_슬라이드는_무시() -> void:
+func test_점프_중_또_점프해도_점프가_다시_시작되지_않음() -> void:
 	var a := PlayerAction.new()
 	a.jump()
 	a.step(0.2)
 	var h := a.height()
 	a.jump()
-	a.slide()
-	assert_eq(a.height(), h, "점프가 다시 시작되지 않음")
+	assert_eq(a.height(), h)
 	assert_false(a.is_sliding())
 
 
@@ -91,3 +90,162 @@ func test_판정_값은_v0_2_0과_같음() -> void:
 	assert_eq(PlayerAction.CROUCH_SCALE, 0.45, "슬라이드 판정 높이 배율")
 	assert_eq(PlayerAction.HIT_X, 0.7, "충돌 범위 좌우")
 	assert_eq(PlayerAction.HIT_Z, 0.7, "충돌 범위 앞뒤")
+	assert_eq(PlayerAction.BUFFER_TIME, 0.15, "입력 저장 시간")
+	assert_eq(ObstacleField.LOW_TOP, 0.45, "허들 윗면")
+	assert_eq(ObstacleField.HIGH_BOTTOM, 0.62, "막대 아랫면")
+
+
+# ---------- 공중 아래 스와이프 ----------
+
+## 점프 후 t초에 아래로 밀고 땅에 닿을 때까지 걸린 시간을 돌려준다
+func _drop_time(t: float) -> float:
+	var a := PlayerAction.new()
+	a.jump()
+	a.step(t)
+	a.slide()
+	var took := 0.0
+	while a.is_dropping():
+		a.step(0.001)
+		took += 0.001
+	return took
+
+
+func test_공중_아래_스와이프는_빠르게_떨어지고_닿자마자_슬라이드() -> void:
+	var a := PlayerAction.new()
+	a.jump()
+	a.step(0.3)
+	a.slide()
+	assert_true(a.is_dropping())
+	assert_false(a.is_sliding(), "닿기 전엔 아직 슬라이드 아님")
+	var last := a.height()
+	while a.is_dropping():
+		a.step(1.0 / 60.0)
+		assert_true(a.height() < last, "계속 내려감")
+		last = a.height()
+	assert_true(a.is_sliding(), "닿은 프레임에 슬라이드")
+	assert_false(a.is_jumping())
+	assert_eq(a.height(), 0.0)
+	assert_eq(a.crouch(), 1.0, "시작부터 낮아져 있음")
+	assert_true(a.is_ducking(), "닿은 프레임부터 막대 아래를 지남")
+
+
+func test_떨어지는_시간은_0_1에서_0_15초() -> void:
+	for t: float in [0.05, 0.1, 0.2, 0.3, 0.4]:
+		var took := _drop_time(t)
+		assert_true(took >= 0.1 - 0.002 and took <= 0.15 + 0.002, "%.2f초에 밀면 %.3f초" % [t, took])
+	assert_true(absf(_drop_time(0.3) - 0.15) < 0.002, "꼭대기에서 0.15초")
+
+
+func test_착지_직전에_밀어도_원래_착지보다_늦어지지_않음() -> void:
+	var took := _drop_time(PlayerAction.JUMP_TIME - 0.03)
+	assert_true(took <= 0.03 + 0.002, "%.3f초" % took)
+
+
+func test_슬라이드_시간은_땅에_닿은_때부터_0_65초() -> void:
+	var a := PlayerAction.new()
+	a.jump()
+	a.step(0.3)
+	a.slide()
+	while a.is_dropping():
+		a.step(0.01)
+	a.step(PlayerAction.SLIDE_TIME - 0.02)
+	assert_true(a.is_sliding(), "아직 슬라이드")
+	a.step(0.03)
+	assert_false(a.is_sliding(), "0.65초에 끝남")
+
+
+func test_떨어지는_동안_판정() -> void:
+	var a := PlayerAction.new()
+	a.jump()
+	a.step(0.3)
+	a.slide()
+	a.step(0.1)
+	assert_true(a.is_ducking(), "막대: 입력 순간부터 지나감")
+	assert_false(PlayerAction.hits(Kind.HIGH, 0.0, 0.0, a.height(), a.is_ducking()))
+	assert_true(PlayerAction.hits(Kind.BLOCK, 0.0, 0.0, a.height(), a.is_ducking()), "블록은 그대로 부딪힘")
+	assert_true(PlayerAction.hits(Kind.LOW, 0.0, 0.0, 0.1, a.is_ducking()), "허들: 낮아지면 부딪힘")
+	assert_true(PlayerAction.clears_on_drop(Kind.LOW, 0.0, 0.0, 1.0), "넘고 있던 허들은 봐줌")
+	assert_false(PlayerAction.clears_on_drop(Kind.LOW, 0.0, -3.0, 1.0), "아직 먼 허들은 봐주지 않음")
+	assert_false(PlayerAction.clears_on_drop(Kind.LOW, 0.0, 0.0, 0.2), "넘지 못한 높이")
+	assert_false(PlayerAction.clears_on_drop(Kind.BLOCK, 0.0, 0.0, 1.0), "블록은 봐주지 않음")
+
+
+func test_보통_착지는_슬라이드가_되지_않음() -> void:
+	var a := PlayerAction.new()
+	a.jump()
+	a.step(PlayerAction.JUMP_TIME + 0.01)
+	assert_false(a.is_jumping())
+	assert_false(a.is_sliding())
+
+
+# ---------- 입력 저장 ----------
+
+## 착지 before초 전에 점프 입력을 넣고 착지시킨다
+func _buffered_jump(before: float) -> PlayerAction:
+	var a := PlayerAction.new()
+	a.jump()
+	a.step(PlayerAction.JUMP_TIME - before)
+	a.jump()
+	a.step(before)
+	return a
+
+
+func test_착지_0_15초_안에_넣은_점프는_닿자마자_실행() -> void:
+	var a := _buffered_jump(0.14)
+	assert_true(a.is_jumping(), "닿은 프레임에 다시 뜀")
+	a.step(0.1)
+	assert_true(a.height() > 0.0)
+
+
+func test_0_15초보다_일찍_넣은_점프는_버림() -> void:
+	assert_false(_buffered_jump(0.16).is_jumping())
+
+
+func test_저장은_하나만_새_입력이_덮어씀() -> void:
+	# 슬라이드 중: 아래를 저장했다가 위가 오면 저장을 지우고 바로 뜀
+	var a := PlayerAction.new()
+	a.slide()
+	a.step(PlayerAction.SLIDE_TIME - 0.1)
+	a.slide()
+	a.jump()
+	assert_true(a.is_jumping(), "슬라이드 중 위는 지금처럼 바로")
+	a.step(PlayerAction.JUMP_TIME + 0.01)
+	assert_false(a.is_sliding(), "지워진 입력은 실행되지 않음")
+	# 떨어지는 중: 위가 슬라이드를 덮어쓰고, 다시 아래가 위를 덮어쓴다
+	var b := PlayerAction.new()
+	b.jump()
+	b.step(0.3)
+	b.slide()
+	b.jump()
+	b.step(0.15)
+	assert_true(b.is_jumping() and not b.is_sliding(), "위가 덮어써서 닿자마자 점프")
+	var c := PlayerAction.new()
+	c.jump()
+	c.step(0.3)
+	c.slide()
+	c.jump()
+	c.slide()
+	c.step(0.15)
+	assert_true(c.is_sliding() and not c.is_jumping(), "다시 아래가 덮어씀")
+
+
+func test_슬라이드_끝_0_15초_안의_아래는_끝나자마자_다시_슬라이드() -> void:
+	var a := PlayerAction.new()
+	a.slide()
+	a.step(PlayerAction.SLIDE_TIME - 0.1)
+	a.slide()
+	a.step(0.1)
+	assert_true(a.is_sliding(), "다시 슬라이드")
+	assert_eq(a.crouch(), 0.0, "끝난 몸에서 다시 낮아짐")
+	var b := PlayerAction.new()
+	b.slide()
+	b.step(PlayerAction.SLIDE_TIME - 0.2)
+	b.slide()
+	b.step(0.2)
+	assert_false(b.is_sliding(), "0.2초 전 입력은 버림")
+
+
+func test_저장된_입력은_한_번만_실행() -> void:
+	var a := _buffered_jump(0.1)
+	a.step(PlayerAction.JUMP_TIME + 0.01)
+	assert_false(a.is_jumping(), "한 번 뛰고 끝")

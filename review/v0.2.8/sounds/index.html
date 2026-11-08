@@ -1,0 +1,159 @@
+<!doctype html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>스와이프 러너 소리 후보</title>
+<style>
+  :root { --bg:#100c2a; --panel:#1c1642; --line:#3a2f73; --text:#eef; --dim:#a9a6d0; --mint:#86e3e6; }
+  * { box-sizing:border-box; }
+  body { margin:0; padding:24px 16px 48px; background:var(--bg); color:var(--text); font:16px/1.5 -apple-system, "Apple SD Gothic Neo", sans-serif; }
+  main { max-width:640px; margin:0 auto; }
+  h1 { font-size:22px; margin:0 0 4px; }
+  h2 { font-size:16px; margin:28px 0 8px; color:var(--mint); }
+  p { margin:0 0 8px; color:var(--dim); font-size:14px; }
+  .row { display:flex; align-items:center; gap:8px; padding:10px 12px; background:var(--panel); border:1px solid var(--line); border-radius:10px; margin-bottom:8px; flex-wrap:wrap; }
+  .row .name { flex:1 1 170px; }
+  .row small { display:block; color:var(--dim); font-size:12px; }
+  button { font:inherit; min-width:48px; min-height:44px; padding:0 14px; color:var(--text); background:#2a2260; border:1px solid var(--line); border-radius:8px; cursor:pointer; }
+  button:hover { border-color:var(--mint); }
+  button.on { background:var(--mint); color:#10233a; border-color:var(--mint); font-weight:600; }
+  label { display:flex; align-items:center; gap:8px; font-size:14px; color:var(--dim); }
+  input[type=range] { flex:1; accent-color:var(--mint); }
+</style>
+</head>
+<body>
+<main>
+  <h1>스와이프 러너 소리 후보 (v0.2.8)</h1>
+  <p>전부 직접 합성한 소리입니다. 게임에는 아직 들어가지 않았습니다. 마음에 드는 것을 종류별로 하나씩 골라 주세요.</p>
+
+  <h2>배경 음악 (100BPM, 38.4초 끊김 없는 반복)</h2>
+  <p>앞 8마디(19.2초)는 북·베이스, 뒤 8마디에 패드와 멜로디가 더해집니다.</p>
+  <div id="bgm"></div>
+  <div class="row"><button id="stop">음악 끄기</button>
+    <label style="flex:1">음악 크기 <input id="bgmVol" type="range" min="0" max="1" step="0.01" value="0.7"></label></div>
+
+  <h2>효과음</h2>
+  <p>A·B·C를 누르면 바로 들리고, 그 소리가 선택됩니다. 음악을 켠 채 누르면 같이 들립니다.</p>
+  <div id="sfx"></div>
+
+  <h2>음악 위에 효과음 같이 듣기</h2>
+  <p>위에서 고른 음악과 효과음으로 플레이하는 것처럼 박자에 맞춰 이동·점프·착지·슬라이드·충돌을 틀어 줍니다. 음악이 꺼져 있으면 1번을 켭니다.</p>
+  <div class="row"><button id="demo">같이 듣기 시작</button></div>
+</main>
+<script src="audio_data.js"></script>
+<script>
+const KINDS = [["lane","레인 이동","물방울 뽁"],["jump","점프","올라가는 뿅"],["slide","슬라이드","말랑한 미끄러짐"],["land","착지","작은 철퍽"],["crash","충돌","유리 팅 + 젤리 철썩"]];
+const BGMS = [["Deep Glass","라단조, 고른 킥과 유리 종"],["Slow Tide","라단조, 느슨한 물결 베이스"],["Jelly Pulse","마단조, 통통 튀는 뒤박 베이스"]];
+const BEAT = 0.6;
+const chosen = {lane:"a",jump:"a",slide:"a",land:"a",crash:"a"};
+let ctx, bgmGain, bgmSource = null, bgmIndex = 0, demoTimer = null;
+const buffers = {};
+
+function audio() {
+  if (!ctx) {
+    ctx = new (window.AudioContext || window.webkitAudioContext)();
+    bgmGain = ctx.createGain();
+    bgmGain.gain.value = +document.getElementById("bgmVol").value;
+    bgmGain.connect(ctx.destination);
+  }
+  if (ctx.state === "suspended") ctx.resume();
+  return ctx;
+}
+
+// 파일을 직접 못 읽는 file:// 에서도 되게 audio_data.js에 담긴 데이터를 푼다. 처음 쓸 때 한 번만
+async function load(path) {
+  if (!buffers[path]) {
+    const bytes = Uint8Array.from(atob(window.SOUND_DATA[path]), c => c.charCodeAt(0));
+    buffers[path] = await audio().decodeAudioData(bytes.buffer);
+  }
+  return buffers[path];
+}
+
+async function playSfx(kind, letter) {
+  const buffer = await load(`sfx/${kind}_${letter}.wav`);
+  const src = audio().createBufferSource();
+  src.buffer = buffer;
+  src.connect(ctx.destination);
+  src.start();
+}
+
+function stopBgm() {
+  if (bgmSource) { bgmSource.stop(); bgmSource = null; }
+  bgmIndex = 0;
+  stopDemo();
+  mark();
+}
+
+async function playBgm(i) {
+  const buffer = await load(`bgm/bgm_${i}.flac`);
+  if (bgmSource) bgmSource.stop();
+  bgmSource = audio().createBufferSource();
+  bgmSource.buffer = buffer;
+  bgmSource.loop = true;  // 표본 단위로 반복되어 이음새가 없다
+  bgmSource.connect(bgmGain);
+  bgmSource.start();
+  bgmIndex = i;
+  mark();
+}
+
+// 8박마다 되풀이: 이동 → 점프(0.6초 뒤 착지) → 이동 → 슬라이드 ... 마지막에 충돌
+const DEMO = [[0,"lane"],[1,"jump"],[2,"land"],[3,"lane"],[4,"slide"],[5,"lane"],[6,"jump"],[7,"crash"]];
+function stopDemo() {
+  clearInterval(demoTimer);
+  demoTimer = null;
+  document.getElementById("demo").textContent = "같이 듣기 시작";
+  document.getElementById("demo").classList.remove("on");
+}
+
+async function startDemo() {
+  if (!bgmSource) await playBgm(1);
+  document.getElementById("demo").textContent = "같이 듣기 멈춤";
+  document.getElementById("demo").classList.add("on");
+  let step = 0;
+  const tick = () => {
+    const hit = DEMO.find(d => d[0] === step % 8);
+    if (hit) playSfx(hit[1], chosen[hit[1]]);
+    step++;
+  };
+  tick();
+  demoTimer = setInterval(tick, BEAT * 1000);
+}
+
+function mark() {
+  document.querySelectorAll("[data-bgm]").forEach(b => b.classList.toggle("on", +b.dataset.bgm === bgmIndex));
+  document.querySelectorAll("[data-kind]").forEach(b => b.classList.toggle("on", chosen[b.dataset.kind] === b.dataset.letter));
+}
+
+BGMS.forEach(([name, note], i) => {
+  const row = document.createElement("div");
+  row.className = "row";
+  row.innerHTML = `<div class="name">${i + 1}. ${name}<small>${note}</small></div>`;
+  const button = document.createElement("button");
+  button.textContent = `${i + 1}번 재생`;
+  button.dataset.bgm = i + 1;
+  button.onclick = () => playBgm(i + 1);
+  row.append(button);
+  document.getElementById("bgm").append(row);
+});
+KINDS.forEach(([kind, name, note]) => {
+  const row = document.createElement("div");
+  row.className = "row";
+  row.innerHTML = `<div class="name">${name}<small>${note}</small></div>`;
+  for (const letter of ["a", "b", "c"]) {
+    const button = document.createElement("button");
+    button.textContent = letter.toUpperCase();
+    button.dataset.kind = kind;
+    button.dataset.letter = letter;
+    button.onclick = () => { chosen[kind] = letter; mark(); playSfx(kind, letter); };
+    row.append(button);
+  }
+  document.getElementById("sfx").append(row);
+});
+document.getElementById("stop").onclick = stopBgm;
+document.getElementById("bgmVol").oninput = e => { if (bgmGain) bgmGain.gain.value = +e.target.value; };
+document.getElementById("demo").onclick = () => demoTimer ? stopDemo() : startDemo();
+mark();
+</script>
+</body>
+</html>

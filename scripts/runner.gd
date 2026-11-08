@@ -31,6 +31,9 @@ const AIR_ROUND := 0.1           # 꼭대기(위아래 속도 0)의 늘어남: �
 const AIR_SPEED_STRETCH := 0.37  # 가장 빠를 때 더해지는 늘어남 (조절: 최대 늘어남, 0.37 ≈ 게임 화면 키/폭 1.4)
 const JUMP_STRETCH_KICK := 14.0  # 뛰는 순간 스프링 속도 킥: 입력한 첫 프레임부터 늘어난다
 const AIR_DAMP := 40.0           # 공중 감쇠: 속도를 거의 바로 따라간다 (꼭대기에서 출렁여 납작해지지 않게)
+## 공중 아래 스와이프: 떨어지는 속도가 점프 최고 속도보다 빠르므로 늘어남 상한을 더 준다 (보통 점프는 속도가 1배를 넘지 않아 값이 그대로)
+const AIR_DROP_SPEED_MAX := 2.0
+const DROP_MELT_TIME := 0.05     # 닿은 뒤 슬라이드 모양으로 녹는 시간(초): 한 프레임에 툭 바뀌지 않게
 ## 착지(원칙 2): 닿는 순간 아래로 킥 → LAND_SQUASH_TIME 동안 팬케이크로 눌림 → 튕김 스프링으로 종 모양 반구 → 1~2번 출렁 → 원래 모양
 const LAND_PANCAKE := 0.25       # 팬케이크 키 배율 (조절: 팬케이크 깊이, 작을수록 납작)
 const LAND_SQUASH_TIME := 0.12   # 닿고 나서 팬케이크까지 눌리는 시간(초): 무게가 내려앉는 구간
@@ -59,6 +62,14 @@ const SLIDE_DRAG := 0.12         # 윗부분이 뒤로 끌리는 거리: 앞쪽�
 const SLIDE_FRONT_RISE := 0.6    # 끝날 때 뒤가 덜 모인 만큼 윗부분이 앞으로 기울어 앞부터 솟는다
 const SPREAD_DAMP := 16.0        # 뒤 따라오기 감쇠: 시작할 때 살짝 넘쳤다 돌아옴
 const SLIDE_END_KICK := 9.0      # 슬라이드가 끝날 때 위로 쭉 올라오는 세기
+## 충돌 (2-5 원칙 7): 장애물 면에 붙은 납작한 모양과 바닥 웅덩이 모양 (시간표는 CrashMotion)
+const CRASH_THIN := 0.3          # 붙었을 때 면과 수직인 두께 배율
+const CRASH_WIDE := 1.55         # 붙었을 때 옆 폭 배율 (옆 레인 장애물과 겹치지 않는 상한)
+const PUDDLE_DEEP := 1.5         # 웅덩이 앞뒤 길이 배율
+const PUDDLE_FLAT := 0.15        # 웅덩이 키 배율
+const REFORM_TIME := 0.3         # 다시 시작: 웅덩이가 모여 젤리가 되는 시간(초)
+const CRASH_DROP_TIME := 0.4     # 충돌 물방울이 튀었다 사라지는 시간(초)
+const CRASH_DROP_HEIGHT := 0.7   # 충돌 물방울이 튀는 높이(m)
 ## 공중 모양 (ART_BIBLE.md 2-4): 바닥 평평함(1 = 땅의 평평한 바닥, 0 = 둥근 물방울 바닥)을 시간에 걸쳐 바꿔 툭 튀지 않게 한다
 const FLAT_CURL_TIME := 0.1      # 뜬 뒤 바닥이 둥글게 말려 올라가는 시간(초) (조절: 작을수록 빨리 둥글어짐)
 const FLAT_SPREAD_TIME := 0.05   # 착지 순간 바닥이 다시 평평하게 퍼지는 시간(초)
@@ -96,6 +107,18 @@ var lift := 0.0
 var crouch := 0.0
 ## false면 달리기 박자가 멈춘다 (게임 오버)
 var running := true
+## 부딪힌 뒤 지난 시간. main이 매 프레임 넣어 준다 (음수 = 충돌 중 아님)
+var crash_t := -1.0
+var _crash := {}  # CrashMotion.contact 결과
+var _crash_from_scale := Vector3.ONE  # 부딪힌 순간 모양 (점프·슬라이드 중이었어도 거기서 이어진다)
+var _crash_from_y := 0.0
+var _crash_from_pos := Vector3.ZERO
+var _crash_from_flat := 1.0
+var _reform_t := -1.0  # 다시 모인 뒤 지난 시간 (음수 = 모이는 중 아님)
+var _reform_from_scale := Vector3.ONE
+var _reform_from_y := 0.0
+var _reform_from_z := 0.0
+var _reform_from_wave := 0.0
 
 
 ## 아래는 넓고 평평한 푸딩 바닥, 위는 둥근 돔. 바닥이 y=0이라 눌려도 땅에 붙어 있다.
@@ -231,6 +254,15 @@ func _ready() -> void:
 
 
 func _process(delta: float) -> void:
+	if crash_t >= 0.0:  # 충돌 모션은 crash_t만으로 정해진다. 스프링은 쉰다
+		_animate()
+		return
+	if _reform_t >= 0.0:
+		_reform_t += delta
+		if _reform_t >= REFORM_TIME:
+			_reform_t = -1.0
+			position.z = 0.0
+			_stretch_vel += SLIDE_END_KICK  # 다 모이면 한 번 출렁인다
 	if running:
 		_phase += delta * STEP_RATE
 	if delta > 0.0:
@@ -253,12 +285,13 @@ func step_shape(delta: float) -> void:
 		# 팬케이크에서 뛰면 아래로 가던 속도를 버리고, 눌려 있던 만큼 세게 솟는다 (예비 동작 느낌). 이미 솟는 중이면 그 속도와 킥 중 큰 쪽
 		_stretch_vel = maxf(_stretch_vel, JUMP_STRETCH_KICK * (1.0 - minf(_stretch, 0.0)))
 	elif not air and _prev_lift > 0.0:
-		_land_t = 0.0
 		_drop_t = 0.0
-		_stretch_vel -= LAND_SQUASH_KICK
+		if crouch <= 0.0:  # 공중 아래 스와이프로 슬라이드에 바로 이어지면 팬케이크는 건너뛴다
+			_land_t = 0.0
+			_stretch_vel -= LAND_SQUASH_KICK
 	if crouch <= 0.0 and _crouch_vis > 0.0 and _crouch_vis <= delta / PlayerAction.SLIDE_FADE:
 		_stretch_vel += SLIDE_END_KICK  # 슬라이드에서 돌아오는 마지막 프레임
-	_crouch_vis = maxf(crouch, move_toward(_crouch_vis, 0.0, delta / PlayerAction.SLIDE_FADE))
+	_crouch_vis = maxf(minf(crouch, _crouch_vis + delta / DROP_MELT_TIME), move_toward(_crouch_vis, 0.0, delta / PlayerAction.SLIDE_FADE))
 	_flat = move_toward(_flat, 0.0 if air else 1.0, delta / (FLAT_CURL_TIME if air else FLAT_SPREAD_TIME))
 	_prev_lift = lift
 	_prev_lift_vel = vy
@@ -267,7 +300,7 @@ func step_shape(delta: float) -> void:
 	var damp := LAND_BOUNCE_DAMP
 	if air:
 		var v0 := 4.0 * PlayerAction.JUMP_HEIGHT / PlayerAction.JUMP_TIME  # 뛰는 순간(가장 빠른) 속도
-		target = AIR_ROUND + AIR_SPEED_STRETCH * minf(absf(vy) / v0, 1.0)
+		target = AIR_ROUND + AIR_SPEED_STRETCH * minf(absf(vy) / v0, AIR_DROP_SPEED_MAX)
 		stiff = SHAPE_STIFF
 		damp = AIR_DAMP
 	elif _land_t >= 0.0 and _land_t < LAND_SQUASH_TIME:
@@ -331,6 +364,53 @@ func move_to_lane(lane: int) -> void:
 	_move_tween.tween_property(self, "position:x", x, MOVE_TIME).set_trans(Tween.TRANS_SINE).set_ease(Tween.EASE_IN_OUT)
 
 
+## 부딪혔다. 지금 모양에서 시작해 장애물 면에 붙고 흘러내린다 (이후 main이 crash_t를 넣어 준다).
+func crash(contact: Dictionary) -> void:
+	if _move_tween:
+		_move_tween.kill()
+	running = false
+	crash_t = 0.0
+	_crash = contact
+	_crash_from_scale = _body.scale
+	_crash_from_y = _body.position.y
+	_crash_from_pos = position
+	_crash_from_flat = _flat
+	_drop_t = -1.0
+	_reform_t = -1.0
+
+
+## 다시 시작: 지금 모양(웅덩이 또는 흘러내리는 중)에서 REFORM_TIME 동안 달리는 모양으로 모인다.
+func reform(lane: int) -> void:
+	_reform_from_scale = _body.scale
+	_reform_from_y = _body.position.y
+	_reform_from_z = position.z
+	_reform_from_wave = _mat.get_shader_parameter("rim_wave")  # 모양과 함께 지금 값에서 이어 간다 (바닥 평평함 _flat도 그대로 두면 step_shape가 이어 줌)
+	_reform_t = 0.0
+	crash_t = -1.0
+	running = true
+	lift = 0.0
+	crouch = 0.0
+	# 스프링을 쉬게 둬서 앞 판의 움직임이 이어지지 않게 한다
+	_squish = 0.0
+	_squish_vel = 0.0
+	_wobble = 0.0
+	_wobble_vel = 0.0
+	_stretch = 0.0
+	_stretch_vel = 0.0
+	_spread = 0.0
+	_spread_vel = 0.0
+	_sag = 0.0
+	_sag_vel = 0.0
+	_land_t = -1.0
+	_drop_t = -1.0
+	_crouch_vis = 0.0
+	_prev_lift = 0.0
+	_prev_lift_vel = 0.0
+	_prev_vx = 0.0
+	_prev_x = position.x
+	move_to_lane(lane)
+
+
 ## 박자가 정한 눌림 목표: 바닥에 닿을 때 1, 공중에서 0
 func _squish_target() -> float:
 	var squash := 1.0 - absf(sin(_phase))
@@ -368,20 +448,75 @@ func _animate() -> void:
 	# 끝날 때 앞이 먼저 모이고 뒤가 덜 모인 만큼 윗부분이 앞으로 기울어 앞부터 솟는다
 	_mat.set_shader_parameter("drag", SLIDE_DRAG * c - SLIDE_FRONT_RISE * maxf(_spread - front, 0.0))
 	_mat.set_shader_parameter("rim_wave", LAND_RIM_WAVE * clampf(-_stretch / (1.0 - LAND_PANCAKE), 0.0, 1.0))
+	if crash_t >= 0.0:
+		_apply_crash()
+	elif _reform_t >= 0.0:
+		var u := smoothstep(0.0, 1.0, _reform_t / REFORM_TIME)
+		_body.scale = _reform_from_scale.lerp(_body.scale, u)
+		_body.position.y = lerpf(_reform_from_y, _body.position.y, u)
+		position.z = lerpf(_reform_from_z, 0.0, u)
+		_mat.set_shader_parameter("rim_wave", _reform_from_wave * (1.0 - u))
 	_animate_drops()
 	_mat.set_shader_parameter("beat", _phase)
 	_mat.set_shader_parameter("flat_bottom", smoothstep(0.0, 1.0, _flat))  # 처음과 끝이 부드럽게
 	# 접촉 그림자는 바닥 모양을 따라 퍼졌다 좁아지고, 점프로 뜨면 작고 옅고 부드러워진다.
 	# 높이의 제곱근을 써서 조금만 떠도 빨리 옅어진다 (낮게 뜬 몸 아래 진한 원이 까만 구멍처럼 남지 않게)
-	var h := sqrt(clampf(lift / PlayerAction.JUMP_HEIGHT, 0.0, 1.0))
+	var h := sqrt(clampf(_body.position.y / PlayerAction.JUMP_HEIGHT, 0.0, 1.0))
 	_shadow.scale = Vector3(_body.scale.x, 1.0, _body.scale.z) * lerpf(1.0, SHADOW_AIR_SIZE, h)
 	_shadow_mat.set_shader_parameter("opacity", lerpf(1.0, SHADOW_AIR_OPACITY, h))
 	_shadow_mat.set_shader_parameter("soft", h)
 
 
+## 충돌 모양을 몸과 주인공 위치에 적용한다.
+## 몸의 면 쪽 끝이 늘 장애물 면에 닿도록 주인공 위치를 두께에 맞춰 옮긴다.
+func _apply_crash() -> void:
+	var stick := CrashMotion.stick(crash_t)
+	var reach := minf(stick, 1.0)  # 튕겨 넘치는 값은 모양에만 쓰고 위치는 넘치지 않게 한다
+	var flow := CrashMotion.flow(crash_t)
+	var n: Vector3 = _crash["normal"]
+	var on_x := absf(n.x) > 0.5  # 옆면에 붙었으면 두께가 x, 폭이 z
+	var from_thin := _crash_from_scale.x if on_x else _crash_from_scale.z
+	var from_wide := _crash_from_scale.z if on_x else _crash_from_scale.x
+	var thin := lerpf(lerpf(from_thin, CRASH_THIN, stick), PUDDLE_DEEP, flow)
+	var wide := lerpf(lerpf(from_wide, CRASH_WIDE, stick), BODY_WIDTH_LIMIT, flow)
+	var tall := lerpf(lerpf(_crash_from_scale.y, _crash["tall"], stick), PUDDLE_FLAT, flow)
+	var bottom := maxf(float(_crash["y"]) - float(_crash["tall"]) * BODY_HEIGHT * 0.5, 0.0)
+	_body.scale = Vector3(thin, tall, wide) if on_x else Vector3(wide, tall, thin)
+	_body.position = Vector3(0.0, lerpf(lerpf(_crash_from_y, bottom, reach), 0.0, flow), 0.0)
+	var edge: float = float(_crash["face"]) + (n.x + n.z) * BODY_RADIUS * thin
+	var along: float = _crash["along"]
+	position.x = lerpf(_crash_from_pos.x, edge if on_x else along, reach)
+	position.z = lerpf(_crash_from_pos.z, along if on_x else edge, reach)
+	_mat.set_shader_parameter("lean", 0.0)
+	_mat.set_shader_parameter("sag", 0.0)
+	_mat.set_shader_parameter("drag", 0.0)
+	_mat.set_shader_parameter("rim_wave", LAND_RIM_WAVE * 0.4 * flow)  # 웅덩이는 넓어서 작게 줘야 테두리가 각지지 않는다
+	# 붙은 동안엔 뒤 카메라에 면에 눌린 둥근 원판으로 보이게 바닥을 둥글게, 웅덩이가 되며 다시 평평하게
+	_flat = lerpf(lerpf(_crash_from_flat, 0.0, reach), 1.0, flow)
+
+
+## 충돌 물방울: 붙는 순간 면에서 바깥(면의 수직 방향)·양옆으로 튀어 떨어지며 작아진다. 몸과 합쳐지지 않고 사라진다.
+func _animate_crash_drops() -> void:
+	var u := (crash_t - CrashMotion.SLOW_TIME) / CRASH_DROP_TIME
+	var n: Vector3 = _crash["normal"]
+	var side := n.cross(Vector3.UP)
+	for i in _drops.size():
+		var d := _drops[i]
+		d.visible = u >= 0.0 and u < 1.0
+		if not d.visible:
+			continue
+		var fan := i - (_drops.size() - 1) * 0.5  # 왼쪽·가운데·오른쪽
+		var up := CRASH_DROP_HEIGHT * (1.0 - 0.3 * (i % 2)) * sin(PI * minf(u * 1.3, 1.0))
+		d.position = (n * 0.4 + side * fan * 1.2) * u + Vector3.UP * (_body.position.y + 0.3 * (1.0 - u) + up)
+		d.scale = Vector3.ONE * (1.0 - smoothstep(0.6, 1.0, u)) * 1.6
+
+
 ## 착지 물방울: 팬케이크 테두리에서 나와 바깥·위로 튀었다가 몸 가운데 위로 떨어지며 작아져 합쳐진다.
 ## 무작위 없이 개수로 방향을 나눠(옆·앞으로 퍼지게) 항상 같은 모양이다.
 func _animate_drops() -> void:
+	if crash_t >= 0.0:
+		_animate_crash_drops()
+		return
 	for i in _drops.size():
 		var d := _drops[i]
 		d.visible = _drop_t >= 0.0

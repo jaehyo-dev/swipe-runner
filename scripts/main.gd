@@ -15,6 +15,7 @@ const KIND_COLORS := {
 }
 
 const RESTART_DELAY := 0.5
+const OBSTACLE_FADE := 0.15  # 다시 시작할 때 앞 판 장애물이 작아져 사라지는 시간(초): 한 프레임에 툭 없어지지 않게
 
 ## 0이면 실행할 때마다 무작위. 테스트에서는 0이 아닌 값을 줘서 장애물 레인을 고정한다.
 @export var seed_value := 0
@@ -37,13 +38,16 @@ var _distance_label: Label
 var _scroll := 0.0
 
 
+## 시드를 고정했으면(주소의 ?seed, 테스트) 판마다 같은 배치, 아니면 판마다 새 배치
+func _new_field() -> void:
+	field = ObstacleField.new(seed_value if seed_value != 0 else randi() | 1)
+
+
 func _ready() -> void:
 	if seed_value == 0 and OS.has_feature("web"):
 		# 화면 확인 기록(review/)을 같은 배치로 다시 찍을 수 있게 주소의 ?seed=숫자를 읽는다
 		seed_value = int(str(JavaScriptBridge.eval("new URLSearchParams(location.search).get('seed') || 0")))
-	if seed_value == 0:
-		seed_value = randi() | 1
-	field = ObstacleField.new(seed_value)
+	_new_field()
 	_build_environment()
 	_build_camera()
 	_build_floor()
@@ -63,7 +67,7 @@ func _process(delta: float) -> void:
 ## delta초만큼 게임을 진행한다 (테스트에서도 직접 호출).
 func advance(delta: float) -> void:
 	if dead:
-		_dead_time += delta
+		_advance_dead(delta)
 		return
 	elapsed += delta
 	player.step(delta)
@@ -82,20 +86,55 @@ func advance(delta: float) -> void:
 	_distance_label.text = str(RunLogic.distance(elapsed))
 	for item in field.items:
 		var dx := runner.position.x - RunLogic.lane_x(item["lane"])
-		if PlayerAction.hits(item["kind"], dx, item["z"], player.height(), player.is_ducking()):
-			_game_over()
+		if not item.has("cleared") and PlayerAction.hits(item["kind"], dx, item["z"], player.height(), player.is_ducking()):
+			_game_over(item)
 			return
 
 
-## 부딪혔다: 모든 게 멈추고 안내 글자가 뜬다. 실수로 바로 넘기지 않게 잠깐 뒤부터 다시 시작할 수 있다.
-func _game_over() -> void:
+## 부딪힌 뒤: 세상이 아주 잠깐 느려졌다 멈추고, 주인공은 충돌 모션을 이어 간다.
+func _advance_dead(delta: float) -> void:
+	var slow := CrashMotion.slow_delta(_dead_time, delta)
+	_dead_time += delta
+	_scroll += RunLogic.SPEED * slow
+	_floor_material.set_shader_parameter("scroll", _scroll)
+	for item in field.items:
+		item["z"] += RunLogic.SPEED * slow
+		_obstacles[item["id"]].position.z = item["z"]
+	runner.crash_t = _dead_time
+	var shake := CrashMotion.shake(_dead_time)
+	_camera.h_offset = shake.x
+	_camera.v_offset = shake.y
+	_restart_label.visible = _dead_time >= RESTART_DELAY
+
+
+## 부딪혔다: 실수로 바로 넘기지 않게 잠깐 뒤부터 다시 시작할 수 있다.
+func _game_over(item: Dictionary) -> void:
 	dead = true
-	runner.running = false  # 멈춘 모습은 기본 모양 그대로 (size_reference.png). 충돌 찌그러짐은 v0.3.0
-	_restart_label.visible = true
+	_dead_time = 0.0
+	# 느려지는 동안 장애물이 조금 더 다가오므로 그만큼 앞으로 간 면에 붙는다
+	var z: float = item["z"] + RunLogic.SPEED * CrashMotion.SLOW_SCALE * CrashMotion.SLOW_TIME
+	runner.crash(CrashMotion.contact(item["kind"], RunLogic.lane_x(item["lane"]), runner.position.x, z, player.height()))
 
 
+## 장면을 다시 불러오지 않고 그 자리에서 상태만 초기화한다. 레인은 그대로, 세상은 바로 움직이고 입력도 바로 받는다.
 func restart() -> void:
-	get_tree().reload_current_scene()
+	dead = false
+	_dead_time = 0.0
+	elapsed = 0.0
+	player = PlayerAction.new()
+	_swipe = SwipeDetector.new()
+	_new_field()
+	for node: Node3D in _obstacles.values():
+		var fade := node.create_tween().set_parallel()
+		fade.tween_property(node, "scale", Vector3.ONE * 0.01, OBSTACLE_FADE)
+		fade.tween_property(node, "position:z", node.position.z + RunLogic.SPEED * OBSTACLE_FADE, OBSTACLE_FADE)
+		fade.chain().tween_callback(node.queue_free)
+	_obstacles.clear()
+	_camera.h_offset = 0.0
+	_camera.v_offset = 0.0
+	_restart_label.visible = false
+	_distance_label.text = "0"
+	runner.reform(lane)
 
 
 func _input(event: InputEvent) -> void:
@@ -103,6 +142,8 @@ func _input(event: InputEvent) -> void:
 		var pressed: bool = (event is InputEventScreenTouch or event is InputEventKey) and event.pressed
 		if pressed and _dead_time >= RESTART_DELAY:
 			restart()
+			if event is InputEventScreenTouch:  # 다시 시작한 손가락 그대로 밀어도 스와이프가 된다
+				_swipe.press(event.position, event.index)
 		return
 	if event is InputEventScreenTouch:
 		if event.pressed:
@@ -131,7 +172,18 @@ func apply_swipe(dir: SwipeDetector.Dir) -> void:
 		SwipeDetector.Dir.UP:
 			player.jump()
 		SwipeDetector.Dir.DOWN:
+			_drop_clear_hurdles()
 			player.slide()
+
+
+## 공중 아래 스와이프 순간 이미 넘고 있던 허들은 내려오다 닿아도 봐준다 (넘고 있었는데 죽으면 억울하다)
+func _drop_clear_hurdles() -> void:
+	if not player.is_jumping() or player.is_dropping():
+		return
+	for item in field.items:
+		var dx := runner.position.x - RunLogic.lane_x(item["lane"])
+		if PlayerAction.clears_on_drop(item["kind"], dx, item["z"], player.height()):
+			item["cleared"] = true
 
 
 func _change_lane(direction: int) -> void:
@@ -198,6 +250,7 @@ func _build_camera() -> void:
 func _fit_camera() -> void:
 	var size := get_viewport().get_visible_rect().size
 	_camera.keep_aspect = Camera3D.KEEP_WIDTH if size.y >= size.x else Camera3D.KEEP_HEIGHT
+	_restart_label.offset_top = 370.0 if size.y >= size.x else 200.0  # 웅덩이와 겹치지 않는 자리 (세로는 아래, 가로는 위)
 
 
 func _build_floor() -> void:
@@ -271,7 +324,6 @@ func _build_ui() -> void:
 	_restart_label.name = "RestartLabel"
 	_restart_label.text = "TAP TO RESTART"
 	_restart_label.set_anchors_and_offsets_preset(Control.PRESET_CENTER)
-	_restart_label.offset_top = 260.0
 	_restart_label.offset_left = -360.0
 	_restart_label.offset_right = 360.0
 	_restart_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER

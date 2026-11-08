@@ -85,7 +85,9 @@ func test_장애물에_부딪히면_멈추고_안내가_뜸() -> void:
 	main.advance(0.0)
 	assert_true(main.dead, "아무 동작 없이 부딪히면 어떤 종류든 게임 오버")
 	var label: Label = main.find_child("RestartLabel", true, false)
-	assert_true(label.visible)
+	assert_false(label.visible, "충돌 모션을 가리지 않게 바로는 안 뜸")
+	main.advance(main.RESTART_DELAY)
+	assert_true(label.visible, "0.5초 뒤 안내")
 	var t: float = main.elapsed
 	main.advance(1.0)
 	assert_eq(main.elapsed, t, "게임 오버 뒤엔 시간이 멈춤")
@@ -178,4 +180,357 @@ func test_카메라는_주인공의_위아래_튀기를_따라가지_않음() ->
 	var low := cam.global_position
 	main.runner.set_phase(PI / 2.0)
 	assert_true(cam.global_position.is_equal_approx(low), "주인공이 튀어도 카메라는 고정")
+	main.queue_free()
+
+
+# ---------- 충돌·다시 시작 ----------
+
+const STEP := 1.0 / 60.0
+
+
+## 프레임 단위로 게임과 주인공을 진행한다 (주인공의 _process는 실시간과 별개로 직접 돌림).
+func _run(main: Node3D, seconds: float) -> void:
+	for i in roundi(seconds / STEP):
+		main.advance(STEP)
+		main.runner._process(STEP)
+
+
+## 주인공 레인 바로 앞에 이 종류의 장애물을 놓는다
+func _put_in_front(main: Node3D, kind: ObstacleField.Kind, z := -0.75) -> Dictionary:
+	main.advance(0.0)
+	var item: Dictionary = main.field.items[0]
+	item["lane"] = main.lane
+	item["kind"] = kind
+	item["z"] = z
+	return item
+
+
+func test_세_종류_모두_앞면에_붙었다_흘러내려_웅덩이가_되고_멈춤() -> void:
+	var K := ObstacleField.Kind
+	for kind in [K.BLOCK, K.LOW, K.HIGH]:
+		var main := _make_main()
+		await wait_frames()
+		main.runner.set_process(false)
+		var item := _put_in_front(main, kind)
+		main.advance(STEP)
+		assert_true(main.dead, "종류 %d 부딪힘" % kind)
+		var hit_z: float = item["z"]
+		var half: float = ObstacleField.BLOCK_SIZE * 0.5 if kind == K.BLOCK else ObstacleField.BAR_DEPTH * 0.5
+		# 느려지는 동안 세상이 아주 조금만 움직이고 그 뒤엔 멈춘다
+		_run(main, CrashMotion.SLOW_TIME)
+		var moved: float = item["z"] - hit_z
+		assert_true(absf(moved - RunLogic.SPEED * CrashMotion.SLOW_SCALE * CrashMotion.SLOW_TIME) < 0.02, "느린 이동 %f" % moved)
+		# 찰싹 붙음: 납작하고, 몸 앞 끝이 장애물 앞면에 닿아 있다
+		_run(main, CrashMotion.SNAP_TIME + 0.04)
+		var body: MeshInstance3D = main.runner._body
+		assert_true(body.scale.z < 0.5, "납작 %f" % body.scale.z)
+		var face: float = item["z"] + half
+		var body_front: float = main.runner.position.z - Runner.BODY_RADIUS * body.scale.z
+		assert_true(absf(body_front - face) < 0.02, "면에 닿음: 몸 %f, 면 %f" % [body_front, face])
+		assert_true(main.runner._drops[0].visible, "물방울이 튐")
+		if kind == K.HIGH:
+			assert_true(body.position.y > 0.1, "막대는 부딪힌 높이에 붙음 %f" % body.position.y)
+		# 웅덩이: 바닥에 낮고 넓게
+		_run(main, CrashMotion.FLOW_END)
+		assert_eq(body.position.y, 0.0, "바닥에 있음")
+		assert_true(body.scale.y <= Runner.PUDDLE_FLAT + 0.001, "낮음 %f" % body.scale.y)
+		assert_true(body.scale.x >= 1.5, "넓음 %f" % body.scale.x)
+		assert_false(main.runner._drops[0].visible, "물방울은 끝남")
+		# 멈춤
+		var pose: Vector3 = body.scale
+		var pos: Vector3 = main.runner.position
+		var z: float = item["z"]
+		_run(main, 0.5)
+		assert_eq(body.scale, pose, "모양 고정")
+		assert_eq(main.runner.position, pos, "위치 고정")
+		assert_eq(item["z"], z, "세상 고정")
+		assert_eq(main._camera.h_offset, 0.0, "흔들림 끝")
+		main.queue_free()
+
+
+func test_0_5초_전에는_탭해도_다시_시작하지_않음() -> void:
+	var main := _make_main()
+	await wait_frames()
+	_put_in_front(main, ObstacleField.Kind.BLOCK)
+	main.advance(STEP)
+	var tap := InputEventScreenTouch.new()
+	tap.pressed = true
+	main.advance(0.3)
+	main._input(tap)
+	assert_true(main.dead, "아직")
+	main.advance(0.25)
+	main._input(tap)
+	assert_false(main.dead, "0.5초 뒤 탭")
+	main.queue_free()
+
+
+func test_다시_시작은_장면을_유지하고_상태만_초기화() -> void:
+	var main := _make_main()
+	await wait_frames()
+	var runner_node: Runner = main.runner
+	_run(main, 2.0)
+	main.apply_swipe(Dir.LEFT)
+	main.runner.position.x = RunLogic.lane_x(0)
+	_put_in_front(main, ObstacleField.Kind.BLOCK)
+	main.advance(STEP)
+	assert_true(main.dead)
+	_run(main, 1.0)
+	var floor_scroll: float = main._scroll
+	main.restart()
+	assert_false(main.dead)
+	assert_eq(main.runner, runner_node, "주인공 노드 그대로")
+	assert_true(is_instance_valid(main) and main.is_inside_tree(), "장면 그대로")
+	assert_eq(main.elapsed, 0.0)
+	assert_eq(main.lane, 0, "레인 그대로")
+	assert_eq(main.find_child("DistanceLabel", true, false).text, "0")
+	assert_false(main.find_child("RestartLabel", true, false).visible)
+	assert_eq(main._obstacles.size(), 0)
+	assert_eq(main.field.items.size(), 0)
+	assert_eq(main._scroll, floor_scroll, "길 무늬가 튀지 않음")
+	# 입력을 바로 받고 세상도 바로 움직인다
+	main.apply_swipe(Dir.UP)
+	assert_true(main.player.is_jumping(), "바로 입력")
+	main.advance(STEP)
+	assert_true(main.elapsed > 0.0, "바로 달림")
+	assert_true(main._scroll > floor_scroll)
+	main.queue_free()
+
+
+func test_다시_시작하면_약_0_3초에_걸쳐_모여_달리는_모양이_됨() -> void:
+	var main := _make_main()
+	await wait_frames()
+	main.runner.set_process(false)
+	_put_in_front(main, ObstacleField.Kind.LOW)
+	main.advance(STEP)
+	_run(main, 1.0)
+	var body: MeshInstance3D = main.runner._body
+	var last_y: float = body.scale.y
+	assert_true(last_y < 0.2, "웅덩이 %f" % last_y)
+	main.restart()
+	main.runner._process(0.0)
+	assert_true(absf(body.scale.y - last_y) < 0.01, "그 자리 모양에서 시작해 튀지 않음")
+	for i in 18:  # 0.3초
+		main.advance(STEP)
+		main.runner._process(STEP)
+		assert_true(absf(body.scale.y - last_y) < 0.2, "프레임마다 조금씩 %f → %f" % [last_y, body.scale.y])
+		last_y = body.scale.y
+	_run(main, 0.7)
+	assert_true(body.scale.y > 0.8 and body.scale.y < 1.2, "달리는 키 %f" % body.scale.y)
+	assert_true(body.scale.x > 0.9 and body.scale.x < 1.1, "달리는 폭 %f" % body.scale.x)
+	assert_eq(main.runner.position.z, 0.0, "제자리로 돌아옴")
+	assert_eq(main.runner._mat.get_shader_parameter("rim_wave"), 0.0)
+	main.queue_free()
+
+
+func test_부딪힘에서_다시_달리기까지_1_5초_이내() -> void:
+	# 탭 가능 0.5초 + 모이기 0.3초. 남는 0.7초가 사람이 탭하는 시간이다
+	var main := _make_main()
+	await wait_frames()
+	main.runner.set_process(false)
+	_put_in_front(main, ObstacleField.Kind.BLOCK)
+	main.advance(STEP)
+	assert_true(main.dead)
+	var took := 0.0
+	var tap := InputEventScreenTouch.new()
+	tap.pressed = true
+	while main.dead and took < 2.0:  # 탭이 먹힐 때까지 프레임마다 탭한다
+		main._input(tap)
+		if main.dead:
+			main.advance(STEP)
+			main.runner._process(STEP)
+			took += STEP
+	assert_false(main.dead, "탭으로 다시 시작")
+	while main.runner._reform_t >= 0.0 and took < 2.0:
+		main.advance(STEP)
+		main.runner._process(STEP)
+		took += STEP
+	assert_true(took <= 0.85, "가장 빠르게 탭했을 때 %.3f초" % took)
+	main.queue_free()
+
+
+func test_흘러내리는_중에_다시_시작해도_모양이_튀지_않음() -> void:
+	var main := _make_main()
+	await wait_frames()
+	main.runner.set_process(false)
+	_put_in_front(main, ObstacleField.Kind.BLOCK)
+	main.advance(STEP)
+	_run(main, main.RESTART_DELAY)  # 탭할 수 있는 가장 이른 순간
+	var runner: Runner = main.runner
+	var wave: float = runner._mat.get_shader_parameter("rim_wave")
+	var flat: float = runner._flat
+	assert_true(flat < 0.9, "아직 바닥이 둥글게 남아 있음 %f" % flat)
+	main.restart()
+	main.advance(STEP)
+	runner._process(STEP)
+	assert_true(runner._mat.get_shader_parameter("rim_wave") <= wave + 0.001, "물결이 커지지 않음")
+	assert_true(runner._flat < 1.0 and runner._flat - flat < 0.4, "평평함이 한 프레임에 다 바뀌지 않음 %f → %f" % [flat, runner._flat])
+	_run(main, 0.4)
+	assert_eq(runner._flat, 1.0, "달릴 때는 평평함")
+	main.queue_free()
+
+
+func test_레인_이동_중_옆면에_부딪히면_옆면에_붙음() -> void:
+	var main := _make_main()
+	await wait_frames()
+	main.runner.set_process(false)
+	var item := _put_in_front(main, ObstacleField.Kind.BLOCK, 0.2)
+	item["lane"] = 0
+	main.runner.position.x = RunLogic.lane_x(0) + 0.65  # 왼쪽 레인 블록 쪽으로 가는 중
+	main.advance(STEP)
+	assert_true(main.dead)
+	_run(main, CrashMotion.SLOW_TIME + CrashMotion.SNAP_TIME + 0.04)
+	var body: MeshInstance3D = main.runner._body
+	assert_true(body.scale.x < 0.5, "x 쪽이 납작 %f" % body.scale.x)
+	assert_true(body.scale.z > 1.0, "z 쪽이 넓음 %f" % body.scale.z)
+	var face: float = RunLogic.lane_x(0) + ObstacleField.BLOCK_SIZE * 0.5
+	var edge: float = main.runner.position.x - Runner.BODY_RADIUS * body.scale.x
+	assert_true(absf(edge - face) < 0.02, "옆면에 닿음: 몸 %f, 면 %f" % [edge, face])
+	main.queue_free()
+
+
+func test_고정_시드면_다시_시작해도_같은_배치() -> void:
+	var main := _make_main()
+	await wait_frames()
+	var first: Array = []
+	for i in 8:
+		main.field.step(ObstacleField.SPAWN_INTERVAL)
+		first.append([main.field.items[-1]["lane"], main.field.items[-1]["kind"]])
+	main.restart()
+	var second: Array = []
+	for i in 8:
+		main.field.step(ObstacleField.SPAWN_INTERVAL)
+		second.append([main.field.items[-1]["lane"], main.field.items[-1]["kind"]])
+	assert_eq(second, first)
+	main.queue_free()
+
+
+func test_시드를_정하지_않으면_판마다_다른_배치() -> void:
+	var main: Node3D = load("res://scenes/main.tscn").instantiate()
+	add_child(main)
+	await wait_frames()
+	main.set_process(false)
+	var a: RandomNumberGenerator = main.field._rng
+	var seed_a := a.seed
+	main.restart()
+	assert_true(main.field._rng.seed != seed_a, "새 시드")
+	main.queue_free()
+
+
+func test_다시_시작을_20번_해도_노드와_오브젝트가_쌓이지_않음() -> void:
+	var main := _make_main()
+	await wait_frames()
+	main.runner.set_process(false)
+	var baseline := -1
+	var baseline_objects := -1
+	for round_no in 20:
+		_run(main, 1.2)  # 장애물 2개가 나올 만큼
+		_put_in_front(main, ObstacleField.Kind.BLOCK)
+		main.advance(STEP)
+		assert_true(main.dead, "%d판째 부딪힘" % round_no)
+		_run(main, 0.6)
+		main.restart()
+		assert_false(main.dead)
+		await get_tree().create_timer(main.OBSTACLE_FADE + 0.05).timeout  # 앞 판 장애물이 사라질 시간
+		await wait_frames(2)
+		_run(main, 0.5)  # 재시작 뒤 첫 장애물만 있는 같은 상태에서 잰다
+		await wait_frames(2)
+		var nodes: int = _count_nodes(main)
+		var objects := int(Performance.get_monitor(Performance.OBJECT_COUNT))
+		if round_no == 0:
+			baseline = nodes
+			baseline_objects = objects
+		assert_eq(nodes, baseline, "%d판째 노드 수" % round_no)
+		assert_true(objects <= baseline_objects + 2, "%d판째 오브젝트 %d (처음 %d)" % [round_no, objects, baseline_objects])
+	main.queue_free()
+
+
+func _count_nodes(node: Node) -> int:
+	var total := 1
+	for child in node.get_children():
+		total += _count_nodes(child)
+	return total
+
+
+func test_다시_시작한_뒤에도_다시_부딪힘() -> void:
+	var main := _make_main()
+	await wait_frames()
+	_put_in_front(main, ObstacleField.Kind.BLOCK)
+	main.advance(STEP)
+	main.restart()
+	_run(main, 0.5)
+	_put_in_front(main, ObstacleField.Kind.BLOCK)
+	main.advance(STEP)
+	assert_true(main.dead)
+	main.queue_free()
+
+
+func test_다시_시작한_손가락으로_바로_스와이프() -> void:
+	var main := _make_main()
+	await wait_frames()
+	_put_in_front(main, ObstacleField.Kind.BLOCK)
+	main.advance(STEP)
+	main.advance(0.6)
+	_touch_swipe(main, Vector2(360, 900), Vector2(360, 700), 5)
+	assert_false(main.dead, "탭으로 다시 시작")
+	assert_true(main.player.is_jumping(), "같은 손가락의 스와이프가 점프")
+	main.queue_free()
+
+
+# ---------- 공중 아래 스와이프·입력 저장 (화면과 연결) ----------
+
+func test_공중_아래_스와이프_중에는_앞에_온_막대를_지나감() -> void:
+	var main := _make_main()
+	await wait_frames()
+	main.runner.set_process(false)
+	main.apply_swipe(Dir.UP)
+	_run(main, 0.3)
+	main.apply_swipe(Dir.DOWN)
+	# 스와이프 뒤 막대가 바로 판정 범위로 들어와도 착지와 슬라이드를 거쳐 지나간다
+	var item := _put_in_front(main, ObstacleField.Kind.HIGH, -0.75)
+	while item["z"] < PlayerAction.HIT_Z + 0.2:
+		main.advance(STEP)
+		main.runner._process(STEP)
+		assert_false(main.dead, "z=%f 에서 부딪힘" % item["z"])
+	assert_true(main.player.is_sliding(), "슬라이드 중")
+	main.queue_free()
+
+
+func test_넘고_있던_허들은_아래로_밀어도_부딪히지_않음() -> void:
+	var main := _make_main()
+	await wait_frames()
+	main.runner.set_process(false)
+	main.apply_swipe(Dir.UP)
+	_run(main, 0.2)
+	var item := _put_in_front(main, ObstacleField.Kind.LOW, -0.6)
+	main.apply_swipe(Dir.DOWN)
+	while item["z"] < PlayerAction.HIT_Z + 0.2:
+		main.advance(STEP)
+		assert_false(main.dead, "z=%f 에서 부딪힘" % item["z"])
+	main.queue_free()
+
+
+func test_아직_앞에_있는_허들에_슬라이드로_들어가면_부딪힘() -> void:
+	var main := _make_main()
+	await wait_frames()
+	main.runner.set_process(false)
+	main.apply_swipe(Dir.UP)
+	_run(main, 0.3)
+	main.apply_swipe(Dir.DOWN)
+	var item := _put_in_front(main, ObstacleField.Kind.LOW, -2.5)
+	while item["z"] < PlayerAction.HIT_Z + 0.2 and not main.dead:
+		main.advance(STEP)
+	assert_true(main.dead, "슬라이드는 허들을 못 지남")
+	main.queue_free()
+
+
+func test_레인_이동은_공중에서도_바로이고_저장된_입력을_지우지_않음() -> void:
+	var main := _make_main()
+	await wait_frames()
+	main.apply_swipe(Dir.UP)
+	_run(main, PlayerAction.JUMP_TIME - 0.1)
+	main.apply_swipe(Dir.UP)
+	main.apply_swipe(Dir.LEFT)
+	assert_eq(main.lane, 0, "저장 없이 바로")
+	_run(main, 0.12)
+	assert_true(main.player.is_jumping(), "저장된 점프가 실행됨")
 	main.queue_free()
