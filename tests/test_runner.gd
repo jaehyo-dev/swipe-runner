@@ -89,17 +89,76 @@ func test_그림자는_착지에서_커졌다_공중에서_작아짐() -> void:
 	runner.queue_free()
 
 
-func test_오른쪽으로_가면_몸이_왼쪽으로_처졌다가_돌아옴() -> void:
+## 실제 레인 이동 곡선(SINE ease-in-out, MOVE_TIME)으로 60fps 동안 출렁임을 진행하고 프레임별 정수리 밀림을 돌려준다.
+func _simulate_lane_move(runner: Runner, seconds: float) -> Array[float]:
+	var dist := RunLogic.LANE_WIDTH
+	var dt := 1.0 / 60.0
+	var prev_x := 0.0
+	var out: Array[float] = []
+	for i in roundi(seconds / dt):
+		var t := minf((i + 1) * dt, Runner.MOVE_TIME)
+		var x := dist * (1.0 - cos(PI * t / Runner.MOVE_TIME)) * 0.5
+		runner.step_wobble((x - prev_x) / dt, dt)
+		prev_x = x
+		out.append(runner.lean())
+	return out
+
+
+func test_레인_이동_중에는_윗부분이_늦게_따라옴() -> void:
 	var runner := _make_runner()
+	var leans := _simulate_lane_move(runner, Runner.MOVE_TIME * 0.5)
+	# 오른쪽으로 출발하면 정수리가 바닥보다 왼쪽(-)에 남는다
+	assert_true(leans[-1] < -0.03, "정수리가 뒤처짐 %f" % leans[-1])
+	runner.queue_free()
+
+
+func test_멈춘_뒤_2에서_3번_출렁이고_0_5초_안에_멈춤() -> void:
+	var runner := _make_runner()
+	var leans := _simulate_lane_move(runner, Runner.MOVE_TIME + 1.0)
 	var peak := 0.0
-	for i in 8:  # 0.12초 동안 오른쪽 이동
-		runner.step_sway(12.0, 0.015)
-		peak = maxf(peak, runner._sway)
-	assert_true(peak > 0.05, "위가 왼쪽(회전 +)으로 처짐 %f" % peak)
-	assert_true(peak <= Runner.SWAY_MAX * 1.5, "과하지 않음 %f" % peak)
-	for i in 100:  # 멈춘 뒤 1.5초
-		runner.step_sway(0.0, 0.015)
-	assert_true(absf(runner._sway) < 0.01, "다시 똑바로 %f" % runner._sway)
+	for l in leans:
+		peak = maxf(peak, absf(l))
+	assert_true(peak > 0.05 and peak <= Runner.WOBBLE_MAX, "출렁임 크기 %f" % peak)
+	# 이동이 끝난 뒤의 눈에 띄는 출렁임(최대치의 15% 이상인 꺾임) 횟수
+	var start := roundi(Runner.MOVE_TIME * 60.0) - 1
+	var swings := 0
+	for i in range(maxi(start, 1), leans.size() - 1):
+		var turn := (leans[i] - leans[i - 1]) * (leans[i + 1] - leans[i]) < 0.0
+		if turn and absf(leans[i]) >= peak * 0.15:
+			swings += 1
+	assert_true(swings >= 2 and swings <= 3, "출렁임 횟수 %d" % swings)
+	# 이동 끝 + 0.5초부터는 최대치의 3% 안에서 멈춰 있어야 함
+	for i in range(roundi((Runner.MOVE_TIME + 0.5) * 60.0), leans.size()):
+		assert_true(absf(leans[i]) < peak * 0.03, "%.2f초에 아직 흔들림 %f" % [(i + 1) / 60.0, leans[i]])
+	runner.queue_free()
+
+
+func test_레인_이동_출렁임이_덜컹이지_않음() -> void:
+	var runner := _make_runner()
+	var leans := _simulate_lane_move(runner, Runner.MOVE_TIME + 0.6)
+	var peak := 0.0
+	var max_jerk := 0.0  # 프레임 간 변화량의 변화(=속도가 한 프레임에 얼마나 바뀌나)
+	for i in range(2, leans.size()):
+		peak = maxf(peak, absf(leans[i]))
+		max_jerk = maxf(max_jerk, absf((leans[i] - leans[i - 1]) - (leans[i - 1] - leans[i - 2])))
+	# 같은 크기의 매끈한 출렁임(사인파)이 낼 수 있는 값 ω²·A·dt² 안이어야 함. 속도가 툭 튀면(덜컹) 이 값을 넘는다
+	var smooth_limit := Runner.WOBBLE_STIFF * peak / 3600.0 * 1.2
+	assert_true(max_jerk < smooth_limit, "프레임마다 변화가 급하지 않음 %f < %f" % [max_jerk, smooth_limit])
+	runner.queue_free()
+
+
+func test_레인_이동_시간과_튀기_높이는_그대로() -> void:
+	assert_eq(Runner.MOVE_TIME, 0.18, "레인 이동 시간")
+	assert_eq(Runner.HOP_HEIGHT, 0.07, "위아래 튀기 높이")
+
+
+func test_출렁임은_셰이더_기울기로_그리고_몸은_회전하지_않음() -> void:
+	var runner := _make_runner()
+	await wait_frames()
+	runner._wobble = 0.2
+	runner._animate()
+	assert_eq(runner._body.rotation.z, 0.0, "몸 통째 회전 없음")
+	assert_eq(runner._mat.get_shader_parameter("lean"), runner.lean(), "셰이더에 정수리 밀림 전달")
 	runner.queue_free()
 
 
@@ -112,21 +171,6 @@ func test_착지_뒤_몸이_출렁이며_목표로_돌아옴() -> void:
 		min_squish = minf(min_squish, runner._squish)
 	assert_true(min_squish < -0.05, "목표를 지나쳐 길쭉하게 튕김 %f" % min_squish)
 	assert_true(absf(runner._squish) < 0.01, "결국 목표로 안정 %f" % runner._squish)
-	runner.queue_free()
-
-
-func test_이동_시작에_몸이_덜컹이지_않고_부드럽게_기움() -> void:
-	var runner := _make_runner()
-	var prev := 0.0
-	var prev_step := 0.0
-	var max_jump := 0.0  # 프레임 간 각도 변화량의 변화(=덜컹임)
-	for i in 30:
-		runner.step_sway(12.0, 1.0 / 60.0)
-		var step: float = runner._sway - prev
-		max_jump = maxf(max_jump, absf(step - prev_step))
-		prev_step = step
-		prev = runner._sway
-	assert_true(max_jump < 0.007, "프레임마다 변화가 급하지 않음 %f" % max_jump)
 	runner.queue_free()
 
 

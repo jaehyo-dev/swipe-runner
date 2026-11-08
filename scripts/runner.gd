@@ -1,9 +1,8 @@
 class_name Runner
 extends Node3D
-## 주인공 민트 젤리. 물방울 몸 한 덩어리 + 점 눈 두 개 (발·팔 없음).
-## 레인 이동 트윈, 박자에 맞춘 튀기·착지 눌림, 이동 반대쪽으로 늦게 따라오는 말랑한 흔들림을 맡는다.
+## 주인공: 빛나는 푸딩 슬라임. 물방울 몸 한 덩어리 + 점 눈 두 개 (발·팔 없음).
+## 레인 이동 트윈, 박자에 맞춘 튀기·착지 눌림, 윗부분이 늦게 따라오는 출렁임을 맡는다. 질감은 jelly.gdshader.
 
-const MINT := Color("7FE0C8")
 const BODY_RADIUS := 0.42           # 가장 넓은 곳의 반지름 (아래쪽에서 퍼짐)
 const BODY_HEIGHT := 1.0            # 아래(0)에서 위 끝까지
 const WIDEST_T := 0.3086            # 가장 넓은 높이 비율 (0.5^(1/0.6) 근처)
@@ -11,22 +10,24 @@ const HOP_HEIGHT := 0.07  # 튀어 오르는 높이 (조절: 더 약하게=값�
 const SQUASH_SCALE := 0.35 # 눌림·늘어남 폭 배율 (1.0 = v0.1.5 이전의 큰 눌림)
 const MOVE_TIME := 0.18   # 레인 이동 시간(초): 처음과 끝이 부드러운 푸딩 같은 이동
 const STEP_RATE := 9.0    # 튀는 박자 속도 (라디안/초)
-const SWAY_GAIN := 0.03   # 옆 속도(유닛/초) 1당 흔들림 목표 각도(라디안)
-const SWAY_MAX := 0.5     # 흔들림 최대 각도
-const SWAY_STIFF := 110.0 # 스프링 세기 (클수록 빨리 따라옴)
-const SWAY_DAMP := 12.0   # 감쇠: 거의 임계 감쇠라 덜컹거리지 않고 한 번 부드럽게 되돌아옴
-const SWAY_SMOOTH := 9.0  # 옆 속도를 거르는 속도 (클수록 즉각 반응, 작을수록 완만)
+## 레인 이동 출렁임: 윗부분을 바닥 가속도에 끌려가는 저감쇠 스프링으로 본다 (바닥이 먼저 가고 위가 늦게 따라옴).
+## 결과는 셰이더의 높이별 기울기(위로 갈수록 크게)로 그린다.
+const WOBBLE_GAIN := 0.45    # 출렁임 세기 (조절: 더 크게 흔들림=값↑). 0.45면 정수리가 최대 약 0.15 밀림
+const WOBBLE_MAX := 0.2      # 정수리가 밀리는 최대 거리 (안전 한계)
+const WOBBLE_STIFF := 1000.0 # 스프링 세기: 클수록 빠르게 출렁임 (1000 ≈ 초당 5번)
+const WOBBLE_DAMP := 15.0    # 감쇠: 멈춘 뒤 2~3번 출렁이고 약 0.45초 안에 멈춤
 const JELLY_STIFF := 170.0 # 눌림 스프링 세기
 const JELLY_DAMP := 7.0    # 눌림 감쇠: 작게 둬서 착지 뒤 길쭉↔납작이 두어 번 출렁임
-const SHADOW_SIZE := 1.35
+const SHADOW_SIZE := 1.9  # 발밑 빛 웅덩이 지름 (가운데 그림자는 shadow.gdshader의 shadow_size)
 
 var _body: MeshInstance3D
 var _shadow: MeshInstance3D
 var _phase := 0.0
-var _sway := 0.0      # 몸의 현재 흔들림 각도 (z축 회전)
-var _sway_vel := 0.0
-var _vx_smooth := 0.0 # 거른 옆 속도: 이동 시작의 급격한 속도 점프가 몸을 덜컹이게 하지 않게 함
+var _wobble := 0.0    # 윗부분이 바닥보다 옆으로 밀린 정도 (+ = 오른쪽)
+var _wobble_vel := 0.0
+var _prev_vx := 0.0
 var _prev_x := 0.0
+var _mat: ShaderMaterial
 var _squish := 0.0    # 스프링으로 따라가는 눌림 정도 (0 = 보통, 1 = 가장 납작, 음수 = 길쭉하게 튕김)
 var _squish_vel := 0.0
 var _move_tween: Tween
@@ -69,19 +70,20 @@ static func _blob_point(t: float, angle: float) -> Vector3:
 
 
 func _ready() -> void:
-	var body_mat := _jelly_material(MINT, 1.0)
+	_mat = ShaderMaterial.new()
+	_mat.shader = preload("res://shaders/jelly.gdshader")
+	_mat.set_shader_parameter("height", BODY_HEIGHT)
 	_body = MeshInstance3D.new()
 	_body.mesh = build_body_mesh()
-	_body.material_override = body_mat
+	_body.material_override = _mat
 	add_child(_body)
 
-	# 점 눈: 앞쪽(-z)에 있어서 뒤에서 보면 거의 안 보인다
+	# 점 눈: 앞쪽(-z)에 있다. 몸이 반투명이라 눈 셰이더가 뒷모습에서는 스스로 숨는다
 	var eye_mesh := SphereMesh.new()
 	eye_mesh.radius = 0.045
 	eye_mesh.height = 0.09
-	var eye_mat := StandardMaterial3D.new()
-	eye_mat.albedo_color = Color("12332e")
-	eye_mat.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
+	var eye_mat := ShaderMaterial.new()
+	eye_mat.shader = preload("res://shaders/eye.gdshader")
 	for side in [-1.0, 1.0]:
 		var eye := MeshInstance3D.new()
 		eye.mesh = eye_mesh
@@ -89,7 +91,7 @@ func _ready() -> void:
 		eye.position = Vector3(side * 0.13, 0.55, -0.3)
 		_body.add_child(eye)
 
-	# 바닥 그림자
+	# 발밑 빛 웅덩이 + 가운데 작은 그림자
 	var quad := PlaneMesh.new()
 	quad.size = Vector2.ONE * SHADOW_SIZE
 	var shadow_mat := ShaderMaterial.new()
@@ -102,35 +104,31 @@ func _ready() -> void:
 	_animate()
 
 
-func _jelly_material(color: Color, highlight: float) -> ShaderMaterial:
-	var mat := ShaderMaterial.new()
-	mat.shader = preload("res://shaders/jelly.gdshader")
-	mat.set_shader_parameter("mint", color)
-	mat.set_shader_parameter("highlight", highlight)
-	mat.set_shader_parameter("height", BODY_HEIGHT)
-	return mat
-
-
 func _process(delta: float) -> void:
 	if running:
 		_phase += delta * STEP_RATE
 	if delta > 0.0:
-		step_sway((position.x - _prev_x) / delta, delta)
+		step_wobble((position.x - _prev_x) / delta, delta)
 	_prev_x = position.x
 	_step_squish(_squish_target(), delta)
 	_animate()
 
 
-## 옆 속도 vx에 반대쪽으로 몸 윗부분이 늦게 따라오는 스프링 (오른쪽으로 가면 위가 왼쪽에 처짐).
+## 옆 속도 vx(유닛/초)를 받아 출렁임 스프링을 진행한다. 바닥 가속도의 반대쪽으로 위가 밀린다.
 ## 큰 delta에서도 터지지 않게 작게 쪼개 적분한다.
-func step_sway(vx: float, delta: float) -> void:
-	var steps := ceili(delta / 0.008)
+func step_wobble(vx: float, delta: float) -> void:
+	var accel := (vx - _prev_vx) / delta
+	_prev_vx = vx
+	var steps := ceili(delta / 0.004)
 	var h := delta / steps
 	for i in steps:
-		_vx_smooth += (vx - _vx_smooth) * minf(1.0, SWAY_SMOOTH * h)
-		var target := clampf(_vx_smooth * SWAY_GAIN, -SWAY_MAX, SWAY_MAX)
-		_sway_vel += (SWAY_STIFF * (target - _sway) - SWAY_DAMP * _sway_vel) * h
-		_sway += _sway_vel * h
+		_wobble_vel += (-WOBBLE_STIFF * _wobble - WOBBLE_DAMP * _wobble_vel - accel) * h
+		_wobble += _wobble_vel * h
+
+
+## 셰이더에 넘기는 정수리 밀림 거리
+func lean() -> float:
+	return clampf(_wobble * WOBBLE_GAIN, -WOBBLE_MAX, WOBBLE_MAX)
 
 
 ## 걸음 위상을 직접 정한다 (테스트용).
@@ -176,6 +174,7 @@ func _animate() -> void:
 	# 슬라이드: 낮고 넓게 납작해진다
 	_body.scale = Vector3(sxz * (1.0 + 0.35 * crouch), sy * lerpf(1.0, PlayerAction.CROUCH_SCALE, crouch), sxz * (1.0 + 0.35 * crouch))
 	_body.position.y = (hop * HOP_HEIGHT if lift <= 0.0 else 0.0) + lift
-	_body.rotation.z = _sway
+	_mat.set_shader_parameter("lean", lean())
+	_mat.set_shader_parameter("beat", _phase)
 	# 높이 뛸수록 작아지고, 착지 순간(눌림↑)에 살짝 커졌다 줄어든다
 	_shadow.scale = Vector3.ONE * (1.0 - 0.18 * hop + 0.14 * clampf(_squish, 0.0, 1.0)) * (1.0 - 0.25 * minf(lift, 1.0))
