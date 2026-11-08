@@ -34,6 +34,35 @@ func test_스와이프로_레인이_바뀌고_양쪽_끝에서_멈춤() -> void:
 	main.queue_free()
 
 
+## 실제 터치 이벤트로 from → to 를 steps번에 나눠 끌고 뗀다.
+func _touch_swipe(main: Node3D, from: Vector2, to: Vector2, steps: int) -> void:
+	var touch := InputEventScreenTouch.new()
+	touch.position = from
+	touch.pressed = true
+	main._input(touch)
+	for i in steps:
+		var drag := InputEventScreenDrag.new()
+		drag.position = from.lerp(to, float(i + 1) / steps)
+		main._input(drag)
+	touch.position = to
+	touch.pressed = false
+	main._input(touch)
+
+
+func test_터치로_길게_밀어도_한_칸만_가고_떼고_다시_밀면_다음_칸() -> void:
+	var main := _make_main()
+	await wait_frames()
+	_touch_swipe(main, Vector2(40, 900), Vector2(700, 900), 40)
+	assert_eq(main.lane, 2, "화면 끝까지 밀어도 한 칸")
+	_touch_swipe(main, Vector2(700, 900), Vector2(40, 900), 40)
+	assert_eq(main.lane, 1, "떼고 다시 밀면 다음 칸")
+	_touch_swipe(main, Vector2(360, 1200), Vector2(360, 100), 40)
+	assert_true(main.player.is_jumping(), "위로 길게 밀면 점프")
+	main.advance(PlayerAction.JUMP_TIME + 0.05)
+	assert_false(main.player.is_jumping(), "점프는 한 번만 (미리 넣은 입력으로 또 뛰지 않음)")
+	main.queue_free()
+
+
 func test_위_스와이프는_점프_아래는_슬라이드() -> void:
 	var main := _make_main()
 	await wait_frames()

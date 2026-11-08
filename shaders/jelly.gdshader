@@ -34,6 +34,9 @@ uniform float radius = 0.42; // 메시 가장 넓은 반지름 (반사광 위치
 uniform float lean = 0.0;    // 정수리가 옆으로 밀린 거리 (레인 이동 출렁임)
 uniform float drag = 0.0;    // 슬라이드: 정수리가 뒤(+z)로 끌린 거리 (앞쪽이 낮고 길게 나감)
 uniform float beat = 0.0;    // 달리기 박자 위상
+uniform float flat_bottom = 1.0;  // 바닥 평평함: 1 = 땅에 닿은 평평한 푸딩 바닥, 0 = 공중의 둥근 물방울 바닥 (ART_BIBLE.md 2-4)
+uniform float foot_ratio = 0.8;   // runner.gd FOOT_RATIO: 메시의 평평한 바닥 반지름 비율
+uniform float widest_t = 0.375;   // runner.gd WIDEST_T: 가장 넓은 높이 비율 (이 아래만 둥글게 바꾼다)
 
 varying vec3 lp;  // 출렁이기 전 몸 좌표: 반사광·기포가 표면에 붙어 같이 흔들린다
 
@@ -42,6 +45,19 @@ float ring(float d, float r, float w) {
 }
 
 void vertex() {
+	// 바닥 둥글기: 메시는 평평한 바닥(반지름 = 가장 넓은 폭 × foot_ratio)으로 만들어져 있다.
+	// 가장 넓은 곳 아래의 반지름을 R·(k + (1-k)·√(1-c²))로 바꾼다. k = foot_ratio·flat_bottom, k=0이면 아래가 타원으로 둥글게 닫힌다.
+	// runner.gd _blob_point와 같은 식이라 flat_bottom = 1이면 메시 그대로다. 바닥 원판은 반지름이 k배로 줄어 한 점이 된다.
+	float wh = widest_t * height;
+	if (VERTEX.y < wh) {
+		float c = 1.0 - VERTEX.y / wh;
+		float s = sqrt(max(1.0 - c * c, 0.0));
+		float k = foot_ratio * flat_bottom;
+		VERTEX.xz *= (k + (1.0 - k) * s) / (foot_ratio + (1.0 - foot_ratio) * s);
+		// 회전체 법선 (cosθ, -dr/dy, sinθ)에 s·wh를 곱한 꼴: 맨 아래(s=0)에서도 나눗셈 없이 아래를 향한다
+		vec2 d = VERTEX.xz / max(length(VERTEX.xz), 1e-5);
+		NORMAL = normalize(vec3(d.x * s * wh, -radius * (1.0 - k) * c, d.y * s * wh));
+	}
 	lp = VERTEX;
 	float vy = clamp(VERTEX.y / height, 0.0, 1.0);
 	// 표면 물결: 서로 다른 두 물결을 겹쳐 계속 일렁이게. 바닥은 땅에 붙어 있게 움직이지 않는다

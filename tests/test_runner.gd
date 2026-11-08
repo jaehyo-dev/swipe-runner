@@ -410,3 +410,65 @@ func test_슬라이드_중_점프해도_모양이_튀지_않음() -> void:
 	var frames := _simulate_actions(_jump_runner(), {0: "slide", 20: "jump"}, 60)
 	var single := _simulate_actions(_jump_runner(), {0: "jump"}, 60)
 	assert_true(_max_step(frames, 19, 60) <= _max_step(single, 0, 60) * 1.15, "슬라이드→점프 프레임 변화 %f" % _max_step(frames, 19, 60))
+
+
+func test_공중에서는_바닥이_둥글고_착지하면_다시_평평하며_툭_튀지_않음() -> void:
+	var runner := _jump_runner()
+	var player := PlayerAction.new()
+	var dt := 1.0 / 60.0
+	var prev := runner._flat
+	var max_air_step := 0.0
+	var max_land_step := 0.0
+	var air_min := 1.0
+	var landed_at := -1
+	player.jump()
+	for f in 90:
+		player.step(dt)
+		var was_air := runner.lift > 0.0
+		runner.lift = player.height()
+		runner._process(dt)
+		var step := absf(runner._flat - prev)
+		prev = runner._flat
+		if runner.lift > 0.0:
+			max_air_step = maxf(max_air_step, step)
+			air_min = minf(air_min, runner._flat)
+			if f > 10:
+				assert_eq(runner._flat, 0.0, "공중(0.17초 뒤)에서는 계속 둥근 바닥 (프레임 %d)" % f)
+		else:
+			if was_air:
+				landed_at = f
+			max_land_step = maxf(max_land_step, step)
+	assert_eq(air_min, 0.0, "공중에서 완전히 둥글어짐")
+	assert_true(landed_at > 0, "착지함")
+	assert_eq(runner._flat, 1.0, "착지 뒤 다시 평평")
+	assert_true(max_air_step <= dt / Runner.FLAT_CURL_TIME + 0.001, "말려 올라가는 한 프레임 변화 %f" % max_air_step)
+	assert_true(max_land_step <= dt / Runner.FLAT_SPREAD_TIME + 0.001 and max_land_step < 0.5, "착지 한 프레임 변화 %f" % max_land_step)
+	runner.queue_free()
+
+
+func test_달리는_동안_바닥은_계속_평평() -> void:
+	var runner := _make_runner()
+	for i in 120:
+		runner._process(1.0 / 60.0)
+	assert_eq(runner._flat, 1.0)
+	runner.queue_free()
+
+
+func test_점프_그림자는_꼭대기에서_진하기_약_30퍼센트_크기_약_60퍼센트() -> void:
+	var runner := _jump_runner()
+	var ground_x: float = runner._shadow.scale.x / runner._body.scale.x
+	assert_eq(runner._shadow_mat.get_shader_parameter("opacity"), 1.0, "땅에서는 그대로 진함")
+	runner.lift = PlayerAction.JUMP_HEIGHT
+	runner._animate()
+	var top_size: float = runner._shadow.scale.x / runner._body.scale.x / ground_x
+	var top_opacity: float = runner._shadow_mat.get_shader_parameter("opacity")
+	assert_true(absf(top_opacity - 0.3) < 0.01, "꼭대기 진하기 %f" % top_opacity)
+	assert_true(absf(top_size - 0.6) < 0.01, "꼭대기 크기 %f" % top_size)
+	runner.lift = PlayerAction.JUMP_HEIGHT * 0.5
+	runner._animate()
+	var mid: float = runner._shadow_mat.get_shader_parameter("opacity")
+	assert_true(mid > top_opacity and mid < 1.0, "중간 높이는 그 사이 %f" % mid)
+	runner.lift = 0.0
+	runner._animate()
+	assert_eq(runner._shadow_mat.get_shader_parameter("opacity"), 1.0, "착지하면 다시 진함")
+	runner.queue_free()

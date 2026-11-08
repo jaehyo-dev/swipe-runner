@@ -106,11 +106,11 @@ func _input(event: InputEvent) -> void:
 		return
 	if event is InputEventScreenTouch:
 		if event.pressed:
-			_swipe.press(event.position)
+			_swipe.press(event.position, event.index)
 		else:
-			_swipe.release()
+			_swipe.release(event.index)
 	elif event is InputEventScreenDrag:
-		apply_swipe(_swipe.move(event.position))
+		apply_swipe(_swipe.move(event.position, event.index))
 	elif event.is_action_pressed("ui_left"):
 		apply_swipe(SwipeDetector.Dir.LEFT)
 	elif event.is_action_pressed("ui_right"):

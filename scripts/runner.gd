@@ -36,6 +36,12 @@ const SLIDE_SQUASH := 0.42       # 몸 키 배율. 표면 물결까지 더해도
 const SLIDE_DRAG := 0.12         # 윗부분이 뒤로 끌리는 거리: 앞쪽이 낮고 길게 나간다 (셰이더 drag)
 const SPREAD_DAMP := 16.0        # 앞뒤 늘어남 감쇠: 시작할 때 1.5배를 살짝 넘겨 앞으로 쭉 퍼졌다 돌아옴
 const SLIDE_END_KICK := 9.0      # 슬라이드가 끝날 때 위로 쭉 올라오는 세기
+## 공중 모양 (ART_BIBLE.md 2-4): 바닥 평평함(1 = 땅의 평평한 바닥, 0 = 둥근 물방울 바닥)을 시간에 걸쳐 바꿔 툭 튀지 않게 한다
+const FLAT_CURL_TIME := 0.1      # 뜬 뒤 바닥이 둥글게 말려 올라가는 시간(초) (조절: 작을수록 빨리 둥글어짐)
+const FLAT_SPREAD_TIME := 0.05   # 착지 순간 바닥이 다시 평평하게 퍼지는 시간(초)
+## 점프 그림자: 최고 높이(JUMP_HEIGHT)에서의 값. 그 사이는 높이에 비례해 줄어든다
+const SHADOW_AIR_OPACITY := 0.3  # 최고 높이 진하기 (땅 1)
+const SHADOW_AIR_SIZE := 0.6     # 최고 높이 크기 (땅 1)
 
 var _body: MeshInstance3D
 var _shadow: MeshInstance3D
@@ -55,6 +61,8 @@ var _spread_vel := 0.0
 var _prev_lift := 0.0
 var _prev_lift_vel := 0.0
 var _crouch_vis := 0.0  # 화면에 보이는 슬라이드 정도: 점프로 슬라이드가 끊겨도 한 프레임에 튀지 않게 천천히 돌아온다
+var _flat := 1.0        # 바닥 평평함 (1 = 땅, 0 = 공중의 둥근 바닥)
+var _shadow_mat: ShaderMaterial
 ## 점프로 뜬 높이와 슬라이드로 낮아진 정도(0~1). main이 매 프레임 넣어 준다.
 var lift := 0.0
 var crouch := 0.0
@@ -107,6 +115,8 @@ func _ready() -> void:
 	_mat.shader = preload("res://shaders/jelly.gdshader")
 	_mat.set_shader_parameter("height", BODY_HEIGHT)
 	_mat.set_shader_parameter("radius", BODY_RADIUS)
+	_mat.set_shader_parameter("foot_ratio", FOOT_RATIO)
+	_mat.set_shader_parameter("widest_t", WIDEST_T)
 	_body = MeshInstance3D.new()
 	_body.mesh = build_body_mesh()
 	_body.material_override = _mat
@@ -128,11 +138,11 @@ func _ready() -> void:
 	# 발밑 빛 웅덩이 + 가운데 작은 그림자
 	var quad := PlaneMesh.new()
 	quad.size = Vector2.ONE * SHADOW_SIZE
-	var shadow_mat := ShaderMaterial.new()
-	shadow_mat.shader = preload("res://shaders/shadow.gdshader")
+	_shadow_mat = ShaderMaterial.new()
+	_shadow_mat.shader = preload("res://shaders/shadow.gdshader")
 	_shadow = MeshInstance3D.new()
 	_shadow.mesh = quad
-	_shadow.material_override = shadow_mat
+	_shadow.material_override = _shadow_mat
 	_shadow.position.y = 0.012
 	add_child(_shadow)
 	_animate()
@@ -164,6 +174,7 @@ func step_shape(delta: float) -> void:
 	if crouch <= 0.0 and _crouch_vis > 0.0 and _crouch_vis <= delta / PlayerAction.SLIDE_FADE:
 		_stretch_vel += SLIDE_END_KICK  # 슬라이드에서 돌아오는 마지막 프레임
 	_crouch_vis = maxf(crouch, move_toward(_crouch_vis, 0.0, delta / PlayerAction.SLIDE_FADE))
+	_flat = move_toward(_flat, 0.0 if air else 1.0, delta / (FLAT_CURL_TIME if air else FLAT_SPREAD_TIME))
 	_prev_lift = lift
 	_prev_lift_vel = vy
 	var v0 := 4.0 * PlayerAction.JUMP_HEIGHT / PlayerAction.JUMP_TIME  # 뛰는 순간 속도
@@ -245,5 +256,10 @@ func _animate() -> void:
 	_mat.set_shader_parameter("lean", lean())
 	_mat.set_shader_parameter("drag", SLIDE_DRAG * c)
 	_mat.set_shader_parameter("beat", _phase)
-	# 접촉 그림자는 바닥 모양을 따라 퍼졌다 좁아지고, 점프로 뜨면 작아진다
-	_shadow.scale = Vector3(_body.scale.x, 1.0, _body.scale.z) * (1.0 - 0.25 * minf(lift, 1.0))
+	_mat.set_shader_parameter("flat_bottom", smoothstep(0.0, 1.0, _flat))  # 처음과 끝이 부드럽게
+	# 접촉 그림자는 바닥 모양을 따라 퍼졌다 좁아지고, 점프로 뜨면 작고 옅고 부드러워진다.
+	# 높이의 제곱근을 써서 조금만 떠도 빨리 옅어진다 (낮게 뜬 몸 아래 진한 원이 까만 구멍처럼 남지 않게)
+	var h := sqrt(clampf(lift / PlayerAction.JUMP_HEIGHT, 0.0, 1.0))
+	_shadow.scale = Vector3(_body.scale.x, 1.0, _body.scale.z) * lerpf(1.0, SHADOW_AIR_SIZE, h)
+	_shadow_mat.set_shader_parameter("opacity", lerpf(1.0, SHADOW_AIR_OPACITY, h))
+	_shadow_mat.set_shader_parameter("soft", h)

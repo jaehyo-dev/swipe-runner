@@ -9,11 +9,15 @@ uniform float glow_inner = 0.46;     // 빛 고리가 시작하는 곳 (몸의 �
 uniform float shadow_strength = 0.85;  // 접촉 그림자 진하기
 uniform float shadow_edge = 0.4;     // 접촉 그림자가 진하게 유지되는 반지름 (몸 바닥 0.35보다 살짝 바깥)
 uniform float shadow_fade = 0.07;    // 접촉 그림자가 흐려지는 폭 (짧을수록 또렷하게 붙어 보임)
+// --- runner.gd가 점프 높이에 따라 넣는 값 (ART_BIBLE.md 2-4) ---
+uniform float opacity = 1.0;  // 그림자·빛 고리 진하기 배율 (땅 1, 최고 높이 약 0.3)
+uniform float soft = 0.0;     // 0 = 땅에 붙은 또렷한 그림자, 1 = 최고 높이의 부드럽게 번진 그림자
 
 void fragment() {
 	float r = length(UV - vec2(0.5)) * 2.0;
-	float glow = smoothstep(glow_inner, glow_inner + 0.12, r) * (1.0 - smoothstep(glow_inner + 0.12, 1.0, r)) * glow_strength;
-	float dark = (1.0 - smoothstep(shadow_edge, shadow_edge + shadow_fade, r)) * shadow_strength;
+	float glow = smoothstep(glow_inner, glow_inner + 0.12, r) * (1.0 - smoothstep(glow_inner + 0.12, 1.0, r)) * glow_strength * opacity;
+	// 뜰수록 가장자리를 안팎으로 넓게 번지게 해서 까만 구멍처럼 또렷한 원이 남지 않게 한다
+	float dark = (1.0 - smoothstep(shadow_edge - 0.15 * soft, shadow_edge + shadow_fade + 0.2 * soft, r)) * shadow_strength * opacity;
 	ALBEDO = mix(glow_color, vec3(0.01, 0.0, 0.06), dark / max(dark + glow, 0.001));
 	ALPHA = clamp(dark + glow, 0.0, 1.0);
 }
