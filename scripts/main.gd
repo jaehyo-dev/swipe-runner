@@ -55,6 +55,7 @@ var _restart_label: Label
 var _camera: Camera3D
 var _distance_label: Label
 var _best_label: Label
+var _pop: Tween
 var _scroll := 0.0
 var _music_t := 0.0  # 박자 기준 시간
 
@@ -229,9 +230,9 @@ func _show_best() -> void:
 func _on_new_record() -> void:
 	_best_label.text = "NEW BEST"
 	_distance_label.pivot_offset = _distance_label.size * 0.5
-	var pop := create_tween()
-	pop.tween_property(_distance_label, "scale", Vector2.ONE * POP_SCALE, POP_UP).set_trans(Tween.TRANS_SINE).set_ease(Tween.EASE_OUT)
-	pop.tween_property(_distance_label, "scale", Vector2.ONE, POP_DOWN).set_trans(Tween.TRANS_BACK).set_ease(Tween.EASE_OUT)
+	_pop = create_tween()
+	_pop.tween_property(_distance_label, "scale", Vector2.ONE * POP_SCALE, POP_UP).set_trans(Tween.TRANS_SINE).set_ease(Tween.EASE_OUT)
+	_pop.tween_property(_distance_label, "scale", Vector2.ONE, POP_DOWN).set_trans(Tween.TRANS_BACK).set_ease(Tween.EASE_OUT)
 
 
 func _input(event: InputEvent) -> void:

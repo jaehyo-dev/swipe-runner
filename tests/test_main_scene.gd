@@ -694,9 +694,10 @@ func test_최고를_넘는_순간_숫자가_커졌다_돌아오고_NEW_BEST로_�
 	_run_past(main, old + 1.0)
 	assert_eq(_best_label(main).text, "NEW BEST")
 	assert_eq(FileAccess.get_file_as_string(TEST_BEST).to_int(), main.record.best, "게임이 끝나기 전에 저장")
-	await get_tree().create_timer(main.POP_UP).timeout
-	assert_true(main._distance_label.scale.x > 1.1, "말랑 커짐 %f" % main._distance_label.scale.x)
-	await get_tree().create_timer(main.POP_DOWN + 0.1).timeout
+	# 실제 시간을 기다리면 느린 CI에서 흔들리므로 트윈을 직접 진행한다
+	main._pop.custom_step(main.POP_UP)
+	assert_true(is_equal_approx(main._distance_label.scale.x, main.POP_SCALE), "말랑 커짐 %f" % main._distance_label.scale.x)
+	main._pop.custom_step(main.POP_DOWN + 0.01)
 	assert_eq(main._distance_label.scale, Vector2.ONE, "돌아옴")
 	_place(main, _add_obstacle(main), 0.0)
 	main.advance(0.0)
