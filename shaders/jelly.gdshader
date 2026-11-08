@@ -1,5 +1,5 @@
 shader_type spatial;
-// 빛나는 푸딩 슬라임 (ART_BIBLE.md 2-1, 2-2): 맑은 반투명 + 두께 색(밝은 테두리 → 진한 청록 띠 → 맑은 민트)
+// 빛나는 푸딩 슬라임 (ART_BIBLE.md 2-1, 2-2, 2-3 아쿠아 민트): 맑은 반투명 + 두께 색(밝은 테두리 → 진한 청록 띠 → 맑은 민트)
 // + 작고 진한 숨 쉬는 심지 + 속이 빈 기포 + 긴 반사광·작은 반사점 + 일렁이는 표면 + 몸 뒤가 살짝 휘어 보이는 굴절.
 // 글로우 기준(HDR 0.9)을 넘는 곳은 테두리·반사광·심지뿐이다. 몸 색이 0.9를 넘으면 몸 전체가 번져 안개처럼 뿌옇게 된다.
 // 기포·반사광은 따로 메시를 겹치지 않고 여기서 몸 좌표(뒤에서 본 x·y)로 그린다.
@@ -12,25 +12,27 @@ uniform sampler2D screen_tex : hint_screen_texture, filter_linear;
 uniform float alpha_center = 0.5;   // 가운데 투명도 (0 = 완전 투명, 1 = 불투명). 낮을수록 뒤가 또렷이 비침
 uniform float alpha_edge = 0.92;    // 가장자리 투명도 (프레넬)
 uniform float core_strength = 1.0;  // 심지 세기
-uniform float core_size = 0.12;     // 심지 반지름 (m). 0.12면 보이는 지름이 몸 높이의 약 1/3
+uniform float core_size = 0.1;      // 심지 반지름 (m). 0.1이면 보이는 지름이 몸 높이(0.8)의 약 1/3
 uniform float core_breath = 0.18;   // 심지가 박자에 맞춰 숨 쉬는 폭 (0 = 고정)
 uniform float rim_start = 0.8;      // 테두리 빛이 시작하는 프레넬 값 (클수록 테두리가 얇아짐, 0.85를 넘으면 점선처럼 깨짐)
 uniform float ground_dark = 0.55;   // 바닥에 닿은 부분이 진해지는 정도 (액체가 아래로 모인 느낌)
 uniform float refraction = 0.025;   // 굴절 세기 (화면 비율, 0 = 휘지 않음)
 uniform float ripple = 0.006;       // 표면 물결 높이
 uniform float bubble_strength = 0.8;
-uniform vec3 transmit_tint : source_color = vec3(0.3, 1.0, 0.45);  // 몸을 통과해 보이는 뒤 화면이 물드는 색 (보라 배경이 회색으로 섞이지 않게)
+uniform vec3 transmit_tint : source_color = vec3(0.18, 1.0, 0.58);  // 몸을 통과해 보이는 뒤 화면이 물드는 색 (보라 배경이 회색·초록이 아니라 하늘빛 민트로 섞이게)
 
 // --- 색 (ART_BIBLE.md 팔레트) ---
-uniform vec3 rim_color : source_color = vec3(0.749, 1.0, 0.929);   // #BFFFED 얇은 가장자리
+uniform vec3 rim_color : source_color = vec3(0.784, 1.0, 0.980);   // #C8FFFA 얇은 가장자리
 uniform float rim_energy = 2.1;     // 테두리 발광: 화면에서 가장 밝아야 함 (장애물 선 1.6~1.8보다 위)
-uniform vec3 band_color : source_color = vec3(0.247, 0.659, 0.580); // #3FA894 안쪽 띠
-uniform vec3 mint : source_color = vec3(0.498, 0.878, 0.784);      // #7FE0C8 몸
-uniform vec3 core_color : source_color = vec3(0.91, 1.0, 0.973);    // #E8FFF8 속빛
+uniform vec3 band_color : source_color = vec3(0.184, 0.592, 0.659); // #2F97A8 안쪽 띠
+uniform vec3 mint : source_color = vec3(0.525, 0.890, 0.902);      // #86E3E6 몸 (아쿠아 민트)
+uniform vec3 core_color : source_color = vec3(0.918, 1.0, 1.0);     // #EAFFFF 속빛
 
 // --- runner.gd가 매 프레임 넣는 값 ---
 uniform float height = 1.0;  // 메시 높이 (아래 0 ~ 위 height)
+uniform float radius = 0.42; // 메시 가장 넓은 반지름 (반사광 위치를 몸 크기에 맞춤)
 uniform float lean = 0.0;    // 정수리가 옆으로 밀린 거리 (레인 이동 출렁임)
+uniform float drag = 0.0;    // 슬라이드: 정수리가 뒤(+z)로 끌린 거리 (앞쪽이 낮고 길게 나감)
 uniform float beat = 0.0;    // 달리기 박자 위상
 
 varying vec3 lp;  // 출렁이기 전 몸 좌표: 반사광·기포가 표면에 붙어 같이 흔들린다
@@ -48,6 +50,7 @@ void vertex() {
 	VERTEX += NORMAL * w * ripple * smoothstep(0.05, 0.3, vy);
 	// 높이별 기울기: 바닥은 그대로, 위로 갈수록 크게 밀린다 (푸딩처럼 위가 늦게 따라옴)
 	VERTEX.x += lean * vy * vy;
+	VERTEX.z += drag * vy * vy;
 }
 
 void fragment() {
@@ -58,8 +61,8 @@ void fragment() {
 	// 두께 색: 가운데 민트 → 진한 청록 띠 → 밝은 테두리
 	// 위에서 내려다보는 정수리가 띠 색으로 칠해져 뚜껑처럼 보이지 않게, 띠는 옆면(위로 갈수록 약하게)에만 둔다
 	float band = smoothstep(0.3, 0.68, f) * (1.0 - smoothstep(0.55, 0.9, vy));
-	// 맑은 몸은 어두운 보라 바닥과 섞이며 파랑이 올라오므로, 초록 쪽으로 살짝 당겨 민트로 읽히게 한다
-	vec3 col = mix(mint * vec3(0.88, 1.04, 0.93), band_color, band);
+	// 맑은 몸은 어두운 보라 바닥과 섞이며 파랑이 올라오므로, 파랑을 살짝 빼서 화면에서 #86E3E6 색조(약 182°)로 읽히게 한다
+	vec3 col = mix(mint * vec3(0.88, 1.03, 0.96), band_color, band);
 	// 바닥에 닿은 부분: 진한 청록으로 모인다
 	float ground = (1.0 - smoothstep(0.0, 0.22, vy)) * ground_dark;
 	col = mix(col, band_color * 0.75, ground);
@@ -72,13 +75,15 @@ void fragment() {
 	col += core_color * core;
 
 	// 반사광: 표면 물결을 따라 살짝 흔들리는 좌표
-	vec2 p = lp.xy + 0.012 * vec2(sin(TIME * 4.0 + lp.y * 12.0), cos(TIME * 3.3 + lp.x * 10.0));
+	// 반사광 위치는 v0.2.2 몸(반지름 0.42, 높이 1) 좌표로 맞춰 그려서 몸 크기가 바뀌어도 같은 자리에 붙는다
+	vec2 bp = vec2(lp.x * 0.42 / radius, lp.y / height);
+	vec2 p = bp + 0.012 * vec2(sin(TIME * 4.0 + bp.y * 12.0), cos(TIME * 3.3 + bp.x * 10.0));
 	// 왼쪽 위 길게 휜 반사광 (가장 밝은 점)
-	vec2 a = p - vec2(0.04, 0.47 * height);
+	vec2 a = p - vec2(0.04, 0.47);
 	float ang = atan(a.y, a.x);
 	float streak = (1.0 - smoothstep(0.014, 0.028, abs(length(a) - 0.25))) * smoothstep(1.65, 1.95, ang) * (1.0 - smoothstep(2.7, 3.0, ang));
 	// 반대쪽 오른쪽 아래의 작은 반사점
-	float dot_hl = 1.0 - smoothstep(0.018, 0.028, length(p - vec2(0.2, 0.33 * height)));
+	float dot_hl = 1.0 - smoothstep(0.018, 0.028, length(p - vec2(0.2, 0.33)));
 	float hl = max(streak, dot_hl * 0.85);
 
 	// 기포 4개: 크기·속도·위치 제각각, 아래에서 떠올라 몸 위쪽에서 사라진다
@@ -87,7 +92,7 @@ void fragment() {
 		float fi = float(i);
 		float t = fract(TIME * (0.18 + 0.07 * fract(fi * 0.618)) + fi * 0.29);
 		float r = 0.045 + 0.022 * fract(fi * 0.71 + 0.3);
-		vec2 c = vec2((fract(fi * 0.618 + 0.15) - 0.5) * 0.36 + 0.02 * sin(TIME * 2.0 + fi * 3.0), mix(0.1, 0.72, t) * height);
+		vec2 c = vec2((fract(fi * 0.618 + 0.15) - 0.5) * 0.86 * radius + 0.02 * sin(TIME * 2.0 + fi * 3.0), mix(0.1, 0.72, t) * height);
 		float fade = smoothstep(0.0, 0.12, t) * (1.0 - smoothstep(0.7, 1.0, t));
 		float d = length(lp.xy - c);
 		bub = max(bub, ring(d, r, max(0.006, fwidth(d))) * fade);  // 화면에서 1픽셀보다 얇아지지 않게

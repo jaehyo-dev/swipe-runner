@@ -90,8 +90,7 @@ func advance(delta: float) -> void:
 ## 부딪혔다: 모든 게 멈추고 안내 글자가 뜬다. 실수로 바로 넘기지 않게 잠깐 뒤부터 다시 시작할 수 있다.
 func _game_over() -> void:
 	dead = true
-	runner.running = false
-	runner.crouch = 0.6
+	runner.running = false  # 멈춘 모습은 기본 모양 그대로 (size_reference.png). 충돌 찌그러짐은 v0.3.0
 	_restart_label.visible = true
 
 

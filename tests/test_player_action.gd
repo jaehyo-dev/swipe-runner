@@ -80,3 +80,14 @@ func test_점프로_허들_위를_지나는_동안_내내_충돌_없음() -> voi
 		a.step(0.01)
 		t += 0.01
 	assert_true(clear, "정점 근처 구간에서 허들을 넘음")
+
+
+func test_판정_값은_v0_2_0과_같음() -> void:
+	# 점프·슬라이드 모션(v0.2.3)은 화면만 바꾼다. 판정을 바꾸려면 사용자 확인 뒤 이 테스트도 함께 고친다
+	assert_eq(PlayerAction.JUMP_TIME, 0.6, "점프 시간")
+	assert_eq(PlayerAction.JUMP_HEIGHT, 1.6, "점프 최고 높이")
+	assert_eq(PlayerAction.SLIDE_TIME, 0.65, "슬라이드 시간")
+	assert_eq(PlayerAction.SLIDE_FADE, 0.08, "슬라이드 낮아지는 시간")
+	assert_eq(PlayerAction.CROUCH_SCALE, 0.45, "슬라이드 판정 높이 배율")
+	assert_eq(PlayerAction.HIT_X, 0.7, "충돌 범위 좌우")
+	assert_eq(PlayerAction.HIT_Z, 0.7, "충돌 범위 앞뒤")

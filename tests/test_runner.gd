@@ -241,3 +241,172 @@ func test_레인_이동은_출발이_부드러움() -> void:
 	assert_true(runner.position.x < dist * 0.2, "출발 직후 이동량 %f / %f" % [runner.position.x, dist])
 	runner.queue_free()
 
+
+
+func test_몸_크기는_폭_약_1_0_키_약_0_8() -> void:
+	var box := Runner.build_body_mesh().get_aabb()
+	assert_true(absf(box.size.x - 1.0) < 0.03, "폭 %f" % box.size.x)
+	assert_true(absf(box.size.y - 0.8) < 0.01, "키 %f" % box.size.y)
+
+
+## 실제 게임처럼 PlayerAction과 주인공을 60fps로 진행한다. actions = {프레임: "jump"/"slide"}.
+## 프레임마다 {y: 몸 키 배율, x: 옆 배율, z: 앞뒤 배율, bottom: 몸 바닥 높이, lift, ducking, stretch} 를 모은다.
+func _simulate_actions(runner: Runner, actions: Dictionary, frames: int, move_x := {}) -> Array[Dictionary]:
+	var player := PlayerAction.new()
+	var dt := 1.0 / 60.0
+	var out: Array[Dictionary] = []
+	for f in frames:
+		if actions.get(f) == "jump":
+			player.jump()
+		elif actions.get(f) == "slide":
+			player.slide()
+		if move_x.has(f):
+			runner.position.x = move_x[f]
+		player.step(dt)
+		runner.lift = player.height()
+		runner.crouch = player.crouch()
+		runner._process(dt)
+		var s := runner._body.scale
+		out.append({"y": s.y, "x": s.x, "z": s.z, "bottom": runner._body.position.y, "lift": runner.lift,
+			"ducking": player.is_ducking(), "stretch": runner._stretch})
+	return out
+
+
+func _jump_runner() -> Runner:
+	var runner := _make_runner()
+	runner.running = false  # 달리기 박자 눌림을 멈춰 점프 모양만 본다
+	runner.set_phase(PI / 2.0)
+	return runner
+
+
+func test_점프는_입력_즉시_뜨고_세로로_약_1_25배_늘어나며_옆은_좁아짐() -> void:
+	var runner := _jump_runner()
+	var base: float = runner._body.scale.y
+	var base_x: float = runner._body.scale.x
+	var frames := _simulate_actions(runner, {0: "jump"}, 8)
+	assert_true(frames[0]["lift"] > 0.0, "첫 프레임부터 뜸 %f" % frames[0]["lift"])
+	var peak := 0.0
+	var peak_f := 0
+	for i in frames.size():
+		if frames[i]["y"] / base > peak:
+			peak = frames[i]["y"] / base
+			peak_f = i
+	assert_true(peak > 1.2 and peak < 1.3, "늘어남 %f" % peak)
+	assert_true(peak_f <= 3, "늘어남이 바로 옴 (프레임 %d)" % peak_f)
+	assert_true(frames[peak_f]["x"] < base_x * 0.92, "옆은 좁아짐 %f" % frames[peak_f]["x"])
+	runner.queue_free()
+
+
+func test_점프_꼭대기에서는_둥글고_내려올_때_다시_늘어남() -> void:
+	var runner := _jump_runner()
+	var base: float = runner._body.scale.y
+	var frames := _simulate_actions(runner, {0: "jump"}, 36)
+	var apex: float = frames[17]["y"] / base  # 0.3초 = 꼭대기
+	assert_true(absf(apex - 1.0) < 0.06, "꼭대기에서 둥긂 %f" % apex)
+	var before_land: float = frames[34]["y"] / base
+	assert_true(before_land > 1.05 and before_land < 1.2, "내려올 때 조금 늘어남 %f" % before_land)
+	runner.queue_free()
+
+
+func test_착지는_납작하게_퍼지고_2에서_3번_출렁이며_0_4초_안에_멈춤() -> void:
+	var runner := _jump_runner()
+	var frames := _simulate_actions(runner, {0: "jump"}, 120)
+	var land := 0
+	while frames[land]["lift"] > 0.0:
+		land += 1
+	var low := INF
+	for i in range(land, land + 8):
+		low = minf(low, 1.0 + frames[i]["stretch"])
+	assert_true(low > 0.65 and low < 0.78, "착지 납작함 (키 배율) %f" % low)
+	var amp := 1.0 - low
+	var swings := 0
+	for i in range(land + 1, frames.size() - 1):
+		var a: float = frames[i]["stretch"] - frames[i - 1]["stretch"]
+		var b: float = frames[i + 1]["stretch"] - frames[i]["stretch"]
+		if a * b < 0.0 and absf(frames[i]["stretch"]) >= amp * 0.15:
+			swings += 1
+	assert_true(swings >= 2 and swings <= 4, "착지 출렁임 꺾임 수 %d" % swings)
+	for i in range(land + 24, frames.size()):  # 착지 + 0.4초부터
+		assert_true(absf(frames[i]["stretch"]) < amp * 0.05, "%.2f초에 아직 출렁임 %f" % [(i - land) / 60.0, frames[i]["stretch"]])
+	for i in range(land, frames.size()):
+		assert_eq(frames[i]["bottom"], 0.0, "착지 뒤 몸 바닥은 땅")
+	runner.queue_free()
+
+
+## 프레임 사이 키 배율 변화의 최댓값
+func _max_step(frames: Array[Dictionary], from: int, to: int) -> float:
+	var m := 0.0
+	for i in range(maxi(from, 1), mini(to, frames.size())):
+		m = maxf(m, absf(frames[i]["y"] - frames[i - 1]["y"]))
+	return m
+
+
+func test_착지_직후_또_점프해도_모양이_튀지_않음() -> void:
+	var single := _simulate_actions(_jump_runner(), {0: "jump"}, 60)
+	var land := 0
+	while single[land]["lift"] > 0.0:
+		land += 1
+	# 착지 출렁임이 한창일 때(착지 다음 프레임) 다시 뛴다
+	var double := _simulate_actions(_jump_runner(), {0: "jump", land + 1: "jump"}, land + 40)
+	var limit := _max_step(single, 0, single.size())
+	assert_true(_max_step(double, land, double.size()) <= limit * 1.15, "두 번째 점프 프레임 변화 %f <= 한 번 점프 %f" % [_max_step(double, land, double.size()), limit])
+	for f in double:
+		assert_true(f["y"] > 0.55 and f["y"] < 1.45, "모양 범위 %f" % f["y"])
+
+
+func test_착지_출렁임_중_레인을_바꿔도_모양이_같음() -> void:
+	var a := _simulate_actions(_jump_runner(), {0: "jump"}, 70)
+	var moves := {}
+	for f in range(38, 50):  # 착지 무렵 레인 이동
+		moves[f] = RunLogic.LANE_WIDTH * (f - 37) / 12.0
+	var b := _simulate_actions(_jump_runner(), {0: "jump"}, 70, moves)
+	for i in a.size():
+		assert_eq(b[i]["y"], a[i]["y"], "레인 이동은 몸 키에 영향 없음 (출렁임은 셰이더 기울기)")
+
+
+func test_슬라이드는_앞뒤로_약_1_5배_길어지고_옆은_조금만_퍼짐() -> void:
+	var runner := _jump_runner()
+	var frames := _simulate_actions(runner, {0: "slide"}, 26)
+	var max_z := 0.0
+	for f in frames:
+		max_z = maxf(max_z, f["z"])
+	var mid: Dictionary = frames[25]
+	assert_true(absf(mid["z"] - Runner.SLIDE_STRETCH) < 0.05, "앞뒤 늘어남 %f" % mid["z"])
+	assert_true(max_z > Runner.SLIDE_STRETCH + 0.03, "시작할 때 앞으로 쭉 퍼졌다 돌아옴 %f" % max_z)
+	assert_true(mid["x"] > 1.0 and mid["x"] < 1.2, "옆은 조금만 %f" % mid["x"])
+	assert_true(runner._mat.get_shader_parameter("drag") > 0.0, "윗부분이 뒤로 끌림")
+	runner.queue_free()
+
+
+func test_슬라이드_중_보이는_몸_높이는_판정_높이_이하() -> void:
+	var runner := _make_runner()  # 달리기 박자도 그대로 켠다
+	var ripple := 0.006  # jelly.gdshader 표면 물결 최대 높이
+	var limit := PlayerAction.CROUCH_SCALE * Runner.BODY_HEIGHT
+	var frames := _simulate_actions(runner, {5: "slide", 50: "slide", 70: "jump", 110: "slide"}, 160)
+	var ducked := 0
+	for f in frames:
+		if f["ducking"]:
+			ducked += 1
+			var top: float = f["bottom"] + f["y"] * (Runner.BODY_HEIGHT + ripple)
+			assert_true(top <= limit, "슬라이드 중 몸 높이 %f <= %f" % [top, limit])
+	assert_true(ducked > 60, "슬라이드 프레임 수 %d" % ducked)
+	runner.queue_free()
+
+
+func test_슬라이드가_끝나면_위로_쭉_올라오며_출렁() -> void:
+	var runner := _jump_runner()
+	var base: float = runner._body.scale.y
+	var frames := _simulate_actions(runner, {0: "slide"}, 80)
+	var end := roundi(PlayerAction.SLIDE_TIME * 60.0)
+	var peak := 0.0
+	for i in range(end, frames.size()):
+		peak = maxf(peak, frames[i]["y"] / base)
+	assert_true(peak > 1.05, "끝날 때 위로 늘어남 %f" % peak)
+	assert_true(absf(frames[-1]["y"] / base - 1.0) < 0.02, "결국 기본 모양 %f" % (frames[-1]["y"] / base))
+	runner.queue_free()
+
+
+func test_슬라이드_중_점프해도_모양이_튀지_않음() -> void:
+	var frames := _simulate_actions(_jump_runner(), {0: "slide", 20: "jump"}, 60)
+	var single := _simulate_actions(_jump_runner(), {0: "jump"}, 60)
+	assert_true(_max_step(frames, 19, 60) <= _max_step(single, 0, 60) * 1.15, "슬라이드→점프 프레임 변화 %f" % _max_step(frames, 19, 60))

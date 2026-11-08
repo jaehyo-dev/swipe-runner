@@ -96,8 +96,8 @@ func test_장애물_종류별_색조가_정해진_색으로_나옴() -> void:
 	var K := ObstacleField.Kind
 	# 기획 색(ART_BIBLE.md 4번): 블록 아이스 블루, 허들 앰버, 막대 로즈 핑크
 	var expected := {K.BLOCK: Color("9edbff"), K.LOW: Color("ffc38a"), K.HIGH: Color("ff8fc8")}
-	# 주인공 가장자리 최대 밝기 = 테두리 빛(jelly.gdshader 기본값 rim_color 0.75,1,0.93 × rim_energy 2.1)
-	var hero_peak := Color(0.75, 1.0, 0.93) * 2.1
+	# 주인공 가장자리 최대 밝기 = 테두리 빛(jelly.gdshader 기본값 rim_color #C8FFFA × rim_energy 2.1)
+	var hero_peak := Color("c8fffa") * 2.1
 	# 길 선 = line_color × energy (floor.gdshader 기본값. 헤드리스에선 셰이더 기본값 조회가 안 돼 소스에서 읽음)
 	var code: String = main._floor_material.shader.code
 	var re := RegEx.create_from_string("line_color[^=]*= vec3\\(([\\d.]+), ([\\d.]+), ([\\d.]+)\\)[\\s\\S]*energy = ([\\d.]+)")
