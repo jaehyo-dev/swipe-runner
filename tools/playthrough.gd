@@ -1,18 +1,16 @@
 extends Node
 ## 화면 확인 기록용 자동 플레이 (웹 빌드에 들어가지 않음). 결과는 RESULT 줄로 찍는다.
 ##   박자 측정: godot --path . res://tools/playthrough.tscn -- accuracy 180
-##   30초 녹화: godot --path . --write-movie x.avi --fixed-fps 60 --resolution 720x1280 res://tools/playthrough.tscn -- movie 30
+##   30초 녹화: godot --path . --write-movie x.avi --fixed-fps 60 --resolution 720x1280 res://tools/playthrough.tscn -- movie 28.5 [Music|SFX]
+##     (28.5 = 대기 1.5초 뒤 달리는 시간. 세 번째 값을 주면 그 버스만 들리게 해서 크기를 따로 잰다)
+##   음악 시계 시작 기록: 웹 주소에 ?mode=startup&secs=4 (첫 탭 뒤 프레임마다 재생 위치와 음악 시간)
 ## 웹 측정은 주소에 ?mode=accuracy&secs=180
 
-const SEED := 136
+const SEED := 143  # 첫 장애물부터 허들·막대가 내 레인에 온다
 const Dir := SwipeDetector.Dir
-## 30초 장면: [시각, 동작]. 처음 7초는 길이 비어 있어 동작을 차례로 보여 주고, 12초에 일부러 부딪힌 뒤 다시 달린다.
-const SCRIPT := [
-	[1.2, Dir.RIGHT], [2.0, Dir.LEFT], [2.8, Dir.LEFT], [3.6, Dir.UP],
-	[4.6, Dir.DOWN], [5.6, Dir.UP], [5.85, Dir.DOWN],  # 공중 아래 스와이프
-]
 const FIRST_TAP := 0.5
-const SEEK_AT := 12.0     # 이 시각부터 장애물 쪽으로 간다
+const MOVIE_FIRST_TAP := 1.5  # 녹화는 시작 대기 화면을 보여 준다
+const SEEK_AT := 12.0     # 녹화: 이 시각부터 장애물 쪽으로 가서 일부러 부딪힌다
 const RESTART_AFTER := 0.7
 
 var mode := "accuracy"
@@ -20,7 +18,6 @@ var secs := 180.0
 var main: Node3D
 var t := 0.0
 var frame := 0
-var _step := 0
 var _crash_t := -1.0
 var _seek := false
 var _start_usec := 0
@@ -36,6 +33,9 @@ var _input_frame := -1
 var _input_name := ""
 var events: Array[Dictionary] = []
 var _gaps: Array[int] = []
+var _trace := []  # startup: [탭 뒤 벽시계 ms, 재생 위치 ms, 음악 시간 ms]
+var _tap_usec := 0
+var _perf_to_now := 0.0  # 웹: performance.now 초에서 이 값을 빼면 _now() 기준이 된다
 
 
 func _ready() -> void:
@@ -47,6 +47,8 @@ func _ready() -> void:
 	elif args.size() >= 2:
 		mode = args[0]
 		secs = float(args[1])
+	if args.size() >= 3:
+		AudioServer.set_bus_mute(AudioServer.get_bus_index(&"SFX" if args[2] == "Music" else &"Music"), true)
 	if mode == "accuracy" and not OS.has_feature("web"):
 		AudioServer.set_bus_mute(0, true)  # 3분 동안 소리가 나지 않게. 믹스와 재생 위치는 그대로 돈다
 	main = load("res://scenes/main.tscn").instantiate()
@@ -54,6 +56,8 @@ func _ready() -> void:
 	add_child(main)
 	AudioManager.played.connect(_on_played)
 	_start_usec = Time.get_ticks_usec()
+	if OS.has_feature("web"):
+		_perf_to_now = float(JavaScriptBridge.eval("performance.now()")) / 1000.0
 
 
 ## 기록 시각(초). 녹화는 실제 시간과 무관하게 프레임 단위로 흐르므로 게임 시간을 쓴다.
@@ -117,9 +121,12 @@ func _process(delta: float) -> void:
 	_max_time = maxf(_max_time, AudioManager.music_time)
 	_record_arrivals()
 	if not main.started:
-		if t >= FIRST_TAP:
+		if t >= (MOVIE_FIRST_TAP if mode == "movie" else FIRST_TAP):
 			_tap("첫 탭")
+			_tap_usec = Time.get_ticks_usec()
 		return
+	if mode == "startup":
+		_trace.append([(Time.get_ticks_usec() - _tap_usec) / 1000, int(AudioManager.music.get_playback_position() * 1000.0), int(AudioManager.music_time * 1000.0)])
 	if main.dead:
 		if _crash_t < 0.0:
 			_crash_t = t
@@ -129,10 +136,6 @@ func _process(delta: float) -> void:
 			_crash_t = -1.0
 			_seek = false
 			_tap("다시 시작 탭")
-	elif mode == "movie" and _step < SCRIPT.size():
-		if t >= SCRIPT[_step][0]:
-			_swipe(SCRIPT[_step][1])
-			_step += 1
 	elif mode == "movie" and _crashes == 0 and t >= SEEK_AT:
 		_seek = true
 		_seek_lane()
@@ -140,7 +143,7 @@ func _process(delta: float) -> void:
 		var dir := AutoPlayer.decide(main.field.items, main.lane, main.player)
 		if dir != Dir.NONE:
 			_swipe(dir)
-	if t >= secs + FIRST_TAP:
+	if t >= secs + (MOVIE_FIRST_TAP if mode == "movie" else FIRST_TAP):
 		_finish()
 
 
@@ -169,7 +172,10 @@ func _record_arrivals() -> void:
 			# 보간 기준: 두 프레임 사이에서 z가 0이 된 벽시계 시각. 첫 도착을 기준으로 박 격자와 비교한다 (음악 시계와 독립)
 			var crossed: float = _last_z[id][1] + (wall - _last_z[id][1]) * (0.0 - _last_z[id][0]) / (item["z"] - _last_z[id][0])
 			if _wall_zero == INF:
+				# 웹: 음악 소스가 실제로 시작한 시각 + 출력 지연이 기준 (음악 시계와 독립). 그 밖: 첫 도착
 				_wall_zero = crossed - beat_t
+				if OS.has_feature("web"):
+					_wall_zero = float(JavaScriptBridge.eval("window.musicStart / 1000")) - _perf_to_now
 			_wall_err.append(crossed - (_wall_zero + beat_t))
 			events.append({"type": "arrival", "at": crossed, "frame": frame, "beat": item["beat"], "kind": ObstacleField.Kind.keys()[item["kind"]], "music": music})
 		_last_z[id] = [item["z"], wall]
@@ -199,7 +205,7 @@ func _finish() -> void:
 		"frame_err": _stats(_frame_err), "wall_err": _stats(_wall_err),
 		"frame_err_list": _frame_err.map(func(v): return snappedf(v * 1000.0, 0.1)), "wall_err_list": _wall_err.map(func(v): return snappedf(v * 1000.0, 0.1)),
 		"input_sound_pairs": _gaps.size(), "input_sound_max_usec": gap_max,
-		"output_latency": AudioServer.get_output_latency()}))
+		"output_latency": AudioServer.get_output_latency(), "trace": _trace}))
 	if mode == "movie":
 		var file := FileAccess.open(OS.get_environment("EVENTS_JSON") if OS.has_environment("EVENTS_JSON") else "user://events.json", FileAccess.WRITE)
 		file.store_string(JSON.stringify(events))

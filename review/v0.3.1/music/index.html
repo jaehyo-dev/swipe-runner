@@ -1,0 +1,206 @@
+<!doctype html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>배경 음악 후보</title>
+<link rel="icon" href="data:,">
+<style>
+  :root { --bg:#100c2a; --panel:#1c1642; --line:#3a2f73; --text:#eef; --dim:#a9a6d0; --mint:#86e3e6; }
+  * { box-sizing:border-box; }
+  body { margin:0; padding:24px 16px 48px; background:var(--bg); color:var(--text); font:16px/1.5 -apple-system, "Apple SD Gothic Neo", sans-serif; }
+  main { max-width:640px; margin:0 auto; }
+  h1 { font-size:22px; margin:0 0 4px; }
+  h2 { font-size:16px; margin:28px 0 8px; color:var(--mint); }
+  p { margin:0 0 8px; color:var(--dim); font-size:14px; }
+  .row { display:flex; align-items:center; gap:8px; padding:10px 12px; background:var(--panel); border:1px solid var(--line); border-radius:10px; margin-bottom:8px; flex-wrap:wrap; }
+  .row .name { flex:1 1 200px; }
+  .row small { display:block; color:var(--dim); font-size:12px; }
+  button { font:inherit; min-width:64px; min-height:44px; padding:0 14px; color:var(--text); background:#2a2260; border:1px solid var(--line); border-radius:8px; cursor:pointer; }
+  button:hover { border-color:var(--mint); }
+  button.on { background:var(--mint); color:#10233a; border-color:var(--mint); font-weight:600; }
+  #status { min-height:24px; }
+</style>
+</head>
+<body>
+<main>
+  <h1>배경 음악 후보 (v0.3.1)</h1>
+  <p>조·멜로디·화음은 그대로이고 편곡만 다릅니다. 게임에는 아직 들어가지 않았습니다. 템포를 바꿔도 음 높이는 그대로입니다 (다시 합성).</p>
+
+  <h2>템포</h2>
+  <div class="row" id="tempos"></div>
+
+  <h2>음악</h2>
+  <div id="tracks"></div>
+
+  <h2>같이 듣기</h2>
+  <p>고른 음악과 확정 효과음을 그 템포의 박자에 맞춰 플레이처럼 틉니다. 크기는 게임과 같은 균형입니다. 앞 8마디는 2박마다 이동 위주, 뒤 8마디는 1~2박마다 골고루, 16마디 끝에 충돌 한 번(음악이 1초 낮아짐).</p>
+  <div class="row"><button id="together">같이 듣기 켜기</button><button id="stop">멈춤</button></div>
+  <p id="status" role="status"></p>
+</main>
+<script src="data_sfx.js"></script>
+<script>
+const META = window.META, GAIN = META.gains;
+const NOTES = { orig: "지금 게임의 음악", a: "16분 하이햇, 단단한 킥, 베이스 펌핑, 앞 8마디에 아주 작은 패드", b: "A + 2마디마다 필인, 뒤 8마디 아르페지오" };
+const db = v => 10 ** (v / 20);
+let ctx, musicBus, sfxBus, source = null, timer = null;
+let state = { arr: null, bpm: META.bpms[0], together: false };
+const buffers = {};
+const $ = id => document.getElementById(id);
+
+function audio() {
+  if (!ctx) {
+    ctx = new (window.AudioContext || window.webkitAudioContext)();
+    musicBus = ctx.createGain();
+    musicBus.gain.value = db(GAIN.MUSIC_DB);
+    musicBus.connect(ctx.destination);
+    sfxBus = ctx.createGain();
+    sfxBus.gain.value = db(GAIN.SFX_DB);
+    sfxBus.connect(ctx.destination);
+  }
+  if (ctx.state === "suspended") ctx.resume();
+  return ctx;
+}
+
+function decode(base64) {
+  const bytes = Uint8Array.from(atob(base64), c => c.charCodeAt(0));
+  return audio().decodeAudioData(bytes.buffer);
+}
+
+// 곡 데이터는 고를 때 script 태그로 읽는다 (file://에서도 되고, 처음 여는 데 전부 받지 않게)
+function loadScript(name) {
+  return new Promise((ok, fail) => {
+    const s = document.createElement("script");
+    s.src = `data_${name}.js`;
+    s.onload = ok;
+    s.onerror = () => fail(new Error("파일을 찾지 못함"));
+    document.head.append(s);
+  });
+}
+
+async function track(name) {
+  if (!buffers[name]) {
+    if (!(window.MUSIC_DATA || {})[name]) await loadScript(name);
+    buffers[name] = await decode(window.MUSIC_DATA[name]);
+  }
+  return buffers[name];
+}
+
+async function sfx(name) {
+  if (!buffers[name]) buffers[name] = await decode(window.SFX_DATA[name]);
+  return buffers[name];
+}
+
+function hit(name, when, semitones) {
+  const s = ctx.createBufferSource();
+  s.buffer = buffers[name];
+  s.playbackRate.value = 2 ** (semitones / 12);
+  s.connect(sfxBus);
+  s.start(when);
+  window.__played && window.__played.push({ name, when, semitones });
+}
+
+const jitter = () => Math.random() - 0.5;  // 게임과 같은 ±0.5반음
+
+function fire(kind, when) {
+  if (kind === "lane+") hit("lane", when, 1 + jitter());
+  else if (kind === "lane-") hit("lane", when, -1 + jitter());
+  else if (kind === "crash") {
+    hit("crash", when, 0);
+    const g = musicBus.gain, full = db(GAIN.MUSIC_DB), low = db(GAIN.MUSIC_DB + GAIN.DUCK_DB);
+    g.setValueAtTime(full, when);
+    g.linearRampToValueAtTime(low, when + GAIN.DUCK_FADE);
+    g.setValueAtTime(low, when + GAIN.DUCK_TIME - GAIN.DUCK_FADE);
+    g.linearRampToValueAtTime(full, when + GAIN.DUCK_TIME);
+  } else {
+    hit(kind, when, jitter());
+    if (kind === "jump") hit("land", when + META.jump_time, jitter());  // 착지는 템포와 상관없이 점프 시간 뒤
+  }
+}
+
+// 박자 시각을 미리 정해 AudioContext에 맡긴다 (타이머 흔들림과 무관하게 정확)
+function schedule(startAt, beat) {
+  let index = 0, loop = 0;
+  const events = META.events, lookahead = 0.3;
+  timer = setInterval(() => {
+    while (true) {
+      const e = events[index];
+      const when = startAt + (loop * META.beats + e[0]) * beat;
+      if (when > ctx.currentTime + lookahead) break;
+      fire(e[1], when);
+      if (++index >= events.length) { index = 0; loop++; }
+    }
+  }, 50);
+}
+
+function stop() {
+  clearInterval(timer);
+  timer = null;
+  if (source) { source.stop(); source = null; }
+  if (ctx) {
+    musicBus.gain.cancelScheduledValues(0);
+    musicBus.gain.value = db(GAIN.MUSIC_DB);
+  }
+}
+
+async function play() {
+  stop();
+  if (!state.arr) { mark(); return; }
+  const name = `${state.arr}_${state.bpm}`;
+  $("status").textContent = "불러오는 중...";
+  try {
+    const buffer = await track(name);
+    if (state.together) await Promise.all(["lane", "jump", "slide", "land", "crash"].map(sfx));
+    if (`${state.arr}_${state.bpm}` !== name) return;  // 불러오는 동안 다른 것을 고름
+    stop();
+    source = ctx.createBufferSource();
+    source.buffer = buffer;
+    source.loop = true;  // 표본 단위로 반복되어 이음새가 없다
+    source.connect(musicBus);
+    const startAt = ctx.currentTime + 0.08;
+    source.start(startAt);
+    if (state.together) schedule(startAt, 60 / state.bpm);
+    $("status").textContent = `재생 중: ${META.arrangements[state.arr]} ${state.bpm}BPM`;
+  } catch (err) {
+    $("status").textContent = `재생하지 못했습니다: ${err.message}. 이 브라우저가 Ogg Vorbis를 못 읽으면 최신 Chrome·Safari에서 열어 주세요.`;
+  }
+  mark();
+}
+
+function mark() {
+  document.querySelectorAll("[data-bpm]").forEach(b => b.classList.toggle("on", +b.dataset.bpm === state.bpm));
+  document.querySelectorAll("[data-arr]").forEach(b => b.classList.toggle("on", b.dataset.arr === state.arr));
+  $("together").classList.toggle("on", state.together);
+  $("together").textContent = state.together ? "같이 듣기 끄기" : "같이 듣기 켜기";
+  if (!state.arr) $("status").textContent = "";
+}
+
+for (const bpm of META.bpms) {
+  const b = document.createElement("button");
+  b.textContent = `${bpm}BPM`;
+  b.dataset.bpm = bpm;
+  b.onclick = () => { state.bpm = bpm; audio(); play(); };
+  $("tempos").append(b);
+}
+for (const [arr, label] of Object.entries(META.arrangements)) {
+  const row = document.createElement("div");
+  row.className = "row";
+  row.innerHTML = `<div class="name">${label}<small>${NOTES[arr]}</small></div>`;
+  const b = document.createElement("button");
+  b.textContent = "재생";
+  b.dataset.arr = arr;
+  b.onclick = () => { state.arr = arr; audio(); play(); };
+  row.append(b);
+  $("tracks").append(row);
+}
+$("together").onclick = () => {
+  state.together = !state.together;
+  audio();
+  if (state.together && !state.arr) state.arr = "orig";
+  play();
+};
+$("stop").onclick = () => { state.arr = null; stop(); mark(); };
+mark();
+</script>
+</body>
+</html>

@@ -26,3 +26,6 @@
 | 40 CC0 water / splash / slime SFX (splash_02) | 받은 날 2026-11-08 | rubberduck | CC0 1.0 (페이지 표시가 근거) | https://opengameart.org/content/40-cc0-water-splash-slime-sfx | `sfx/crash.wav` | 있음 |
 | 레인 이동·점프·슬라이드 효과음, 배경 음악 Jelly Pulse | - | 이 프로젝트 (직접 합성) | 프로젝트 소유 | `review/v0.2.8/` | `sfx/lane.wav`, `jump.wav`, `slide.wav`, `music/bgm.ogg` | - |
 
+## 배경 음악 후보 (v0.3.1, 화면 확인 기록)
+
+`review/v0.3.1/music/`의 후보(원본·A·B × 100/115/130BPM)는 `make_music.py`로 직접 합성했다 (이 프로젝트 소유, 외부 음원 없음, 수정 없음, 게임에는 들어가지 않음). 같이 듣기에 쓰는 효과음은 위 게임 소리와 같은 파일이다.

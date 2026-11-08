@@ -16,6 +16,11 @@ const KIND_COLORS := {
 
 const RESTART_DELAY := 0.5
 const OBSTACLE_FADE := 0.15  # 다시 시작할 때 앞 판 장애물이 작아져 사라지는 시간(초): 한 프레임에 툭 없어지지 않게
+const POP_TIME := 0.25       # 다시 시작할 때 새 장애물이 바닥에서 솟아오르는 시간(초)
+const PREWARM_FRAMES := 3    # 가림막 뒤에서 이만큼 연달아 빠른 프레임이 나오면 준비 끝 (셰이더는 그래픽 쪽에서 늦게 끝날 수 있다)
+const PREWARM_FAST_MS := 50
+const PREWARM_MAX_FRAMES := 120  # 아주 느린 기기도 언젠가는 화면을 연다
+const BOOT_COLOR := Color(0.027, 0.04, 0.14)  # project.godot boot_splash/bg_color와 같은 색: 로딩에서 가림막으로 이어져 보이게
 
 ## 0이면 실행할 때마다 무작위. 테스트에서는 0이 아닌 값을 줘서 장애물 레인을 고정한다.
 @export var seed_value := 0
@@ -26,8 +31,10 @@ var field: ObstacleField
 var runner: Runner
 var player := PlayerAction.new()
 var dead := false
-## 첫 입력을 받았는가. 그 전에는 길만 흐르고 음악·거리·장애물은 시작하지 않는다 (브라우저가 첫 입력 전엔 소리를 막으므로).
+## 첫 입력을 받았는가. 그 전에는 세상이 멈춰 있고 장애물만 미리 놓여 있다 (브라우저가 첫 입력 전엔 소리를 막으므로).
 var started := false
+## 셰이더 미리 준비가 끝났는가. 첫 화면은 이때 드러난다.
+var prewarmed := false
 
 var _swipe := SwipeDetector.new()
 var _obstacles := {}  # id -> 장애물 노드
@@ -61,18 +68,20 @@ func _ready() -> void:
 	_build_ui()
 	get_viewport().size_changed.connect(_fit_camera)
 	_fit_camera()
+	_place_ahead(false)
+	_prewarm()
 
 
 func _process(delta: float) -> void:
 	advance(delta, AudioManager.music_time)
 
 
-## 첫 입력: 음악을 켜고 그 시각을 기준으로 장애물 패턴을 시작한다.
+## 첫 입력: 음악 0초와 함께 세상이 출발한다. 미리 놓인 장애물을 음악 시간에 맞춘다 (출력 지연만큼의 차이).
 func begin() -> void:
 	started = true
 	AudioManager.start_music()
 	_music_t = AudioManager.music_time
-	_new_field()
+	_apply_step(field.step(_music_t - field.time))
 
 
 ## delta초만큼 게임을 진행한다 (테스트에서도 직접 호출). music_t: 음악 시간. 안 주면(테스트) delta만큼 흐른 것으로 친다.
@@ -92,12 +101,22 @@ func advance(delta: float, music_t := NAN) -> void:
 	_play_action_sounds()
 	runner.lift = player.height()
 	runner.crouch = player.crouch()
-	_scroll += RunLogic.SPEED * world_dt
-	_floor_material.set_shader_parameter("scroll", _scroll)
 	if not started:
 		return
+	_scroll += RunLogic.SPEED * world_dt
+	_floor_material.set_shader_parameter("scroll", _scroll)
 	elapsed += world_dt
-	var result := field.step(world_dt)
+	_apply_step(field.step(world_dt))
+	_distance_label.text = str(RunLogic.distance(elapsed))
+	for item in field.items:
+		var dx := runner.position.x - RunLogic.lane_x(item["lane"])
+		if not item.has("cleared") and PlayerAction.hits(item["kind"], dx, item["z"], player.height(), player.is_ducking()):
+			_game_over(item)
+			return
+
+
+## field.step() 결과를 장애물 노드에 옮긴다.
+func _apply_step(result: Dictionary) -> void:
 	for item in result["spawned"]:
 		_spawn_node(item)
 	for id in result["removed"]:
@@ -105,12 +124,23 @@ func advance(delta: float, music_t := NAN) -> void:
 		_obstacles.erase(id)
 	for item in field.items:
 		_obstacles[item["id"]].position.z = item["z"]
-	_distance_label.text = str(RunLogic.distance(elapsed))
-	for item in field.items:
-		var dx := runner.position.x - RunLogic.lane_x(item["lane"])
-		if not item.has("cleared") and PlayerAction.hits(item["kind"], dx, item["z"], player.height(), player.is_ducking()):
-			_game_over(item)
-			return
+
+
+## 앞으로 도착할 장애물을 이미 길 위에 놓는다. pop: 다시 시작할 때처럼 바닥에서 솟아오르게 한다.
+func _place_ahead(pop: bool) -> void:
+	for item in field.step(0.0)["spawned"]:
+		_spawn_node(item)
+		if pop:
+			_pop_in(_obstacles[item["id"]], _kind_meshes[item["kind"]]["y"])
+
+
+## 높이 0에서 젤리처럼 '퐁': 바닥을 기준으로 늘어나 살짝 넘쳤다가 돌아온다. 판정은 field가 하므로 모양만 바뀐다.
+func _pop_in(node: Node3D, y: float) -> void:
+	var rise := func(s: float) -> void:
+		node.scale.y = s
+		node.position.y = y * s
+	rise.call(0.001)
+	node.create_tween().tween_method(rise, 0.001, 1.0, POP_TIME).set_trans(Tween.TRANS_BACK).set_ease(Tween.EASE_OUT)
 
 
 ## 부딪힌 뒤: 세상이 아주 잠깐 느려졌다 멈추고, 주인공은 충돌 모션을 이어 간다.
@@ -146,14 +176,16 @@ func restart() -> void:
 	elapsed = 0.0
 	player = PlayerAction.new()
 	_swipe = SwipeDetector.new()
+	var old_nodes := _obstacles.values()
+	_obstacles.clear()
 	_new_field()
 	AudioManager.unblock()
-	for node: Node3D in _obstacles.values():
+	for node: Node3D in old_nodes:
 		var fade := node.create_tween().set_parallel()
 		fade.tween_property(node, "scale", Vector3.ONE * 0.01, OBSTACLE_FADE)
 		fade.tween_property(node, "position:z", node.position.z + RunLogic.SPEED * OBSTACLE_FADE, OBSTACLE_FADE)
 		fade.chain().tween_callback(node.queue_free)
-	_obstacles.clear()
+	_place_ahead(true)
 	_camera.h_offset = 0.0
 	_camera.v_offset = 0.0
 	_restart_label.visible = false
@@ -162,6 +194,8 @@ func restart() -> void:
 
 
 func _input(event: InputEvent) -> void:
+	if not started and not prewarmed:  # 가림막 뒤에서 게임이 시작되면 보이지 않는 장애물에 부딪힐 수 있다
+		return
 	if not started and (event is InputEventScreenTouch or event is InputEventKey) and event.pressed:
 		begin()  # 이 입력도 아래에서 게임 동작으로 그대로 처리한다
 	if dead:
@@ -230,17 +264,60 @@ func _change_lane(direction: int) -> void:
 
 
 func _spawn_node(item: Dictionary) -> void:
-	var shape: Dictionary = _kind_meshes[item["kind"]]
+	var cube := _make_obstacle(item["kind"], item["lane"], item["z"])
+	add_child(cube)
+	_obstacles[item["id"]] = cube
+
+
+func _make_obstacle(kind: ObstacleField.Kind, at_lane: int, z: float) -> MeshInstance3D:
+	var shape: Dictionary = _kind_meshes[kind]
 	var cube := MeshInstance3D.new()
 	cube.mesh = shape["mesh"]
 	cube.material_override = shape["glass"]
-	cube.position = Vector3(RunLogic.lane_x(item["lane"]), shape["y"], item["z"])
+	cube.position = Vector3(RunLogic.lane_x(at_lane), shape["y"], z)
 	var edges := MeshInstance3D.new()
 	edges.mesh = shape["edges"]
 	edges.material_override = shape["edge"]
 	cube.add_child(edges)
-	add_child(cube)
-	_obstacles[item["id"]] = cube
+	return cube
+
+
+## 웹은 재질이 처음 그려질 때 셰이더를 만들어 그 프레임이 막힌다. 첫 화면 전에 가림막 뒤에서 모두 한 번씩 그려 둔다.
+## 같은 뷰포트에서 그려야 안개·글로우까지 같은 셰이더 조합이 준비된다.
+func _prewarm() -> void:
+	var world := Node3D.new()
+	add_child(world)
+	for kind in _kind_meshes:
+		world.add_child(_make_obstacle(kind, kind, -6.0))
+	var drop: MeshInstance3D = runner.make_prewarm_drop()
+	drop.position = Vector3(0.0, 1.0, -3.0)
+	world.add_child(drop)
+	var cover := CanvasLayer.new()
+	cover.layer = 100
+	add_child(cover)
+	for text in ["0123456789", _restart_label.text]:  # 글자 그림도 미리 만든다
+		var label := Label.new()
+		label.text = text
+		label.label_settings = _distance_label.label_settings if text[0] == "0" else _restart_label.label_settings
+		cover.add_child(label)
+	var curtain := ColorRect.new()
+	curtain.color = BOOT_COLOR
+	curtain.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
+	curtain.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	cover.add_child(curtain)
+	var fast := 0
+	var last := Time.get_ticks_msec()
+	for i in PREWARM_MAX_FRAMES:
+		await get_tree().process_frame
+		fast = fast + 1 if Time.get_ticks_msec() - last < PREWARM_FAST_MS else 0
+		last = Time.get_ticks_msec()
+		if fast >= PREWARM_FRAMES:
+			break
+	world.queue_free()
+	cover.queue_free()
+	prewarmed = true
+	if OS.has_feature("web"):
+		JavaScriptBridge.eval("window.gameReady = performance.now()")  # 첫 화면이 드러난 시각: 프레임 측정의 시작점
 
 
 # ---------- 장면 만들기 ----------

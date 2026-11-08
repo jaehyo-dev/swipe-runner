@@ -45,8 +45,8 @@ func test_버스와_기본_크기() -> void:
 	var music := AudioServer.get_bus_index(&"Music")
 	var sfx := AudioServer.get_bus_index(&"SFX")
 	assert_true(music > 0 and sfx > 0, "버스 있음")
-	assert_eq(AudioServer.get_bus_volume_db(music), -6.0, "Music")
-	assert_eq(AudioServer.get_bus_volume_db(sfx), 0.0, "SFX")
+	assert_eq(AudioServer.get_bus_volume_db(music), AudioManager.MUSIC_DB, "Music")
+	assert_eq(AudioServer.get_bus_volume_db(sfx), AudioManager.SFX_DB, "SFX")
 	assert_eq(AudioServer.get_bus_send(music), &"Master")
 	assert_eq(AudioServer.get_bus_send(sfx), &"Master")
 	assert_eq(AudioManager.music.bus, &"Music")
@@ -101,15 +101,15 @@ func test_충돌_뒤엔_다시_시작할_때까지_다른_효과음_없음_음�
 	var bus := AudioServer.get_bus_index(&"Music")
 	AudioManager.play_crash()
 	AudioManager._duck.custom_step(AudioManager.DUCK_FADE)
-	assert_true(absf(AudioServer.get_bus_volume_db(bus) - (-14.0)) < 0.01, "기본 -6에서 -8 더 낮춤")
+	assert_true(absf(AudioServer.get_bus_volume_db(bus) - (AudioManager.MUSIC_DB - 8.0)) < 0.01, "기본에서 -8 더 낮춤")
 	var count := _log.size()
 	AudioManager.play_lane(1)
 	AudioManager.play_action(&"jump")
 	assert_eq(_log.size(), count, "막힘")
 	AudioManager._duck.custom_step(AudioManager.DUCK_TIME - 2.0 * AudioManager.DUCK_FADE)
-	assert_true(absf(AudioServer.get_bus_volume_db(bus) - (-14.0)) < 0.01, "아직 낮음")
+	assert_true(absf(AudioServer.get_bus_volume_db(bus) - (AudioManager.MUSIC_DB - 8.0)) < 0.01, "아직 낮음")
 	AudioManager._duck.custom_step(AudioManager.DUCK_FADE + 0.01)
-	assert_true(absf(AudioServer.get_bus_volume_db(bus) - (-6.0)) < 0.01, "1초 뒤 원래대로")
+	assert_true(absf(AudioServer.get_bus_volume_db(bus) - AudioManager.MUSIC_DB) < 0.01, "1초 뒤 원래대로")
 	AudioManager.unblock()
 	AudioManager.play_lane(1)
 	assert_eq(_log.size(), count + 1, "다시 남")
@@ -194,16 +194,19 @@ func test_충돌_소리_뒤_막혔다가_다시_시작하면_풀림_음악은_�
 	main.queue_free()
 
 
-func test_첫_입력_전에는_길만_흐르고_첫_입력이_음악을_켜고_동작으로도_처리됨() -> void:
+func test_첫_입력_전에는_세상이_멈춰_있고_첫_입력이_음악을_켜고_동작으로도_처리됨() -> void:
 	AudioManager.music.stop()
 	var main := _make_main(false)
-	await wait_frames()
+	while not main.prewarmed:
+		await wait_frames()
 	_start_log()
 	var scroll: float = main._scroll
+	var waiting_z: Array = main.field.items.map(func(i): return i["z"])
+	assert_true(waiting_z.size() > 0, "장애물이 미리 놓여 있음")
 	main.advance(30.0)
 	assert_eq(main.elapsed, 0.0, "거리는 아직")
-	assert_eq(main.field.items.size(), 0, "장애물 없음")
-	assert_true(main._scroll > scroll, "길은 흐름")
+	assert_eq(main.field.items.map(func(i): return i["z"]), waiting_z, "장애물은 멈춰 있음")
+	assert_eq(main._scroll, scroll, "길도 멈춰 있음")
 	assert_false(AudioManager.music.playing, "음악은 아직")
 	var key := InputEventKey.new()
 	key.pressed = true
@@ -213,6 +216,13 @@ func test_첫_입력_전에는_길만_흐르고_첫_입력이_음악을_켜고_�
 	assert_true(AudioManager.music.playing, "음악 시작")
 	assert_eq(main.lane, 0, "첫 입력도 게임 동작")
 	assert_eq(_names(), ["lane"])
+	# 박 계산은 첫 입력(음악 0초) 기준이다
+	var t: float = AudioManager.music_time
+	assert_true(absf(t) < 0.2, "음악 0초 근처 %f" % t)
+	assert_eq(main.field.time, t, "장애물 시간 = 음악 시간")
+	for item in main.field.items:
+		assert_true(absf(item["z"] + RunLogic.SPEED * (item["beat"] * BeatClock.BEAT - t)) < 0.001, "자기 박에 맞는 자리")
+		assert_true(absf(main._obstacles[item["id"]].position.z - item["z"]) < 0.0001, "노드도 같은 자리")
 	AudioManager.music.stop()
 	main.queue_free()
 
@@ -220,7 +230,8 @@ func test_첫_입력_전에는_길만_흐르고_첫_입력이_음악을_켜고_�
 func test_첫_터치도_시작이고_그대로_밀면_스와이프() -> void:
 	AudioManager.music.stop()
 	var main := _make_main(false)
-	await wait_frames()
+	while not main.prewarmed:
+		await wait_frames()
 	_start_log()
 	var touch := InputEventScreenTouch.new()
 	touch.pressed = true

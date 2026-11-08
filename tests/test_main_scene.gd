@@ -108,9 +108,13 @@ func test_피하면_계속_달림() -> void:
 func test_시간이_가면_거리가_늘고_장애물_노드가_생기고_지나가면_사라짐() -> void:
 	var main := _make_main()
 	await wait_frames()
-	main.advance(1.0)  # 첫 장애물은 도착 6.67초 전에 생긴다 (도착 7.2초)
-	assert_eq(main.get_children().filter(func(c): return c is MeshInstance3D and c.get_child_count() == 1).size(), 1, "장애물 큐브 1개")
-	main.advance(11.0)
+	while not main.prewarmed:  # 미리 준비용 장애물이 사라질 때까지
+		await wait_frames()
+	await wait_frames()
+	var cubes_now := main.get_children().filter(func(c): return c is MeshInstance3D and c.get_child_count() == 1)
+	assert_eq(cubes_now.size(), main.field.items.size(), "미리 놓인 장애물이 처음부터 노드로 있음")
+	assert_true(cubes_now.size() > 0)
+	main.advance(12.0)
 	await wait_frames()  # 지워진 노드(queue_free)가 정리될 때까지
 	assert_eq(main.elapsed, 12.0)
 	var label: Label = main.find_child("DistanceLabel", true, false)
@@ -162,6 +166,9 @@ func _strongest(c: Color) -> String:
 
 func test_화면에_거리와_버전_안내_글자만_있음() -> void:
 	var main := _make_main()
+	await wait_frames()
+	while not main.prewarmed:
+		await wait_frames()
 	await wait_frames()
 	var labels := main.find_children("*", "Label", true, false)
 	assert_eq(labels.size(), 3, "거리 + 버전 + (숨겨진) 다시 시작 안내")
@@ -290,8 +297,8 @@ func test_다시_시작은_장면을_유지하고_상태만_초기화() -> void:
 	assert_eq(main.lane, 0, "레인 그대로")
 	assert_eq(main.find_child("DistanceLabel", true, false).text, "0")
 	assert_false(main.find_child("RestartLabel", true, false).visible)
-	assert_eq(main._obstacles.size(), 0)
-	assert_eq(main.field.items.size(), 0)
+	assert_true(main.field.items.size() > 0, "앞으로 올 장애물이 바로 길 위에 있음")
+	assert_eq(main._obstacles.size(), main.field.items.size())
 	assert_eq(main._scroll, floor_scroll, "길 무늬가 튀지 않음")
 	# 입력을 바로 받고 세상도 바로 움직인다
 	main.apply_swipe(Dir.UP)
@@ -423,23 +430,98 @@ func test_시드를_정하지_않으면_판마다_다른_배치() -> void:
 	main.queue_free()
 
 
-func test_다시_시작하면_장애물을_지우고_다음_마디_첫_박에_최소_2마디_뒤_도착() -> void:
+func test_다시_시작하면_앞_판을_지우고_다음_마디_첫_박에_1마디_넘게_뒤_도착() -> void:
 	var main := _make_main()
 	await wait_frames()
 	_run(main, 11.3)
+	var old_ids: Array = main.field.items.map(func(i): return main._obstacles[i["id"]])
 	main.dead = true
 	main.restart()
-	assert_eq(main.field.items.size(), 0, "지움")
 	var t: float = main._music_t
-	var items: Array = []
-	while items.is_empty():
-		items = main.field.step(0.1)["spawned"]
-	var first: int = items[0]["beat"]
-	assert_eq(first % BeatClock.BEATS_PER_BAR, 0, "마디 첫 박")
-	var wait: float = first * BeatClock.BEAT - t
-	assert_true(wait >= BeatClock.BAR * 2.0, "최소 2마디 %f" % wait)
-	assert_true(wait >= ObstacleField.TRAVEL, "z -60에서 나올 시간 %f" % wait)
-	assert_true(wait < ObstacleField.TRAVEL + BeatClock.BAR, "한 마디 넘게 더 기다리지 않음 %f" % wait)
+	var first: Dictionary = main.field.items[0]
+	assert_eq(first["beat"] % BeatClock.BEATS_PER_BAR, 0, "마디 첫 박")
+	var wait: float = first["beat"] * BeatClock.BEAT - t
+	assert_true(wait >= BeatClock.BAR and wait < BeatClock.BAR * 2.0, "2.4~4.8초 안 %f" % wait)
+	for item in main.field.items:
+		assert_true(absf(item["z"] + RunLogic.SPEED * (item["beat"] * BeatClock.BEAT - t)) < 0.001, "박에서 거꾸로 계산한 자리")
+		assert_true(item["z"] >= ObstacleField.SPAWN_Z, "z -60보다 가까운 것만")
+		assert_false(old_ids.has(main._obstacles[item["id"]]), "새 노드")
+	main.queue_free()
+
+
+func test_다시_시작한_장애물은_바닥에서_퐁_솟아_살짝_넘쳤다가_돌아옴() -> void:
+	var main := _make_main()
+	await wait_frames()
+	_run(main, 3.0)
+	main.dead = true
+	main.restart()
+	var item: Dictionary = main.field.items[0]
+	var node: Node3D = main._obstacles[item["id"]]
+	var y: float = main._kind_meshes[item["kind"]]["y"]
+	assert_true(node.scale.y < 0.01 and node.position.y < 0.01, "높이 0에서 시작")
+	var peak := 0.0
+	var started_at := Time.get_ticks_msec()
+	while Time.get_ticks_msec() - started_at < 400:
+		await wait_frames()
+		peak = maxf(peak, node.scale.y)
+		assert_true(absf(node.position.y - y * node.scale.y) < 0.001, "바닥을 기준으로 늘어남")
+	assert_true(peak > 1.02, "살짝 넘침 %f" % peak)
+	assert_true(peak < 1.2, "많이 넘치지 않음 %f" % peak)
+	assert_eq(node.scale.y, 1.0, "제 크기로 돌아옴")
+	main.queue_free()
+
+
+func test_첫_판_대기_화면의_장애물은_솟아오르지_않고_제_크기() -> void:
+	var main: Node3D = load("res://scenes/main.tscn").instantiate()
+	main.seed_value = 1234
+	add_child(main)
+	assert_true(main.field.items.size() > 0)
+	for item in main.field.items:
+		assert_eq(main._obstacles[item["id"]].scale.y, 1.0)
+	main.queue_free()
+
+
+func test_재시작_뒤_0_82초_동안_어떤_장애물도_닿을_수_없음() -> void:
+	# 판정을 끄는 규칙 대신, 어느 시각에 재시작해도 첫 도착이 2.4초 뒤라 닿을 수 없음을 확인한다
+	var main := _make_main()
+	await wait_frames()
+	for start in 40:
+		main._music_t = start * 0.37
+		main.dead = true
+		main.restart()
+		for i in int(0.82 / STEP):
+			main.advance(STEP)
+			assert_false(main.dead, "재시작 %d: 0.82초 안에 부딪힘" % start)
+	main.queue_free()
+
+
+func test_첫_화면_전에_세_종류와_물방울과_글자를_가림막_뒤에서_그린다() -> void:
+	var main: Node3D = load("res://scenes/main.tscn").instantiate()
+	main.seed_value = 1234
+	add_child(main)
+	assert_false(main.prewarmed, "아직 준비 중")
+	var key := InputEventKey.new()
+	key.pressed = true
+	key.keycode = KEY_LEFT
+	main._input(key)
+	assert_false(main.started, "가림막 뒤 입력으로는 시작하지 않음")
+	assert_eq(main.lane, 1, "동작도 하지 않음")
+	var drawn := {}
+	for node in main.find_children("*", "MeshInstance3D", true, false):
+		drawn[node.material_override] = true
+	for kind in main._kind_meshes:
+		assert_true(drawn.has(main._kind_meshes[kind]["glass"]), "유리 %d" % kind)
+		assert_true(drawn.has(main._kind_meshes[kind]["edge"]), "모서리 %d" % kind)
+	var cover: ColorRect = main.find_children("*", "ColorRect", true, false)[0]
+	assert_true(cover.get_parent().layer > 1, "화면 맨 위 가림막")
+	assert_eq(main.find_children("*", "Label", true, false).size(), 5, "숫자·안내 글자도 그림")
+	var nodes_during: int = _count_nodes(main)
+	while not main.prewarmed:
+		await wait_frames()
+	await wait_frames()
+	assert_eq(main.find_children("*", "ColorRect", true, false).size(), 0, "가림막 사라짐")
+	assert_true(_count_nodes(main) < nodes_during, "준비용 노드 정리")
+	assert_eq(main.find_children("*", "Label", true, false).size(), 3)
 	main.queue_free()
 
 
@@ -457,11 +539,11 @@ func test_다시_시작을_20번_해도_노드와_오브젝트가_쌓이지_않�
 		_run(main, 0.6)
 		main.restart()
 		assert_false(main.dead)
-		await get_tree().create_timer(main.OBSTACLE_FADE + 0.05).timeout  # 앞 판 장애물이 사라질 시간
+		await get_tree().create_timer(maxf(main.OBSTACLE_FADE, main.POP_TIME) + 0.05).timeout  # 앞 판이 사라지고 새 판이 다 솟을 시간
 		await wait_frames(2)
 		await wait_frames(2)
-		var nodes: int = _count_nodes(main)
-		var objects := int(Performance.get_monitor(Performance.OBJECT_COUNT))
+		var nodes: int = _count_nodes(main) - main.field.items.size() * 2  # 미리 놓인 장애물 수는 음악 자리마다 다르다 (큐브 + 모서리)
+		var objects: int = int(Performance.get_monitor(Performance.OBJECT_COUNT)) - main.field.items.size() * 2
 		if round_no == 0:
 			baseline = nodes
 			baseline_objects = objects

@@ -14,14 +14,41 @@ func _run_for(field: ObstacleField, seconds: float, dt: float = 0.1) -> Dictiona
 	return {"spawned": spawned, "removed": removed}
 
 
-func test_첫_장애물은_마디_첫_박_도착에_맞춰_멀리서_생김() -> void:
-	var field := ObstacleField.new(1)
-	var first_arrival := 3 * BeatClock.BAR  # 6.67초 이상 지난 첫 마디 첫 박 = 7.2초
-	assert_eq(field.step(first_arrival - ObstacleField.TRAVEL - 0.01)["spawned"].size(), 0, "아직")
-	var r := field.step(0.01)
-	assert_eq(r["spawned"].size(), 1)
-	assert_true(absf(r["spawned"][0]["z"] - ObstacleField.SPAWN_Z) < 0.001, "z %f" % r["spawned"][0]["z"])
-	assert_eq(r["spawned"][0]["beat"], 12)
+func test_첫_장애물은_어느_시각에_시작해도_2_4에서_4_8초_안_마디_첫_박에_도착() -> void:
+	for i in 200:
+		var t := i * 0.137 - 0.05  # 음수 = 출력 지연만큼 앞선 음악 시작
+		var field := ObstacleField.new(i + 1, t)
+		var placed: Array = field.step(0.0)["spawned"]
+		var wait: float = placed[0]["beat"] * BeatClock.BEAT - t
+		assert_true(wait >= BeatClock.BAR - 0.000001 and wait < BeatClock.BAR * 2.0, "시작 %f 대기 %f" % [t, wait])
+		assert_eq(placed[0]["beat"] % BeatClock.BEATS_PER_BAR, 0, "마디 첫 박")
+
+
+func test_첫_입력에_음악_0초면_첫_장애물은_2_4초에_도착() -> void:
+	assert_eq(ObstacleField.new(1).step(0.0)["spawned"][0]["beat"], 4)
+
+
+func test_미리_놓기는_도착_박에서_거꾸로_계산하고_z_60보다_가까운_것만() -> void:
+	var field := ObstacleField.new(1, 1.0)
+	var placed: Array = field.step(0.0)["spawned"]
+	assert_true(placed.size() >= 2, "여러 개 %d" % placed.size())
+	for item in placed:
+		assert_true(absf(item["z"] + RunLogic.SPEED * (item["beat"] * BeatClock.BEAT - 1.0)) < 0.001, "z %f" % item["z"])
+		assert_true(item["z"] >= ObstacleField.SPAWN_Z and item["z"] < 0.0, "z %f" % item["z"])
+	assert_eq(field.step(0.0)["spawned"].size(), 0, "두 번 놓지 않음")
+	# 그 뒤부터는 기존 방식: 다음 것이 z -60에서 생긴다
+	var next: Array = []
+	while next.is_empty():
+		next = field.step(0.01)["spawned"]
+	assert_true(absf(next[0]["z"] - ObstacleField.SPAWN_Z) < RunLogic.SPEED * 0.011, "z %f" % next[0]["z"])
+
+
+func test_미리_놓은_배치는_같은_시드의_패턴과_같아서_공정성_규칙을_지킴() -> void:
+	var field := ObstacleField.new(77)
+	var pattern := BeatPattern.new(77, BeatPattern.first_beat(0.0, ObstacleField.START_LEAD))
+	for item in field.step(0.0)["spawned"]:
+		var want := pattern.next()
+		assert_eq([item["beat"], item["lane"], item["kind"]], [want["beat"], want["lane"], want["kind"]])
 
 
 func test_장애물은_정확히_자기_박에_z_0에_도착함() -> void:

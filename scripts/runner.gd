@@ -253,6 +253,13 @@ func _ready() -> void:
 	_animate()
 
 
+## 셰이더 미리 준비용 물방울 하나 (같은 메시·재질, 보이는 상태)
+func make_prewarm_drop() -> MeshInstance3D:
+	var drop: MeshInstance3D = _drops[0].duplicate()
+	drop.visible = true
+	return drop
+
+
 func _process(delta: float) -> void:
 	if crash_t >= 0.0:  # 충돌 모션은 crash_t만으로 정해진다. 스프링은 쉰다
 		_animate()
