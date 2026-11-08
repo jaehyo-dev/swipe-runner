@@ -18,28 +18,33 @@ const HIGH_TOP := 1.32
 const SPAWN_Z := -60.0
 ## 이 z를 넘으면 지나간 것으로 보고 제거 (카메라 뒤)
 const REMOVE_Z := 6.0
-## 생성 간격(초)
-const SPAWN_INTERVAL := 1.0
+## 생성 지점에서 주인공(z=0)까지 걸리는 시간. 도착 박에서 이만큼 거꾸로 계산해 생성한다.
+const TRAVEL := -SPAWN_Z / RunLogic.SPEED
+## 다시 시작한 뒤 첫 장애물까지 최소 2마디
+const START_LEAD := BeatClock.BAR * 2.0
 
 var speed := RunLogic.SPEED
-## 현재 살아 있는 장애물: {id:int, lane:int, z:float, kind:Kind}
+## 현재 살아 있는 장애물: {id:int, lane:int, z:float, kind:Kind, beat:int}
 var items: Array[Dictionary] = []
 
-var _rng := RandomNumberGenerator.new()
+var _pattern: BeatPattern
+var _coming: Dictionary  # 아직 생성하지 않은 다음 장애물
 var _next_id := 0
-var _timer := 0.0
+var _time := 0.0
 
 
-## 시드를 주면 레인 순서가 고정된다.
-func _init(seed_value: int = 0) -> void:
-	_rng.seed = seed_value
-	_timer = SPAWN_INTERVAL  # 시작하자마자 첫 장애물이 나오게
+## 시드를 주면 순서가 고정된다. start_time: 음악 시간. 패턴은 이 시각 뒤 마디 첫 박부터 시작한다.
+func _init(seed_value: int = 0, start_time: float = 0.0) -> void:
+	_time = start_time
+	_pattern = BeatPattern.new(seed_value, BeatPattern.first_beat(start_time, maxf(START_LEAD, TRAVEL)))
+	_coming = _pattern.next()
 
 
 ## dt초 진행한다. 이번에 생긴 것과 지워진 것의 id를 돌려준다.
 func step(dt: float) -> Dictionary:
 	var spawned: Array[Dictionary] = []
 	var removed: Array[int] = []
+	_time += dt
 	for item in items:
 		item["z"] += speed * dt
 	var kept: Array[Dictionary] = []
@@ -49,17 +54,12 @@ func step(dt: float) -> Dictionary:
 		else:
 			kept.append(item)
 	items = kept
-	_timer += dt
-	while _timer >= SPAWN_INTERVAL:
-		_timer -= SPAWN_INTERVAL
-		var item := {"id": _next_id, "lane": _rng.randi_range(0, RunLogic.LANE_COUNT - 1), "z": SPAWN_Z, "kind": _random_kind()}
-		_next_id += 1
-		items.append(item)
-		spawned.append(item)
+	while _coming["beat"] * BeatClock.BEAT - _time <= TRAVEL:
+		var z: float = speed * (_time - _coming["beat"] * BeatClock.BEAT)
+		if z <= REMOVE_Z:  # 시간이 크게 건너뛰면(탭 전환 등) 이미 지나간 것은 만들지 않는다
+			var item := {"id": _next_id, "lane": _coming["lane"], "z": z, "kind": _coming["kind"], "beat": _coming["beat"]}
+			_next_id += 1
+			items.append(item)
+			spawned.append(item)
+		_coming = _pattern.next()
 	return {"spawned": spawned, "removed": removed}
-
-
-## 블록 절반, 허들·막대 각 1/4
-func _random_kind() -> Kind:
-	var roll := _rng.randi_range(0, 3)
-	return Kind.BLOCK if roll < 2 else (Kind.LOW if roll == 2 else Kind.HIGH)

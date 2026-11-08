@@ -174,3 +174,16 @@
 - 배경 음악: 약 100BPM에서 시작, 처음엔 북·베이스 위주, 끊김 없이 반복. 차분한 신스 계열
 - **확정 (2026-11-08 사용자)**: 배경 음악은 bgm_3 "Jelly Pulse"(마단조, 100BPM), 레인 이동은 lane_c. 나머지 효과음은 `review/v0.2.8/sounds_v3/`에서 고른다. 모든 효과음은 lane_c와 같은 재료(사인 몸통 + 1400~1500Hz 유리빛, 울림 없음)로 만들어 한 가족처럼 들리게 한다
 - 출처: CC0이거나 직접 만든 소리만(CREDITS.md 기록). 후보를 2~3개씩 만들어 사용자가 듣고 고른다
+- **게임 적용 확정표 (v0.3.0, 2026-11-08 사용자)**: 값은 `tools/make_final_sounds.py`, 측정은 `review/v0.3.0/audio_report.md`, 출처는 `assets/audio/LICENSES.md`
+
+| 파일 | 원본 | 높이(반음) | 밝기(로우패스) | 길이 |
+|---|---|---|---|---|
+| sfx/lane.wav | sounds/lane_c.wav | 0 | 없음 | 0.10초 |
+| sfx/jump.wav | sounds_v3/jump_b.wav | +5 | 12kHz | 0.22초 |
+| sfx/slide.wav | sounds_v3/slide_a.wav | +7 | 12kHz | 0.27초 |
+| sfx/land.wav | sounds_v2/land_c.wav | -10 | 12kHz | 0.37초 |
+| sfx/crash.wav | sounds_v3/crash_c.wav | +9 | 9.5kHz | 0.43초 |
+| music/bgm.ogg | sounds/bgm_3.flac | 0 | 없음 | 38.4초 반복 |
+
+- 모든 효과음은 lane_c와 같은 재료(사인파 몸통 + 유리빛 층, 울림 없음)로 한 가족
+- 높이는 1차(탁함)와 2차(귀를 찌름) 사이

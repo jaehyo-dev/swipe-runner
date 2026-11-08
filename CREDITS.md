@@ -16,3 +16,13 @@
 | 40 CC0 water / splash / slime SFX (slime_13, splash_02, splash_10) | 받은 날 2026-11-08 (zip SHA-256은 LICENSES.md) | rubberduck | CC0 1.0 | https://opengameart.org/content/40-cc0-water-splash-slime-sfx | 소리 후보 3차 `review/v0.2.8/sounds_v3/` slide_c, crash_c, land_a·b·c (게임 미적용) | 있음 (재생 속도·필터·감쇠) |
 
 소리 후보 `review/v0.2.8/sounds/`(효과음 15개, 배경 음악 3개)는 이 프로젝트에서 `make_sounds.py`로 직접 합성했다 (직접 제작, 외부 음원 없음, 화면 확인 기록이라 게임에는 들어가지 않음. 파일별 표는 같은 폴더 README.md).
+
+## 게임 소리 (v0.3.0~, 파일별 표와 라이선스 전문은 `assets/audio/LICENSES.md`, `assets/audio/licenses/`)
+
+| 이름 | 버전 | 만든 사람 | 라이선스 | 출처 | 쓰는 곳 | 수정 |
+|---|---|---|---|---|---|---|
+| Impact Sounds (impactGeneric_light_000) | 1.0 | Kenney | CC0 1.0 | https://kenney.nl/assets/impact-sounds | `sfx/land.wav` | 있음 |
+| Interface Sounds (scratch_001, drop_001) | 1.0 | Kenney | CC0 1.0 | https://kenney.nl/assets/interface-sounds | `sfx/land.wav` | 있음 |
+| 40 CC0 water / splash / slime SFX (splash_02) | 받은 날 2026-11-08 | rubberduck | CC0 1.0 (페이지 표시가 근거) | https://opengameart.org/content/40-cc0-water-splash-slime-sfx | `sfx/crash.wav` | 있음 |
+| 레인 이동·점프·슬라이드 효과음, 배경 음악 Jelly Pulse | - | 이 프로젝트 (직접 합성) | 프로젝트 소유 | `review/v0.2.8/` | `sfx/lane.wav`, `jump.wav`, `slide.wav`, `music/bgm.ogg` | - |
+

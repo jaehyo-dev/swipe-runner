@@ -9,6 +9,7 @@ func _make_main() -> Node3D:
 	main.seed_value = 1234
 	add_child(main)
 	main.set_process(false)  # 시간은 advance()로만 흘려 결과를 고정한다
+	main.started = true  # 음악 시작(begin)은 따로 테스트한다
 	return main
 
 
@@ -78,8 +79,7 @@ func test_위_스와이프는_점프_아래는_슬라이드() -> void:
 func test_장애물에_부딪히면_멈추고_안내가_뜸() -> void:
 	var main := _make_main()
 	await wait_frames()
-	main.advance(0.0)
-	var item: Dictionary = main.field.items[0]
+	var item := _add_obstacle(main)
 	main.runner.position.x = RunLogic.lane_x(item["lane"])
 	item["z"] = 0.0
 	main.advance(0.0)
@@ -97,8 +97,7 @@ func test_장애물에_부딪히면_멈추고_안내가_뜸() -> void:
 func test_피하면_계속_달림() -> void:
 	var main := _make_main()
 	await wait_frames()
-	main.advance(0.0)
-	var item: Dictionary = main.field.items[0]
+	var item := _add_obstacle(main)
 	main.runner.position.x = RunLogic.lane_x((item["lane"] + 1) % 3)  # 다른 레인
 	item["z"] = 0.0
 	main.advance(0.0)
@@ -109,9 +108,9 @@ func test_피하면_계속_달림() -> void:
 func test_시간이_가면_거리가_늘고_장애물_노드가_생기고_지나가면_사라짐() -> void:
 	var main := _make_main()
 	await wait_frames()
-	main.advance(0.0)
+	main.advance(1.0)  # 첫 장애물은 도착 6.67초 전에 생긴다 (도착 7.2초)
 	assert_eq(main.get_children().filter(func(c): return c is MeshInstance3D and c.get_child_count() == 1).size(), 1, "장애물 큐브 1개")
-	main.advance(12.0)
+	main.advance(11.0)
 	await wait_frames()  # 지워진 노드(queue_free)가 정리될 때까지
 	assert_eq(main.elapsed, 12.0)
 	var label: Label = main.find_child("DistanceLabel", true, false)
@@ -197,11 +196,18 @@ func _run(main: Node3D, seconds: float) -> void:
 
 ## 주인공 레인 바로 앞에 이 종류의 장애물을 놓는다
 func _put_in_front(main: Node3D, kind: ObstacleField.Kind, z := -0.75) -> Dictionary:
-	main.advance(0.0)
-	var item: Dictionary = main.field.items[0]
+	var item := _add_obstacle(main)
 	item["lane"] = main.lane
 	item["kind"] = kind
 	item["z"] = z
+	return item
+
+
+## 장애물을 하나 바로 놓는다 (패턴의 첫 장애물은 몇 초 뒤에나 온다)
+func _add_obstacle(main: Node3D) -> Dictionary:
+	var item := {"id": 9000 + main._obstacles.size(), "lane": 1, "z": ObstacleField.SPAWN_Z, "kind": ObstacleField.Kind.BLOCK, "beat": 0}
+	main.field.items.append(item)
+	main._spawn_node(item)
 	return item
 
 
@@ -388,20 +394,22 @@ func test_레인_이동_중_옆면에_부딪히면_옆면에_붙음() -> void:
 	main.queue_free()
 
 
-func test_고정_시드면_다시_시작해도_같은_배치() -> void:
+func test_고정_시드면_음악의_같은_자리에서_다시_시작할_때_같은_배치() -> void:
 	var main := _make_main()
 	await wait_frames()
-	var first: Array = []
-	for i in 8:
-		main.field.step(ObstacleField.SPAWN_INTERVAL)
-		first.append([main.field.items[-1]["lane"], main.field.items[-1]["kind"]])
+	var first := _arrivals(main)
+	main._music_t = BeatClock.LOOP  # 한 바퀴 돈 같은 자리
 	main.restart()
-	var second: Array = []
-	for i in 8:
-		main.field.step(ObstacleField.SPAWN_INTERVAL)
-		second.append([main.field.items[-1]["lane"], main.field.items[-1]["kind"]])
+	var second := _arrivals(main)
 	assert_eq(second, first)
 	main.queue_free()
+
+
+func _arrivals(main: Node3D) -> Array:
+	var result := []
+	for item in main.field.step(30.0)["spawned"]:
+		result.append([posmod(item["beat"], 64), item["lane"], item["kind"]])
+	return result
 
 
 func test_시드를_정하지_않으면_판마다_다른_배치() -> void:
@@ -409,10 +417,29 @@ func test_시드를_정하지_않으면_판마다_다른_배치() -> void:
 	add_child(main)
 	await wait_frames()
 	main.set_process(false)
-	var a: RandomNumberGenerator = main.field._rng
-	var seed_a := a.seed
+	var seed_a: int = main.field._pattern._rng.seed
 	main.restart()
-	assert_true(main.field._rng.seed != seed_a, "새 시드")
+	assert_true(main.field._pattern._rng.seed != seed_a, "새 시드")
+	main.queue_free()
+
+
+func test_다시_시작하면_장애물을_지우고_다음_마디_첫_박에_최소_2마디_뒤_도착() -> void:
+	var main := _make_main()
+	await wait_frames()
+	_run(main, 11.3)
+	main.dead = true
+	main.restart()
+	assert_eq(main.field.items.size(), 0, "지움")
+	var t: float = main._music_t
+	var items: Array = []
+	while items.is_empty():
+		items = main.field.step(0.1)["spawned"]
+	var first: int = items[0]["beat"]
+	assert_eq(first % BeatClock.BEATS_PER_BAR, 0, "마디 첫 박")
+	var wait: float = first * BeatClock.BEAT - t
+	assert_true(wait >= BeatClock.BAR * 2.0, "최소 2마디 %f" % wait)
+	assert_true(wait >= ObstacleField.TRAVEL, "z -60에서 나올 시간 %f" % wait)
+	assert_true(wait < ObstacleField.TRAVEL + BeatClock.BAR, "한 마디 넘게 더 기다리지 않음 %f" % wait)
 	main.queue_free()
 
 
@@ -432,7 +459,6 @@ func test_다시_시작을_20번_해도_노드와_오브젝트가_쌓이지_않�
 		assert_false(main.dead)
 		await get_tree().create_timer(main.OBSTACLE_FADE + 0.05).timeout  # 앞 판 장애물이 사라질 시간
 		await wait_frames(2)
-		_run(main, 0.5)  # 재시작 뒤 첫 장애물만 있는 같은 상태에서 잰다
 		await wait_frames(2)
 		var nodes: int = _count_nodes(main)
 		var objects := int(Performance.get_monitor(Performance.OBJECT_COUNT))

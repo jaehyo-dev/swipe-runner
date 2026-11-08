@@ -26,6 +26,8 @@ var field: ObstacleField
 var runner: Runner
 var player := PlayerAction.new()
 var dead := false
+## 첫 입력을 받았는가. 그 전에는 길만 흐르고 음악·거리·장애물은 시작하지 않는다 (브라우저가 첫 입력 전엔 소리를 막으므로).
+var started := false
 
 var _swipe := SwipeDetector.new()
 var _obstacles := {}  # id -> 장애물 노드
@@ -36,11 +38,12 @@ var _restart_label: Label
 var _camera: Camera3D
 var _distance_label: Label
 var _scroll := 0.0
+var _music_t := 0.0  # 박자 기준 시간
 
 
 ## 시드를 고정했으면(주소의 ?seed, 테스트) 판마다 같은 배치, 아니면 판마다 새 배치
 func _new_field() -> void:
-	field = ObstacleField.new(seed_value if seed_value != 0 else randi() | 1)
+	field = ObstacleField.new(seed_value if seed_value != 0 else randi() | 1, _music_t)
 
 
 func _ready() -> void:
@@ -61,21 +64,40 @@ func _ready() -> void:
 
 
 func _process(delta: float) -> void:
-	advance(delta)
+	advance(delta, AudioManager.music_time)
 
 
-## delta초만큼 게임을 진행한다 (테스트에서도 직접 호출).
-func advance(delta: float) -> void:
+## 첫 입력: 음악을 켜고 그 시각을 기준으로 장애물 패턴을 시작한다.
+func begin() -> void:
+	started = true
+	AudioManager.start_music()
+	_music_t = AudioManager.music_time
+	_new_field()
+
+
+## delta초만큼 게임을 진행한다 (테스트에서도 직접 호출). music_t: 음악 시간. 안 주면(테스트) delta만큼 흐른 것으로 친다.
+## 세상은 음악 시간의 차이만큼 움직이고, 주인공 동작은 프레임 시간으로 움직인다.
+func advance(delta: float, music_t := NAN) -> void:
+	var world_dt := delta
+	if is_nan(music_t):
+		_music_t += delta
+	else:
+		if started:
+			world_dt = music_t - _music_t
+		_music_t = music_t
 	if dead:
 		_advance_dead(delta)
 		return
-	elapsed += delta
 	player.step(delta)
+	_play_action_sounds()
 	runner.lift = player.height()
 	runner.crouch = player.crouch()
-	_scroll += RunLogic.SPEED * delta
+	_scroll += RunLogic.SPEED * world_dt
 	_floor_material.set_shader_parameter("scroll", _scroll)
-	var result := field.step(delta)
+	if not started:
+		return
+	elapsed += world_dt
+	var result := field.step(world_dt)
 	for item in result["spawned"]:
 		_spawn_node(item)
 	for id in result["removed"]:
@@ -111,6 +133,7 @@ func _advance_dead(delta: float) -> void:
 func _game_over(item: Dictionary) -> void:
 	dead = true
 	_dead_time = 0.0
+	AudioManager.play_crash()
 	# 느려지는 동안 장애물이 조금 더 다가오므로 그만큼 앞으로 간 면에 붙는다
 	var z: float = item["z"] + RunLogic.SPEED * CrashMotion.SLOW_SCALE * CrashMotion.SLOW_TIME
 	runner.crash(CrashMotion.contact(item["kind"], RunLogic.lane_x(item["lane"]), runner.position.x, z, player.height()))
@@ -124,6 +147,7 @@ func restart() -> void:
 	player = PlayerAction.new()
 	_swipe = SwipeDetector.new()
 	_new_field()
+	AudioManager.unblock()
 	for node: Node3D in _obstacles.values():
 		var fade := node.create_tween().set_parallel()
 		fade.tween_property(node, "scale", Vector3.ONE * 0.01, OBSTACLE_FADE)
@@ -138,6 +162,8 @@ func restart() -> void:
 
 
 func _input(event: InputEvent) -> void:
+	if not started and (event is InputEventScreenTouch or event is InputEventKey) and event.pressed:
+		begin()  # 이 입력도 아래에서 게임 동작으로 그대로 처리한다
 	if dead:
 		var pressed: bool = (event is InputEventScreenTouch or event is InputEventKey) and event.pressed
 		if pressed and _dead_time >= RESTART_DELAY:
@@ -171,9 +197,17 @@ func apply_swipe(dir: SwipeDetector.Dir) -> void:
 			_change_lane(1)
 		SwipeDetector.Dir.UP:
 			player.jump()
+			_play_action_sounds()
 		SwipeDetector.Dir.DOWN:
 			_drop_clear_hurdles()
 			player.slide()
+			_play_action_sounds()
+
+
+## 동작이 일어난 그 프레임에 바로 재생한다
+func _play_action_sounds() -> void:
+	for sound in player.take_sounds():
+		AudioManager.play_action(sound)
 
 
 ## 공중 아래 스와이프 순간 이미 넘고 있던 허들은 내려오다 닿아도 봐준다 (넘고 있었는데 죽으면 억울하다)
@@ -192,6 +226,7 @@ func _change_lane(direction: int) -> void:
 		return
 	lane = next
 	runner.move_to_lane(lane)
+	AudioManager.play_lane(direction)
 
 
 func _spawn_node(item: Dictionary) -> void:

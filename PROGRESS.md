@@ -101,3 +101,12 @@
 - 2차가 높아 귀를 찌른다는 의견 반영. 효과음 12개를 lane_c와 같은 재료로 다시 제작, 중심 330~950Hz(점프 1.2kHz), 4kHz 위 1~5%
 - C 후보와 착지 물보라는 OpenGameArt rubberduck CC0 녹음 사용 (근거는 페이지 표시, zip 안에 라이선스 파일 없음)
 - review/v0.2.8/sounds_v3/: index.html(높이·밝기 슬라이더, lane_c 뒤에 이어 듣기), report.md, spectrograms.png, LICENSES.md. make_sounds_v3.py가 기준을 숫자로 검사 (실패 시 종료 코드 1)
+
+## v0.3.0 소리 확정·적용, 박자 배치
+- 확정 소리 굳힘(`tools/make_final_sounds.py`), Web Audio 렌더링과 차이 -92dB. 끝 30ms 페이드
+- AudioManager(Music -6dB, SFX 0dB, 플레이어 6개), 입력과 같은 프레임에 재생. 첫 입력에 음악 시작
+- BeatClock + BeatPattern: 음악 시간 기준으로 박에 도착. 3분 최대 오차 데스크톱 13.9ms, 웹 11.5ms
+- 웹 음악 반복: 엔진 기본 5~27ms 틈 → head_include에서 Web Audio loop 켜서 틈 0. 스트림 재생은 느린 프레임에서 끊겨 안 씀
+- 첫 입력 전에는 길만 흐름. 재시작 뒤 첫 장애물까지 6.67~9.07초
+- 기록 review/v0.3.0/. 아이폰 잠금 풀기와 귀 판단은 미확인
+

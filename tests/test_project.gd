@@ -35,6 +35,13 @@ func test_웹_내보내기는_스레드_없이_설정됨() -> void:
 		assert_true(excluded.contains(folder), "내보내기 제외: " + folder)
 
 
+func test_웹에서_긴_음악_버퍼는_끊김_없이_반복됨() -> void:
+	var presets := ConfigFile.new()
+	presets.load("res://export_presets.cfg")
+	var head := str(presets.get_value("preset.0.options", "html/head_include", ""))
+	assert_true(head.contains("duration>30") and head.contains("this.loop=true"), "head_include의 loop 설정")
+
+
 func test_내보내기_결과물_폴더는_리소스로_가져오지_않음() -> void:
 	assert_true(FileAccess.file_exists("res://build/.gdignore"), "build/.gdignore")
 

@@ -27,6 +27,14 @@ var _drop_from := 0.0
 var _drop_time := 0.0
 var _buffer := Buffered.NONE  # 저장된 입력은 하나뿐, 새 입력이 덮어쓴다
 var _buffer_age := 0.0
+var _sounds: Array[StringName] = []  # 일어난 순서대로, 화면이 꺼내 재생한다
+
+
+## 지난번 이후 일어난 동작의 소리("jump", "slide", "land")를 꺼낸다.
+func take_sounds() -> Array[StringName]:
+	var sounds := _sounds
+	_sounds = []
+	return sounds
 
 
 func is_jumping() -> bool:
@@ -75,6 +83,7 @@ func step(dt: float) -> void:
 		_jump_t += dt
 		if _jump_t >= JUMP_TIME:
 			_jump_t = -1.0
+			_sounds.append(&"land")
 			_run_buffer()
 	elif is_sliding():
 		_slide_t += dt
@@ -107,12 +116,14 @@ func _start_jump() -> void:
 	_buffer = Buffered.NONE
 	_slide_t = -1.0
 	_jump_t = 0.0
+	_sounds.append(&"jump")
 
 
 func _start_slide(from_drop: bool) -> void:
 	_buffer = Buffered.NONE
 	_slide_t = 0.0
 	_slide_from_drop = from_drop
+	_sounds.append(&"slide")
 
 
 func _start_drop() -> void:
