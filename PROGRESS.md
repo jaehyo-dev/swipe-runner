@@ -91,3 +91,8 @@
 - 소리: 전부 직접 합성(make_sounds.py), 게임 미적용. 듣기 페이지는 file://에서 되도록 데이터를 audio_data.js에 담음
 - v0.2.7과 달리기·레인·점프·착지·슬라이드 130프레임 픽셀 차이 0
 - 화면 확인 기록 review/v0.2.8/
+
+## 소리 후보 2차 (게임 코드 변경 없음, 버전 그대로)
+- bgm_3, lane_c 확정. 점프·슬라이드·착지·충돌 각 3개 다시 제작 (A·B 합성, C는 Kenney CC0 가공)
+- review/v0.2.8/sounds_v2/: index.html, report.md, spectrograms.png, LICENSES.md. make_sounds_v2.py가 기준 1~8을 숫자로 검사 (실패 시 종료 코드 1)
+- 고음이 많아 A 가중 크기는 lane_c보다 일반 +2~4dB, 충돌 +7dB. 사용자 귀로 확인 필요
