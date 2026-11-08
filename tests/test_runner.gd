@@ -74,8 +74,10 @@ func test_구성_요소_발_꼭지_없음_그림자_눈_둘() -> void:
 	await wait_frames()
 	assert_not_null(runner._shadow, "그림자")
 	assert_eq(runner._body.get_child_count(), 2, "눈 2 (꼭지 없음)")
-	# 몸통 한 덩어리: 달린 메시는 몸·그림자뿐 (러너의 직접 자식 메시 2개)
-	assert_eq(runner.get_child_count(), 2, "러너 자식: 몸 + 그림자")
+	# 몸통 한 덩어리: 달린 메시는 몸·그림자 + 착지 때만 보이는 물방울
+	assert_eq(runner.get_child_count(), 2 + Runner.DROPLET_COUNT, "러너 자식: 몸 + 그림자 + 물방울")
+	for d in runner._drops:
+		assert_true(not d.visible, "달리는 동안 물방울 숨김")
 	runner.queue_free()
 
 
@@ -268,7 +270,7 @@ func _simulate_actions(runner: Runner, actions: Dictionary, frames: int, move_x 
 		runner._process(dt)
 		var s := runner._body.scale
 		out.append({"y": s.y, "x": s.x, "z": s.z, "bottom": runner._body.position.y, "lift": runner.lift,
-			"ducking": player.is_ducking(), "stretch": runner._stretch})
+			"ducking": player.is_ducking(), "stretch": runner._stretch, "pz": runner._body.position.z, "sag": runner.sag()})
 	return out
 
 
@@ -279,26 +281,28 @@ func _jump_runner() -> Runner:
 	return runner
 
 
-func test_점프는_입력_즉시_뜨고_세로로_약_1_25배_늘어나며_옆은_좁아짐() -> void:
+func test_점프는_입력_첫_프레임부터_늘어나며_뜨고_옆은_좁아짐() -> void:
 	var runner := _jump_runner()
 	var base: float = runner._body.scale.y
 	var base_x: float = runner._body.scale.x
 	var frames := _simulate_actions(runner, {0: "jump"}, 8)
 	assert_true(frames[0]["lift"] > 0.0, "첫 프레임부터 뜸 %f" % frames[0]["lift"])
+	assert_true(frames[0]["y"] / base > 1.12, "첫 프레임부터 늘어남 %f (예비 동작으로 늦추지 않음)" % (frames[0]["y"] / base))
 	var peak := 0.0
 	var peak_f := 0
 	for i in frames.size():
 		if frames[i]["y"] / base > peak:
 			peak = frames[i]["y"] / base
 			peak_f = i
-	assert_true(peak > 1.2 and peak < 1.3, "늘어남 %f" % peak)
-	assert_true(peak_f <= 3, "늘어남이 바로 옴 (프레임 %d)" % peak_f)
-	assert_true(frames[peak_f]["x"] < base_x * 0.92, "옆은 좁아짐 %f" % frames[peak_f]["x"])
+	assert_true(peak > 1.35 and peak < 1.55, "늘어남 %f" % peak)
+	assert_true(peak_f <= 4, "늘어남이 바로 옴 (프레임 %d)" % peak_f)
+	assert_true(frames[peak_f]["x"] < base_x * 0.88, "옆은 좁아짐 %f" % frames[peak_f]["x"])
 	runner.queue_free()
 
 
-func test_공중에서는_화면_키가_폭_이상이고_뜬_직후와_내려올_때_약_1_2에서_1_3() -> void:
-	# 실제 게임 카메라로 본 키/폭 (ART_BIBLE.md 2-4 공중 비율). v0.2.4는 꼭대기 0.87이라 불합격
+## 실제 main 장면에서 점프하고 공중 프레임마다 게임 카메라로 본 화면 키/폭을 모은다.
+## chain_at >= 0이면 착지 뒤 그 프레임에 한 번 더 점프하고 두 번째 공중만 모은다.
+func _air_aspects(chain_at := -1) -> Array[float]:
 	var main: Node3D = load("res://scenes/main.tscn").instantiate()
 	main.seed_value = 136
 	add_child(main)
@@ -307,45 +311,104 @@ func test_공중에서는_화면_키가_폭_이상이고_뜬_직후와_내려올
 	main.runner.running = false  # 달리기 박자를 멈춰 점프 모양만 본다
 	main.apply_swipe(SwipeDetector.Dir.UP)
 	var air: Array[float] = []
-	for f in 120:  # 점프는 0.6초(36프레임): 착지하지 못해도 테스트가 멈추지 않게 상한을 둔다
+	var land := -1
+	for f in 200:  # 점프는 0.6초(36프레임): 착지하지 못해도 테스트가 멈추지 않게 상한을 둔다
+		if land >= 0 and f == land + chain_at:
+			main.apply_swipe(SwipeDetector.Dir.UP)
+		var was_air: bool = main.runner.lift > 0.0
 		main.advance(1.0 / 60.0)
 		main.runner._process(1.0 / 60.0)
-		if main.runner.lift <= 0.0:
-			break
-		air.append(main.runner.screen_aspect(main._camera))
+		if main.runner.lift > 0.0:
+			if chain_at < 0 or land >= 0:
+				air.append(main.runner.screen_aspect(main._camera))
+		elif was_air:
+			if chain_at < 0 or land >= 0:
+				break
+			land = f
+	main.queue_free()
+	return air
+
+
+func test_공중_키폭은_속도에_비례해_뛸때와_떨어질때_약_1_4_꼭대기_약_1_0() -> void:
+	# 실제 게임 카메라로 본 키/폭 (ART_BIBLE.md 2-4 공중 비율, 2-5 원칙 1). 공중 내내 1.0 이상
+	var air: Array[float] = await _air_aspects()
 	assert_true(air.size() >= 30, "공중 프레임 수 %d" % air.size())
 	for i in air.size():
 		assert_true(air[i] >= 1.0, "공중 %d프레임 키/폭 %f" % [i, air[i]])
-	var takeoff: float = air.slice(0, 6).max()
-	assert_true(takeoff > 1.2 and takeoff < 1.3, "뜬 직후 %f" % takeoff)
-	var apex: float = air[air.size() / 2]
-	assert_true(apex >= 1.0 and apex < takeoff, "꼭대기 %f" % apex)
-	assert_true(air[-1] > 1.2 and air[-1] < 1.3, "착지 직전 %f" % air[-1])
-	main.queue_free()
+	var takeoff: float = air.slice(0, 8).max()
+	assert_true(takeoff > 1.35 and takeoff < 1.5, "뛰는 순간 %f" % takeoff)
+	var apex: float = air.slice(air.size() / 2 - 3, air.size() / 2 + 3).min()
+	assert_true(apex >= 1.0 and apex < 1.1, "꼭대기 동그라미 %f" % apex)
+	assert_true(air[-1] > 1.3 and air[-1] < 1.5, "떨어질 때 %f" % air[-1])
+	# 속도 비례: 꼭대기를 지나면(스프링이 따라오는 2~3프레임 뒤부터) 떨어지는 동안 계속 길어진다 (꼭대기에서 납작해지는 출렁임 없음)
+	for i in range(air.size() / 2 + 5, air.size()):
+		assert_true(air[i] >= air[i - 1], "떨어지며 길어짐 %d: %f -> %f" % [i, air[i - 1], air[i]])
 
 
-func test_착지는_납작하게_퍼지고_2에서_3번_출렁이며_0_4초_안에_멈춤() -> void:
-	var runner := _jump_runner()
-	var frames := _simulate_actions(runner, {0: "jump"}, 120)
+## 한 번 점프하고 착지한 프레임 번호
+func _land_frame(frames: Array[Dictionary]) -> int:
 	var land := 0
 	while frames[land]["lift"] > 0.0:
 		land += 1
+	return land
+
+
+func test_착지는_반구를_거쳐_팬케이크_약_0_25배로_눌린_뒤_튕겨_1에서_2번_출렁() -> void:
+	var runner := _jump_runner()
+	var frames := _simulate_actions(runner, {0: "jump"}, 120)
+	var land := _land_frame(frames)
 	var low := INF
-	for i in range(land, land + 8):
-		low = minf(low, 1.0 + frames[i]["stretch"])
-	assert_true(low > 0.65 and low < 0.78, "착지 납작함 (키 배율) %f" % low)
-	var amp := 1.0 - low
+	var low_f := 0
+	for i in range(land, land + 15):
+		if 1.0 + frames[i]["stretch"] < low:
+			low = 1.0 + frames[i]["stretch"]
+			low_f = i
+	assert_true(low > 0.2 and low < 0.3, "팬케이크 키 배율 %f" % low)
+	assert_true(low_f - land >= 4, "단계적으로 깊어짐: 팬케이크는 닿고 %d프레임 뒤" % (low_f - land))
+	# 닿는 순간은 아직 동그라미에 가깝고(키 0.85배 이상), 그다음 넓은 반구(0.4~0.75배)를 거친다
+	assert_true(1.0 + frames[land]["stretch"] > 0.85, "닿는 순간 %f" % (1.0 + frames[land]["stretch"]))
+	var hemi := false
+	for i in range(land, low_f):
+		hemi = hemi or (1.0 + frames[i]["stretch"] > 0.4 and 1.0 + frames[i]["stretch"] < 0.75)
+	assert_true(hemi, "넓은 반구 단계")
+	assert_true(frames[low_f]["x"] > 1.35 and frames[low_f]["x"] <= Runner.BODY_WIDTH_LIMIT, "팬케이크 옆 퍼짐 %f" % frames[low_f]["x"])
+	# 튕긴 뒤 눈에 띄는 출렁임(키 배율 1.5% 이상인 꺾임) 1~2번
 	var swings := 0
-	for i in range(land + 1, frames.size() - 1):
+	for i in range(low_f + 1, frames.size() - 1):
 		var a: float = frames[i]["stretch"] - frames[i - 1]["stretch"]
 		var b: float = frames[i + 1]["stretch"] - frames[i]["stretch"]
-		if a * b < 0.0 and absf(frames[i]["stretch"]) >= amp * 0.15:
+		if a * b < 0.0 and absf(frames[i]["stretch"]) >= 0.015:
 			swings += 1
-	assert_true(swings >= 2 and swings <= 4, "착지 출렁임 꺾임 수 %d" % swings)
-	for i in range(land + 24, frames.size()):  # 착지 + 0.4초부터
-		assert_true(absf(frames[i]["stretch"]) < amp * 0.05, "%.2f초에 아직 출렁임 %f" % [(i - land) / 60.0, frames[i]["stretch"]])
+	assert_true(swings >= 1 and swings <= 2, "착지 출렁임 횟수 %d" % swings)
 	for i in range(land, frames.size()):
 		assert_eq(frames[i]["bottom"], 0.0, "착지 뒤 몸 바닥은 땅")
+	runner.queue_free()
+
+
+func test_착지_뒤_0_5초_안에_원래_모양으로_돌아옴() -> void:
+	var runner := _jump_runner()
+	var frames := _simulate_actions(runner, {0: "jump"}, 120)
+	var land := _land_frame(frames)
+	for i in range(land + 30, frames.size()):  # 착지 + 0.5초부터
+		assert_true(absf(frames[i]["stretch"]) < 0.03, "%.2f초에 아직 출렁임 %f" % [(i - land) / 60.0, frames[i]["stretch"]])
+	runner.queue_free()
+
+
+func test_착지하면_물방울이_튀었다가_합쳐지고_사라짐() -> void:
+	var runner := _jump_runner()
+	_simulate_actions(runner, {0: "jump"}, 37)  # 36프레임째 착지
+	assert_true(runner._drops.size() >= 2 and runner._drops.size() <= 4, "물방울 %d개" % runner._drops.size())
+	var top := 0.0
+	for f in 30:
+		runner._process(1.0 / 60.0)
+		for d in runner._drops:
+			if d.visible:
+				top = maxf(top, d.position.y)
+				assert_true(d.scale.x <= 1.0, "물방울은 작게")
+	assert_true(top > 0.2, "위로 튀어 오름 %f" % top)
+	runner._process(0.2)
+	for d in runner._drops:
+		assert_true(not d.visible, "착지 0.5초 뒤에는 몸에 합쳐져 없음")
 	runner.queue_free()
 
 
@@ -357,17 +420,43 @@ func _max_step(frames: Array[Dictionary], from: int, to: int) -> float:
 	return m
 
 
-func test_착지_직후_또_점프해도_모양이_튀지_않음() -> void:
+func test_팬케이크_중_점프는_첫_프레임에_쭉_솟음() -> void:
 	var single := _simulate_actions(_jump_runner(), {0: "jump"}, 60)
-	var land := 0
-	while single[land]["lift"] > 0.0:
-		land += 1
-	# 착지 출렁임이 한창일 때(착지 다음 프레임) 다시 뛴다
-	var double := _simulate_actions(_jump_runner(), {0: "jump", land + 1: "jump"}, land + 40)
-	var limit := _max_step(single, 0, single.size())
-	assert_true(_max_step(double, land, double.size()) <= limit * 1.15, "두 번째 점프 프레임 변화 %f <= 한 번 점프 %f" % [_max_step(double, land, double.size()), limit])
-	for f in double:
-		assert_true(f["y"] > 0.55 and f["y"] < 1.45, "모양 범위 %f" % f["y"])
+	var land := _land_frame(single)
+	for at in [land + 3, land + 5, land + 9]:  # 반구 · 팬케이크 · 튕기는 중
+		var chain := _simulate_actions(_jump_runner(), {0: "jump", at: "jump"}, at + 40)
+		assert_true(chain[at]["lift"] > 0.0, "입력 프레임에 바로 뜸 (%d)" % at)
+		assert_true(chain[at]["y"] - chain[at - 1]["y"] > 0.2, "첫 프레임에 쭉 솟음 %f -> %f" % [chain[at - 1]["y"], chain[at]["y"]])
+		# 한 프레임에 다 펴지지 않음(툭 튀지 않음): 한 프레임 키 변화는 몸 키 배율 0.45 이하, 2~3프레임에 걸쳐 솟는다
+		assert_true(_max_step(chain, at, chain.size()) <= 0.45, "프레임 변화 %f" % _max_step(chain, at, chain.size()))
+
+
+func test_팬케이크_중_재점프도_세번째_공중_프레임부터_키폭_1_0_이상() -> void:
+	# 팬케이크(키 0.25배)에서 솟아오르는 처음 2프레임(0.03초)만 1.0 아래를 지나간다
+	var air: Array[float] = await _air_aspects(5)
+	assert_true(air.size() >= 30, "공중 프레임 수 %d" % air.size())
+	assert_true(air[0] < air[1] and air[1] < air[2], "솟아오름 %f %f %f" % [air[0], air[1], air[2]])
+	for i in range(2, air.size()):
+		assert_true(air[i] >= 1.0, "두 번째 공중 %d프레임 키/폭 %f" % [i, air[i]])
+
+
+func test_팬케이크_중에도_레인_이동이_바로_됨() -> void:
+	var main: Node3D = load("res://scenes/main.tscn").instantiate()
+	main.seed_value = 136
+	add_child(main)
+	main.set_process(false)
+	await wait_frames()
+	main.apply_swipe(SwipeDetector.Dir.UP)
+	for f in 40:  # 착지(36프레임) + 4프레임: 팬케이크로 눌리는 중
+		main.advance(1.0 / 60.0)
+		main.runner._process(1.0 / 60.0)
+	assert_true(main.runner._stretch < -0.5, "팬케이크 중 %f" % main.runner._stretch)
+	var x0: float = main.runner.position.x
+	main.apply_swipe(SwipeDetector.Dir.RIGHT)
+	assert_eq(main.lane, 2, "입력 즉시 레인 바뀜")
+	await wait_frames(3)
+	assert_true(main.runner.position.x > x0, "몸이 바로 움직이기 시작 %f" % main.runner.position.x)
+	main.queue_free()
 
 
 func test_착지_출렁임_중_레인을_바꿔도_모양이_같음() -> void:
@@ -380,7 +469,7 @@ func test_착지_출렁임_중_레인을_바꿔도_모양이_같음() -> void:
 		assert_eq(b[i]["y"], a[i]["y"], "레인 이동은 몸 키에 영향 없음 (출렁임은 셰이더 기울기)")
 
 
-func test_슬라이드는_앞뒤로_약_1_5배_길어지고_옆은_조금만_퍼짐() -> void:
+func test_슬라이드는_옆으로_넓게_녹아_퍼지고_앞이_이끌고_뒤가_따라옴() -> void:
 	var runner := _jump_runner()
 	var frames := _simulate_actions(runner, {0: "slide"}, 26)
 	var max_z := 0.0
@@ -388,9 +477,24 @@ func test_슬라이드는_앞뒤로_약_1_5배_길어지고_옆은_조금만_퍼
 		max_z = maxf(max_z, f["z"])
 	var mid: Dictionary = frames[25]
 	assert_true(absf(mid["z"] - Runner.SLIDE_STRETCH) < 0.05, "앞뒤 늘어남 %f" % mid["z"])
-	assert_true(max_z > Runner.SLIDE_STRETCH + 0.03, "시작할 때 앞으로 쭉 퍼졌다 돌아옴 %f" % max_z)
-	assert_true(mid["x"] > 1.0 and mid["x"] < 1.2, "옆은 조금만 %f" % mid["x"])
+	assert_true(max_z > Runner.SLIDE_STRETCH + 0.03, "뒤가 따라오며 살짝 넘쳤다 돌아옴 %f" % max_z)
+	assert_true(mid["x"] >= 1.4 and mid["x"] <= Runner.BODY_WIDTH_LIMIT, "뒤 카메라에서 보이게 옆으로 넓게 %f" % mid["x"])
+	# 앞(-z)이 먼저 나가서 몸 중심이 앞쪽으로 쏠렸다가 뒤가 따라오면 돌아온다
+	assert_true(frames[3]["pz"] < -0.03, "앞이 이끎 %f" % frames[3]["pz"])
+	assert_true(absf(mid["pz"]) < 0.02, "뒤가 따라옴 %f" % mid["pz"])
 	assert_true(runner._mat.get_shader_parameter("drag") > 0.0, "윗부분이 뒤로 끌림")
+	runner.queue_free()
+
+
+func test_넓게_퍼져도_옆_레인_장애물과_겹쳐_보이지_않음() -> void:
+	# 옆 레인 장애물의 가장 안쪽 끝: 허들·막대(폭 1.3)가 레인 중심에서 0.85, 블록(1.1)은 0.95
+	var gap := RunLogic.LANE_WIDTH - ObstacleField.BAR_WIDTH * 0.5
+	var half := Runner.BODY_WIDTH_LIMIT * Runner.BODY_RADIUS * (1.0 + Runner.LAND_RIM_WAVE) + 0.006  # 테두리 물결·표면 물결까지
+	assert_true(half < gap, "몸 반폭 %f < 옆 장애물 안쪽 %f" % [half, gap])
+	var runner := _make_runner()  # 달리기 박자 눌림(옆으로 퍼짐)까지 켠다
+	var frames := _simulate_actions(runner, {0: "jump", 40: "slide", 90: "jump"}, 160)
+	for f in frames:
+		assert_true(f["x"] <= Runner.BODY_WIDTH_LIMIT, "몸 폭 배율 %f" % f["x"])
 	runner.queue_free()
 
 
@@ -403,7 +507,7 @@ func test_슬라이드_중_보이는_몸_높이는_판정_높이_이하() -> voi
 	for f in frames:
 		if f["ducking"]:
 			ducked += 1
-			var top: float = f["bottom"] + f["y"] * (Runner.BODY_HEIGHT + ripple)
+			var top: float = f["bottom"] + f["y"] * (Runner.BODY_HEIGHT + ripple + maxf(f["sag"], 0.0))  # 위아래 시차까지
 			assert_true(top <= limit, "슬라이드 중 몸 높이 %f <= %f" % [top, limit])
 	assert_true(ducked > 60, "슬라이드 프레임 수 %d" % ducked)
 	runner.queue_free()

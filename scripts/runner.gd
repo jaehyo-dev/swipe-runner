@@ -20,23 +20,41 @@ const WOBBLE_DAMP := 15.0    # 감쇠: 멈춘 뒤 2~3번 출렁이고 약 0.45�
 const JELLY_STIFF := 170.0 # 눌림 스프링 세기
 const JELLY_DAMP := 7.0    # 눌림 감쇠: 작게 둬서 착지 뒤 길쭉↔납작이 두어 번 출렁임
 const SHADOW_SIZE := 2.26 # 발밑 판 지름: 접촉 그림자 + 몸 둘레 빛 고리. 몸 폭에 비례 (v0.2.2 1.9 × 0.5/0.42, 세기는 shadow.gdshader)
-## 점프 모양: 세로 늘어남(1 = 보통) 하나를 스프링으로 움직인다. 옆 폭은 1/√(세로)로 줄어 부피가 유지되는 느낌.
-## 순간(뛰기·꼭대기·착지)에는 스프링 속도를 툭 쳐서(킥) 모양이 한 프레임에 튀지 않고 이어진다.
-const SHAPE_STIFF := 900.0       # 모양 스프링 세기 (900 ≈ 초당 5번 출렁)
-## 공중 비율(ART_BIBLE.md 2-4): 화면에서 보이는 키/폭이 공중 내내 1.0 이상. 뜬 직후 약 1.22, 꼭대기 약 1.09, 착지 직전 약 1.26 (screen_aspect)
-const AIR_STRETCH := 0.18        # 공중 내내 세로로 늘어난 기본값: 꼭대기에서도 넓적한 렌즈가 아닌 동그란 물방울 (조절: 클수록 꼭대기가 길쭉)
-const JUMP_STRETCH_KICK := 9.0   # 뛰는 순간 기본값 위로 더 늘어나는 세기 (조절: 9 ≈ 세로 1.25배)
-const JUMP_APEX_KICK := 1.0      # 꼭대기에서 살짝 출렁이는 세기
-const JUMP_FALL_STRETCH := 0.15  # 내려올 때 기본값 위로 더 늘어나는 정도 (착지 직전 약 1.33배)
-const AIR_DAMP := 30.0           # 공중 감쇠: 뜬 직후 늘어남이 금방 기본값으로 돌아옴
-const LAND_SQUASH_KICK := 16.0   # 착지 순간 납작해지는 세기 (조절: 16 ≈ 키 0.72배)
-const LAND_WOBBLE_DAMP := 18.0   # 착지 출렁임 감쇠 (조절: 작을수록 더 세고 오래 출렁임, 18 ≈ 2~3번 출렁이고 0.4초에 멈춤)
-## 슬라이드 모양: 앞으로 미끄러지는 액체
-const SLIDE_STRETCH := 1.5       # 앞뒤로 늘어나는 배율 (조절)
-const SLIDE_WIDEN := 1.12        # 옆으로 조금만 퍼짐
-const SLIDE_SQUASH := 0.42       # 몸 키 배율. 표면 물결까지 더해도 판정 높이(CROUCH_SCALE 0.45배) 아래
+## 점프·착지 모양: 세로 늘어남(1 = 보통) 하나를 스프링으로 움직인다 (ART_BIBLE.md 2-5).
+## 늘어나면 옆 폭은 1/√(세로)로 줄고, 눌리면 옆으로 퍼진다(LAND_SPREAD까지). 순간(뛰기·착지)에는 스프링 속도를 쳐서(킥) 값이 끊기지 않는다.
+const SHAPE_STIFF := 900.0       # 공중 모양 스프링 세기
+## 공중(원칙 1): 목표 늘어남 = 꼭대기 값 + 위아래 속도에 비례한 값. 화면 키/폭은 뛰는 순간·떨어질 때 약 1.4, 꼭대기 약 1.0 (screen_aspect)
+const AIR_ROUND := 0.1           # 꼭대기(위아래 속도 0)의 늘어남: 동그란 물방울, 화면 키/폭 1.0 이상(2-4)
+const AIR_SPEED_STRETCH := 0.37  # 가장 빠를 때 더해지는 늘어남 (조절: 최대 늘어남, 0.37 ≈ 게임 화면 키/폭 1.4)
+const JUMP_STRETCH_KICK := 14.0  # 뛰는 순간 스프링 속도 킥: 입력한 첫 프레임부터 늘어난다
+const AIR_DAMP := 40.0           # 공중 감쇠: 속도를 거의 바로 따라간다 (꼭대기에서 출렁여 납작해지지 않게)
+## 착지(원칙 2): 닿는 순간 아래로 킥 → LAND_SQUASH_TIME 동안 팬케이크로 눌림 → 튕김 스프링으로 종 모양 반구 → 1~2번 출렁 → 원래 모양
+const LAND_PANCAKE := 0.25       # 팬케이크 키 배율 (조절: 팬케이크 깊이, 작을수록 납작)
+const LAND_SQUASH_TIME := 0.12   # 닿고 나서 팬케이크까지 눌리는 시간(초): 무게가 내려앉는 구간
+const LAND_SQUASH_STIFF := 2500.0  # 눌리는 스프링 세기 (임계 감쇠라 팬케이크 아래로 넘치지 않음)
+const LAND_SQUASH_KICK := 16.0   # 닿는 순간 아래로 치는 세기: 다음 프레임에 바로 동그라미
+const LAND_BOUNCE_STIFF := 1000.0  # 튕김 스프링 세기 (조절: 출렁임 빠르기)
+const LAND_BOUNCE_DAMP := 30.0   # 튕김 감쇠 (조절: 출렁임 세기·시간, 작을수록 세고 오래)
+const LAND_SPREAD := 1.5         # 팬케이크일 때 옆 폭 배율
+const LAND_RIM_WAVE := 0.05      # 팬케이크 테두리 물결 세기 (셰이더 rim_wave, 폭의 5%)
+## 보이는 몸 폭 상한(m): 옆 레인 허들·막대 안쪽 끝(레인 중심에서 0.85)과 겹쳐 보이지 않게. 반폭 0.775 + 물결 5% ≈ 0.82
+const BODY_WIDTH_LIMIT := 1.55
+## 착지 물방울(원칙 3): 같은 젤리 재질의 작은 구가 튀었다가 몸으로 떨어지며 작아져 합쳐진다
+const DROPLET_COUNT := 3         # 물방울 개수 (조절: 2~4)
+const DROPLET_RADIUS := 0.07     # 물방울 반지름(m) (조절)
+const DROPLET_TIME := 0.34       # 튀었다 합쳐지기까지 시간(초)
+const DROPLET_HEIGHT := 0.45     # 튀어 오르는 높이(m)
+const DROPLET_OUT := 0.3         # 바깥으로 나가는 거리(m)
+## 위아래 시차(원칙 5): 윗부분이 몸 위아래 가속도에 끌려 늦게 따라오는 스프링(레인 이동 출렁임과 같은 세기·감쇠). 셰이더 sag
+const SAG_GAIN := 0.3            # 시차 세기
+const SAG_MAX := 0.05            # 정수리가 위아래로 밀리는 최대 거리(몸 좌표, 키 배율이 곱해짐)
+## 슬라이드(원칙 4): 녹아서 낮고 넓게 흐른다. 앞(-z)은 바로 나가고 뒤는 스프링으로 늦게 따라온다
+const SLIDE_STRETCH := 1.5       # 앞뒤 길이 배율 (앞·뒤가 반씩)
+const SLIDE_WIDEN := 1.5         # 옆 폭 배율 (조절: 슬라이드 퍼짐 폭, BODY_WIDTH_LIMIT까지)
+const SLIDE_SQUASH := 0.4        # 몸 키 배율 0.32m. 표면 물결까지 더해도 판정 높이(0.45 x 0.8 = 0.36) 아래
 const SLIDE_DRAG := 0.12         # 윗부분이 뒤로 끌리는 거리: 앞쪽이 낮고 길게 나간다 (셰이더 drag)
-const SPREAD_DAMP := 16.0        # 앞뒤 늘어남 감쇠: 시작할 때 1.5배를 살짝 넘겨 앞으로 쭉 퍼졌다 돌아옴
+const SLIDE_FRONT_RISE := 0.6    # 끝날 때 뒤가 덜 모인 만큼 윗부분이 앞으로 기울어 앞부터 솟는다
+const SPREAD_DAMP := 16.0        # 뒤 따라오기 감쇠: 시작할 때 살짝 넘쳤다 돌아옴
 const SLIDE_END_KICK := 9.0      # 슬라이드가 끝날 때 위로 쭉 올라오는 세기
 ## 공중 모양 (ART_BIBLE.md 2-4): 바닥 평평함(1 = 땅의 평평한 바닥, 0 = 둥근 물방울 바닥)을 시간에 걸쳐 바꿔 툭 튀지 않게 한다
 const FLAT_CURL_TIME := 0.1      # 뜬 뒤 바닥이 둥글게 말려 올라가는 시간(초) (조절: 작을수록 빨리 둥글어짐)
@@ -58,8 +76,13 @@ var _squish_vel := 0.0
 var _move_tween: Tween
 var _stretch := 0.0   # 점프 모양 스프링: 세로 늘어남 - 1 (+ = 길쭉, - = 납작)
 var _stretch_vel := 0.0
-var _spread := 0.0    # 슬라이드 앞뒤 늘어남 - 1
+var _spread := 0.0    # 슬라이드 뒤쪽 늘어남 (앞쪽은 _crouch_vis로 바로 정해진다)
 var _spread_vel := 0.0
+var _land_t := -1.0   # 착지 뒤 지난 시간 (음수 = 착지 중 아님)
+var _drop_t := -1.0   # 물방울이 튄 뒤 지난 시간 (음수 = 없음)
+var _drops: Array[MeshInstance3D] = []
+var _sag := 0.0       # 위아래 시차 스프링 (- = 윗부분이 아래로 처짐)
+var _sag_vel := 0.0
 var _prev_lift := 0.0
 var _prev_lift_vel := 0.0
 var _crouch_vis := 0.0  # 화면에 보이는 슬라이드 정도: 점프로 슬라이드가 끊겨도 한 프레임에 튀지 않게 천천히 돌아온다
@@ -128,6 +151,7 @@ func screen_aspect(cam: Camera3D) -> float:
 				var m := (k + (1.0 - k) * s) / (FOOT_RATIO + (1.0 - FOOT_RATIO) * s)
 				p.x *= m
 				p.z *= m
+			p.y += sag() * t * t  # 셰이더와 같은 위아래 시차
 			var q := cam.unproject_position(_body.global_transform * p)
 			lo = lo.min(q)
 			hi = hi.max(q)
@@ -169,6 +193,26 @@ func _ready() -> void:
 	_shadow.material_override = _shadow_mat
 	_shadow.position.y = 0.012
 	add_child(_shadow)
+
+	# 착지 물방울: 같은 젤리 셰이더. 구 메시라 바닥 둥글기(widest_t 음수로 끔)·심지·기포·바닥 진함은 끈다
+	var drop_mesh := SphereMesh.new()
+	drop_mesh.radius = DROPLET_RADIUS
+	drop_mesh.height = DROPLET_RADIUS * 2.0
+	drop_mesh.radial_segments = 12
+	drop_mesh.rings = 6
+	var drop_mat := ShaderMaterial.new()
+	drop_mat.shader = _mat.shader
+	var drop_params := {"height": DROPLET_RADIUS * 2.0, "radius": DROPLET_RADIUS, "widest_t": -1.0, "core_strength": 0.0,
+			"bubble_strength": 0.0, "ground_dark": 0.0, "ripple": 0.0}
+	for key in drop_params:
+		drop_mat.set_shader_parameter(key, drop_params[key])
+	for i in DROPLET_COUNT:
+		var d := MeshInstance3D.new()
+		d.mesh = drop_mesh
+		d.material_override = drop_mat
+		d.visible = false
+		_drops.append(d)
+		add_child(d)
 	_animate()
 
 
@@ -183,17 +227,20 @@ func _process(delta: float) -> void:
 	_animate()
 
 
-## 점프·슬라이드 모양 스프링을 delta초 진행한다. lift·crouch 변화로 뛰기·꼭대기·착지·슬라이드 끝을 알아챈다.
+## 점프·착지·슬라이드 모양 스프링을 delta초 진행한다. lift·crouch 변화로 뛰기·착지·슬라이드 끝을 알아챈다.
 func step_shape(delta: float) -> void:
 	if delta <= 0.0:
 		return
 	var vy := (lift - _prev_lift) / delta
+	var accel_y := (vy - _prev_lift_vel) / delta
 	var air := lift > 0.0
 	if air and _prev_lift <= 0.0:
-		_stretch_vel += JUMP_STRETCH_KICK
-	elif air and _prev_lift_vel > 0.0 and vy <= 0.0:
-		_stretch_vel -= JUMP_APEX_KICK
+		_land_t = -1.0
+		# 팬케이크에서 뛰면 아래로 가던 속도를 버리고, 눌려 있던 만큼 세게 솟는다 (예비 동작 느낌). 이미 솟는 중이면 그 속도와 킥 중 큰 쪽
+		_stretch_vel = maxf(_stretch_vel, JUMP_STRETCH_KICK * (1.0 - minf(_stretch, 0.0)))
 	elif not air and _prev_lift > 0.0:
+		_land_t = 0.0
+		_drop_t = 0.0
 		_stretch_vel -= LAND_SQUASH_KICK
 	if crouch <= 0.0 and _crouch_vis > 0.0 and _crouch_vis <= delta / PlayerAction.SLIDE_FADE:
 		_stretch_vel += SLIDE_END_KICK  # 슬라이드에서 돌아오는 마지막 프레임
@@ -201,17 +248,39 @@ func step_shape(delta: float) -> void:
 	_flat = move_toward(_flat, 0.0 if air else 1.0, delta / (FLAT_CURL_TIME if air else FLAT_SPREAD_TIME))
 	_prev_lift = lift
 	_prev_lift_vel = vy
-	var v0 := 4.0 * PlayerAction.JUMP_HEIGHT / PlayerAction.JUMP_TIME  # 뛰는 순간 속도
-	var target := AIR_STRETCH + JUMP_FALL_STRETCH * maxf(-vy, 0.0) / v0 if air else 0.0
-	var damp := AIR_DAMP if air else LAND_WOBBLE_DAMP
-	var spread_target := (SLIDE_STRETCH - 1.0) * _crouch_vis
+	var target := 0.0
+	var stiff := LAND_BOUNCE_STIFF  # 땅에서는 튕김 스프링 (착지 뒤·슬라이드 끝 출렁임)
+	var damp := LAND_BOUNCE_DAMP
+	if air:
+		var v0 := 4.0 * PlayerAction.JUMP_HEIGHT / PlayerAction.JUMP_TIME  # 뛰는 순간(가장 빠른) 속도
+		target = AIR_ROUND + AIR_SPEED_STRETCH * minf(absf(vy) / v0, 1.0)
+		stiff = SHAPE_STIFF
+		damp = AIR_DAMP
+	elif _land_t >= 0.0 and _land_t < LAND_SQUASH_TIME:
+		target = LAND_PANCAKE - 1.0
+		stiff = LAND_SQUASH_STIFF
+		damp = 2.0 * sqrt(LAND_SQUASH_STIFF)
+	if _land_t >= 0.0:
+		_land_t += delta
+	if _drop_t >= 0.0:
+		_drop_t += delta
+		if _drop_t >= DROPLET_TIME:
+			_drop_t = -1.0
+	var spread_target := (SLIDE_STRETCH - 1.0) * 0.5 * _crouch_vis
 	var steps := ceili(delta / 0.004)
 	var h := delta / steps
 	for i in steps:
-		_stretch_vel += (SHAPE_STIFF * (target - _stretch) - damp * _stretch_vel) * h
+		_stretch_vel += (stiff * (target - _stretch) - damp * _stretch_vel) * h
 		_stretch += _stretch_vel * h
 		_spread_vel += (SHAPE_STIFF * (spread_target - _spread) - SPREAD_DAMP * _spread_vel) * h
 		_spread += _spread_vel * h
+		_sag_vel += (-WOBBLE_STIFF * _sag - WOBBLE_DAMP * _sag_vel - accel_y) * h  # 레인 출렁임과 같은 스프링
+		_sag += _sag_vel * h
+
+
+## 셰이더에 넘기는 정수리 위아래 밀림 (슬라이드 중에는 판정 높이를 넘지 않게 끈다)
+func sag() -> float:
+	return clampf(_sag * SAG_GAIN, -SAG_MAX, SAG_MAX) * (1.0 - _crouch_vis)
 
 
 ## 옆 속도 vx(유닛/초)를 받아 출렁임 스프링을 진행한다. 바닥 가속도의 반대쪽으로 위가 밀린다.
@@ -269,16 +338,23 @@ func _animate() -> void:
 	if lift > 0.0:
 		hop = 1.0  # 점프 중에는 늘어난 모양
 	# 눌리면 옆으로 퍼지고 늘어나면 가늘어진다 (부피 느낌 유지)
-	# 점프 모양 늘어남이 곱해진다 (세로로 늘면 옆은 1/√ 만큼 좁아짐)
-	var stretch := maxf(1.0 + _stretch, 0.3)
+	# 점프 모양 늘어남이 곱해진다: 세로로 늘면 옆은 1/√ 만큼 좁아지고, 팬케이크로 눌리면 LAND_SPREAD까지만 퍼진다
+	var stretch := maxf(1.0 + _stretch, 0.15)
+	var widen := 1.0 / sqrt(stretch) if stretch >= 1.0 \
+		else minf(1.0 + (LAND_SPREAD - 1.0) * (1.0 - stretch) / (1.0 - LAND_PANCAKE), LAND_SPREAD)
 	var sy := (1.0 + SQUASH_SCALE * (-0.28 * _squish + 0.08 * hop)) * stretch
-	var sxz := (1.0 + SQUASH_SCALE * (0.22 * _squish - 0.05 * hop)) / sqrt(stretch)
-	# 슬라이드: 키는 판정 높이 아래로 고정, 앞뒤로 길게(스프링으로 살짝 넘쳤다 돌아옴), 옆은 조금만
+	var sxz := (1.0 + SQUASH_SCALE * (0.22 * _squish - 0.05 * hop)) * widen
+	# 슬라이드: 키는 판정 높이 아래로 고정, 옆으로 넓게 녹아 퍼짐, 앞은 바로 나가고 뒤(_spread)가 따라옴
 	var c := _crouch_vis
-	_body.scale = Vector3(lerpf(sxz, SLIDE_WIDEN, c), lerpf(sy, SLIDE_SQUASH, c), lerpf(sxz, 1.0, c) + _spread)
-	_body.position.y = lift  # 점프만 땅에서 뜬다
+	var front := (SLIDE_STRETCH - 1.0) * 0.5 * c
+	_body.scale = Vector3(minf(lerpf(sxz, SLIDE_WIDEN, c), BODY_WIDTH_LIMIT), lerpf(sy, SLIDE_SQUASH, c), lerpf(sxz, 1.0, c) + front + _spread)
+	_body.position = Vector3(0.0, lift, (_spread - front) * BODY_RADIUS)  # 점프만 땅에서 뜬다. 슬라이드 앞(-z) 끝은 바로 나감
 	_mat.set_shader_parameter("lean", lean())
-	_mat.set_shader_parameter("drag", SLIDE_DRAG * c)
+	_mat.set_shader_parameter("sag", sag())
+	# 끝날 때 앞이 먼저 모이고 뒤가 덜 모인 만큼 윗부분이 앞으로 기울어 앞부터 솟는다
+	_mat.set_shader_parameter("drag", SLIDE_DRAG * c - SLIDE_FRONT_RISE * maxf(_spread - front, 0.0))
+	_mat.set_shader_parameter("rim_wave", LAND_RIM_WAVE * clampf(-_stretch / (1.0 - LAND_PANCAKE), 0.0, 1.0))
+	_animate_drops()
 	_mat.set_shader_parameter("beat", _phase)
 	_mat.set_shader_parameter("flat_bottom", smoothstep(0.0, 1.0, _flat))  # 처음과 끝이 부드럽게
 	# 접촉 그림자는 바닥 모양을 따라 퍼졌다 좁아지고, 점프로 뜨면 작고 옅고 부드러워진다.
@@ -287,3 +363,19 @@ func _animate() -> void:
 	_shadow.scale = Vector3(_body.scale.x, 1.0, _body.scale.z) * lerpf(1.0, SHADOW_AIR_SIZE, h)
 	_shadow_mat.set_shader_parameter("opacity", lerpf(1.0, SHADOW_AIR_OPACITY, h))
 	_shadow_mat.set_shader_parameter("soft", h)
+
+
+## 착지 물방울: 팬케이크 테두리에서 나와 바깥·위로 튀었다가 몸 가운데 위로 떨어지며 작아져 합쳐진다.
+## 무작위 없이 개수로 방향을 나눠(옆·앞으로 퍼지게) 항상 같은 모양이다.
+func _animate_drops() -> void:
+	for i in _drops.size():
+		var d := _drops[i]
+		d.visible = _drop_t >= 0.0
+		if not d.visible:
+			continue
+		var u := _drop_t / DROPLET_TIME
+		var a := PI + PI * i / maxf(_drops.size() - 1, 1.0)  # 왼쪽부터 앞(-z)을 지나 오른쪽까지: 뒤 카메라에서 몸에 가리지 않게
+		var r := lerpf(0.6, 0.15, u) + DROPLET_OUT * sin(PI * u)
+		var up := DROPLET_HEIGHT * (1.0 - 0.2 * (i % 2)) * sin(PI * u)  # 높이를 조금씩 달리해 비대칭
+		d.position = Vector3(cos(a) * r, lerpf(0.06, 0.25, u) + up, sin(a) * r)
+		d.scale = Vector3.ONE * smoothstep(0.0, 0.15, u) * (1.0 - smoothstep(0.65, 1.0, u))

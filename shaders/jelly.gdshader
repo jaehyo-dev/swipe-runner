@@ -34,6 +34,8 @@ uniform float height = 1.0;  // 메시 높이 (아래 0 ~ 위 height)
 uniform float radius = 0.42; // 메시 가장 넓은 반지름 (반사광 위치를 몸 크기에 맞춤)
 uniform float lean = 0.0;    // 정수리가 옆으로 밀린 거리 (레인 이동 출렁임)
 uniform float drag = 0.0;    // 슬라이드: 정수리가 뒤(+z)로 끌린 거리 (앞쪽이 낮고 길게 나감)
+uniform float sag = 0.0;     // 점프·착지 시차: 정수리가 위아래로 늦게 따라온 거리 (- = 아래)
+uniform float rim_wave = 0.0; // 착지 팬케이크 테두리 물결 세기 (폭의 비율)
 uniform float beat = 0.0;    // 달리기 박자 위상
 uniform float flat_bottom = 1.0;  // 바닥 평평함: 1 = 땅에 닿은 평평한 푸딩 바닥, 0 = 공중의 둥근 물방울 바닥 (ART_BIBLE.md 2-4)
 uniform float foot_ratio = 0.8;   // runner.gd FOOT_RATIO: 메시의 평평한 바닥 반지름 비율
@@ -65,9 +67,12 @@ void vertex() {
 	float ang = atan(VERTEX.z, VERTEX.x);
 	float w = sin(ang * 3.0 + vy * 9.0 + TIME * 5.0) * 0.6 + sin(ang * 5.0 - vy * 6.0 - TIME * 6.5) * 0.4;
 	VERTEX += NORMAL * w * ripple * smoothstep(0.05, 0.3, vy);
+	// 팬케이크 테두리 물결: 아래쪽 둘레가 살짝 들쭉날쭉 일렁인다
+	VERTEX.xz *= 1.0 + rim_wave * sin(ang * 7.0 + TIME * 9.0) * (1.0 - vy);
 	// 높이별 기울기: 바닥은 그대로, 위로 갈수록 크게 밀린다 (푸딩처럼 위가 늦게 따라옴)
 	VERTEX.x += lean * vy * vy;
 	VERTEX.z += drag * vy * vy;
+	VERTEX.y += sag * vy * vy;
 }
 
 void fragment() {
