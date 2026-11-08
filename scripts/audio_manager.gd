@@ -86,7 +86,7 @@ func _ready() -> void:
 		var bpm := int(str(JavaScriptBridge.eval("new URLSearchParams(location.search).get('bpm') || 0")))
 		start_step = maxi(MusicLadder.step_of_bpm(bpm), 0)
 		ladder = MusicLadder.new(start_step)
-		_web = WebMusic.new(TRACKS, start_step)
+		_web = WebMusic.new(start_step)
 		for sound in SFX:
 			AudioServer.register_stream_as_sample(SFX[sound])
 	_set_music_db(MUSIC_DB)
@@ -123,7 +123,7 @@ func _plan_next_track() -> void:
 	if _web:
 		_web.schedule(plan["step"], at)
 	else:
-		_switch_frame = roundi(at * AudioServer.get_mix_rate())
+		_switch_frame = maxi(roundi(at * AudioServer.get_mix_rate()), _pushed)  # 지연이 커서 이미 넣은 표본을 지났으면 바로 다음 표본에서
 		_switch_step = plan["step"]
 
 

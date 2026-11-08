@@ -8,9 +8,7 @@
 
 사용: python3 tools/make_final_sounds.py  (기준을 못 맞추면 종료 코드 1)
 """
-import subprocess
 import sys
-import wave
 from pathlib import Path
 
 import numpy as np

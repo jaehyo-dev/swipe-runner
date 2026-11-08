@@ -307,11 +307,28 @@ func test_재시작하면_곡과_템포_구간이_처음으로_돌아감() -> vo
 
 func test_부딪힌_뒤에는_다음_곡을_예약하지_않음() -> void:
 	AudioManager.start_music()
-	AudioManager.music_time = MusicLadder.lap_time(0) - 0.8
+	AudioManager._clock.time = MusicLadder.lap_time(0) - 0.8  # 재생 위치가 이보다 뒤라 시계는 이 값을 유지한다
 	AudioManager._blocked = true
 	AudioManager._process(0.0)
-	assert_eq(AudioManager.ladder.segments.size(), 1)
+	assert_eq(AudioManager.ladder.segments.size(), 1, "부딪힌 뒤에는 예약 안 함")
 	AudioManager._blocked = false
+	AudioManager._process(0.0)
+	assert_eq(AudioManager.ladder.segments.size(), 2, "달리는 중이면 예약")
+	AudioManager.music.stop()
+
+
+## 출력 지연이 커서 이미 넣은 표본을 지난 경계도 멈추지 않고 넘어간다 (경계 계산이 음수가 되면 무한 반복)
+func test_이미_넣은_표본을_지난_경계도_멈추지_않고_바뀜() -> void:
+	AudioManager.start_music()
+	AudioManager.music_time = MusicLadder.lap_time(0) - 0.8
+	AudioManager._pushed = roundi(MusicLadder.lap_time(0) * AudioServer.get_mix_rate()) + 1000  # 경계보다 1000표본 뒤까지 넣은 상태
+	AudioManager._plan_next_track()
+	assert_eq(AudioManager._switch_frame, AudioManager._pushed)
+	AudioManager.music.stop()
+	AudioManager.music.play()
+	AudioManager._gen = AudioManager.music.get_stream_playback()
+	AudioManager._pump_generator()
+	assert_eq(AudioManager._switch_frame, -1, "곡이 바뀜")
 	AudioManager.music.stop()
 
 

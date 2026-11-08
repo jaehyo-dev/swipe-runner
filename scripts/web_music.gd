@@ -74,14 +74,12 @@ var _steps: Array[int] = []  # 디코딩할 단계들, 앞에서부터
 var _ready := {}
 var _playback: AudioStreamPlayback
 var _left := 0
-var _tracks: Array
 
 
-func _init(tracks: Array, start_step: int) -> void:
+func _init(start_step: int) -> void:
 	JavaScriptBridge.eval(JS, true)
 	_js = JavaScriptBridge.get_interface("gameMusic")
-	_tracks = tracks
-	for step in range(start_step, tracks.size()):
+	for step in range(start_step, AudioManager.TRACKS.size()):
 		_steps.append(step)
 	# 첫 곡은 첫 입력에 바로 나와야 하므로 가림막 뒤(로딩 중)에 끝낸다
 	for i in CHUNKS_MAX:  # 횟수 제한: 안에서 오류가 나도 페이지가 멈추지 않게
@@ -103,7 +101,7 @@ func decode_slice(budget := SLICE_USEC) -> void:
 			var rate := AudioServer.get_mix_rate()
 			_left = roundi(MusicLadder.lap_time(step) * rate)
 			_js.alloc(step, _left, rate)
-			_playback = AudioManager.open_track(_tracks[step])
+			_playback = AudioManager.open_track(AudioManager.TRACKS[step])
 		var n := mini(CHUNK_FRAMES, _left)
 		_js.feed(step, Marshalls.raw_to_base64(_playback.mix_audio(1.0, n).to_byte_array()))
 		_left -= n
