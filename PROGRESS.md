@@ -96,3 +96,8 @@
 - bgm_3, lane_c 확정. 점프·슬라이드·착지·충돌 각 3개 다시 제작 (A·B 합성, C는 Kenney CC0 가공)
 - review/v0.2.8/sounds_v2/: index.html, report.md, spectrograms.png, LICENSES.md. make_sounds_v2.py가 기준 1~8을 숫자로 검사 (실패 시 종료 코드 1)
 - 고음이 많아 A 가중 크기는 lane_c보다 일반 +2~4dB, 충돌 +7dB. 사용자 귀로 확인 필요
+
+## 소리 후보 3차 (게임 코드 변경 없음, 버전 그대로)
+- 2차가 높아 귀를 찌른다는 의견 반영. 효과음 12개를 lane_c와 같은 재료로 다시 제작, 중심 330~950Hz(점프 1.2kHz), 4kHz 위 1~5%
+- C 후보와 착지 물보라는 OpenGameArt rubberduck CC0 녹음 사용 (근거는 페이지 표시, zip 안에 라이선스 파일 없음)
+- review/v0.2.8/sounds_v3/: index.html(높이·밝기 슬라이더, lane_c 뒤에 이어 듣기), report.md, spectrograms.png, LICENSES.md. make_sounds_v3.py가 기준을 숫자로 검사 (실패 시 종료 코드 1)

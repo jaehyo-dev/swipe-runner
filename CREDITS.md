@@ -13,5 +13,6 @@
 |---|---|---|---|---|---|---|
 | Interface Sounds (drop_001, drop_004, pluck_002, scratch_001, glass_004) | 1.0 | Kenney | CC0 1.0 | https://kenney.nl/assets/interface-sounds | 소리 후보 2차 C (게임 미적용) | 있음 (음 높이·필터·감쇠) |
 | Impact Sounds (footstep_snow_000, impactGeneric_light_000, impactGlass_light_000) | 1.0 | Kenney | CC0 1.0 | https://kenney.nl/assets/impact-sounds | 소리 후보 2차 C (게임 미적용) | 있음 (필터·알갱이·감쇠) |
+| 40 CC0 water / splash / slime SFX (slime_13, splash_02, splash_10) | 받은 날 2026-11-08 (zip SHA-256은 LICENSES.md) | rubberduck | CC0 1.0 | https://opengameart.org/content/40-cc0-water-splash-slime-sfx | 소리 후보 3차 `review/v0.2.8/sounds_v3/` slide_c, crash_c, land_a·b·c (게임 미적용) | 있음 (재생 속도·필터·감쇠) |
 
 소리 후보 `review/v0.2.8/sounds/`(효과음 15개, 배경 음악 3개)는 이 프로젝트에서 `make_sounds.py`로 직접 합성했다 (직접 제작, 외부 음원 없음, 화면 확인 기록이라 게임에는 들어가지 않음. 파일별 표는 같은 폴더 README.md).
