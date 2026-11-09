@@ -6,15 +6,15 @@ tmp=$1; out=review/v0.7.0; root=$PWD
 mkdir -p "$tmp"
 godot --headless --path . --import >/dev/null 2>&1
 # 앱을 숨긴 채로 띄운다: 화면을 가리지 않고 포커스도 뺏지 않는다. 표준 출력은 $tmp/<이름>.log
-# 창 크기를 720x1280으로 (없으면 화면 크기에 맞춰 줄어든다)
 trap 'rm -f "$root/override.cfg" "$root"/pressure_shots.*' EXIT
-printf '[display]\nwindow/size/window_width_override=720\nwindow/size/window_height_override=1280\n' > override.cfg
 gd() { local name=$1; shift; open -W -g -j -n -a /Applications/Godot.app --stdout "$tmp/$name.log" --stderr "$tmp/$name.log" --env "SEED=${SEED:-}" --env "MODEL=${MODEL:-}" --args "$@"; grep -E "SCRIPT ERROR" "$tmp/$name.log" | cut -c1-160 || true; }
 if [ -z "${WEB_ONLY:-}" ]; then
+# 창 크기를 720x1280으로 (없으면 화면 크기에 맞춰 줄어든다). 웹 내보내기 전에 지운다
+printf '[display]\nwindow/size/window_width_override=720\nwindow/size/window_height_override=1280\n' > override.cfg
 # 1. 잘하는 모델, 처음(100BPM)부터 죽을 때까지. 시드 20 = 난이도 표의 중앙값 근처
 MODEL=good SEED=20 gd human --path "$root" --write-movie "$tmp/human.avi" --fixed-fps 60 --resolution 720x1280 res://tools/playthrough.tscn -- human 300 all 100
 ffmpeg -y -v error -i "$tmp/human.avi" -vf "scale=trunc(iw/2)*2:trunc(ih/2)*2" -c:v libx264 -crf 27 -preset medium -pix_fmt yuv420p -c:a aac -b:a 128k "$out/good_model_to_death.mp4"
-# 2. 압박 단계 0/4/8/12: 사다리를 그 박까지 올려 한 장씩 찍는다 (숨긴 앱은 1분쯤 지나면 그리기가 멈춰 긴 녹화는 쓰지 않는다)
+# 2. 압박 단계 0/4/8/12 (압박 12 = 박 384, 약 172초): 사다리를 그 박까지 올려 한 장씩 찍는다 (숨긴 앱은 1분쯤 지나면 그리기가 멈춰 긴 녹화는 쓰지 않는다)
 cp "$out/pressure_shots.gd" .
 printf '[gd_scene load_steps=2 format=3]\n\n[ext_resource type="Script" path="res://pressure_shots.gd" id="1"]\n\n[node name="C" type="Node"]\nscript = ExtResource("1")\n' > pressure_shots.tscn
 mkdir -p "$tmp/pressure"
