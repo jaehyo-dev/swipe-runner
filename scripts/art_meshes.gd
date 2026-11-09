@@ -1,7 +1,7 @@
 class_name ArtMeshes
 extends RefCounted
 ## 장애물·난간 메시를 코드로 만든다 (텍스처 없음). 모양 기준은 ART_BIBLE.md 6·10장.
-## 장애물 몸통·테두리·기호는 한 메시·한 재질이라 종류마다 MultiMesh 하나로 그린다 (block.gdshader).
+## 장애물 몸통·테두리·기호는 한 메시·한 재질이라 종류마다 MultiMesh 하나로 그린다 (block.gdshader). 파란 기둥만 몸통이 반투명이라 표면이 둘이다 (pillar.gdshader).
 ## 모든 장애물은 바닥(y=0)을 원점으로 삼고, 크기는 ObstacleField 판정 값에서 그대로 가져온다 (보이는 모양 = 판정 범위).
 ## 선은 가는 관(tube)이라 메시 하나에 모이고, 관 반지름을 UV.x, 부위를 UV.y에 담아 셰이더가 멀리서 최소 굵기를 지키게 한다.
 
@@ -18,6 +18,8 @@ const MIRROR_BODY_ALPHA := 0.5   # 반사 불투명도: 몸통은 어두워 바�
 const MIRROR_EDGE_ALPHA := 0.3
 const POOL_ALPHA := 0.3          # 슬라이드 블록 아래 빛 웅덩이 가운데 불투명도 (35% 이하): 떠 있는 높이를 말해 준다
 const POOL_HALF := Vector2(0.58, 0.46)    # 웅덩이 반지름 (x, z): 블록 폭의 절반 0.65보다 살짝 좁게
+const SHADOW_ALPHA := 0.6        # 기둥 접지 그림자 가운데 불투명도: 어디에 서 있는지 읽히게
+const SHADOW_HALF := Vector2(0.85, 0.95)  # 그림자 반지름 (x, z): 기둥 밑면(0.55, 0.55)보다 조금 크게
 
 var _v := PackedVector3Array()
 var _n := PackedVector3Array()
@@ -27,8 +29,8 @@ var _part := Part.BODY
 
 
 ## 종류별 {body, mirror} 메시. 색은 재질 값이다.
-## body: 몸통 + 테두리 + 기호(기둥에는 없음). UV.x 관 반지름(몸통 0), UV.y 부위.
-## mirror: 바닥 반사 + 바닥 흔적. COLOR.r 몸통(0)·빛(1), COLOR.b 1이면 멀어도 그리는 바닥 흔적, COLOR.a 불투명도 (mirror.gdshader)
+## body: 몸통 + 테두리 + 기호. UV.x 관 반지름(몸통 0), UV.y 부위. 기둥은 표면 0이 반투명 몸통, 표면 1이 불투명 테두리(기호 없음).
+## mirror: 바닥 반사 + 바닥 흔적. COLOR.r 몸통(0)·빛(1), COLOR.g 그림자, COLOR.b 1이면 멀어도 그리는 바닥 흔적, COLOR.a 불투명도 (mirror.gdshader)
 static func obstacle(kind: ObstacleField.Kind) -> Dictionary:
 	var size: Vector3 = _size_of(kind)
 	var bottom: float = ObstacleField.HIGH_BOTTOM if kind == ObstacleField.Kind.HIGH else 0.0
@@ -39,14 +41,17 @@ static func obstacle(kind: ObstacleField.Kind) -> Dictionary:
 	var front := ArtMeshes.new()
 	front._outline(size, bottom, corner, size.z * 0.5, flush)
 	var mirror := ArtMeshes.new()
+	if kind == ObstacleField.Kind.BLOCK:
+		mirror._floor_ellipse(SHADOW_HALF, Color(0.0, 1.0, 1.0, SHADOW_ALPHA))  # 반사 아래에 깔린다
 	mirror._add_mirrored(body, 0.0, MIRROR_BODY_ALPHA)
 	mirror._add_mirrored(front, 1.0, MIRROR_EDGE_ALPHA)  # 앞 테두리만 비친다. 기호는 비치지 않는다: 뒤집힌 ^는 슬라이드 기호 v로 읽힌다
 	var lines := ArtMeshes.new()
 	lines._part = Part.EDGE
 	lines._box_edges(size, bottom, corner, flush)
-	if kind != ObstacleField.Kind.BLOCK:
-		lines._part = Part.MARK
-		lines._mark(kind, size, bottom)
+	if kind == ObstacleField.Kind.BLOCK:
+		return {"body": lines.commit(body.commit()), "mirror": mirror.commit()}
+	lines._part = Part.MARK
+	lines._mark(kind, size, bottom)
 	if kind == ObstacleField.Kind.HIGH:
 		mirror._floor_ellipse(POOL_HALF, Color(1.0, 0.0, 1.0, POOL_ALPHA))
 	body._add_all(lines)
@@ -80,14 +85,14 @@ static func rails(x: float, tube_y: float, tube_radius: float, z_near: float, z_
 	return m.commit()
 
 
-func commit() -> ArrayMesh:
+## mesh를 주면 그 메시에 표면을 하나 더한다
+func commit(mesh := ArrayMesh.new()) -> ArrayMesh:
 	var arrays := []
 	arrays.resize(Mesh.ARRAY_MAX)
 	arrays[Mesh.ARRAY_VERTEX] = _v
 	arrays[Mesh.ARRAY_NORMAL] = _n
 	arrays[Mesh.ARRAY_COLOR] = _c
 	arrays[Mesh.ARRAY_TEX_UV] = _uv
-	var mesh := ArrayMesh.new()
 	mesh.add_surface_from_arrays(Mesh.PRIMITIVE_TRIANGLES, arrays)
 	return mesh
 
@@ -99,7 +104,7 @@ func _vertex(p: Vector3, n: Vector3, c: Color, tube_radius := 0.0) -> void:
 	_uv.append(Vector2(tube_radius, float(_part)))
 
 
-## 상자의 빛 모서리: 앞뒤 둘레 + 잇는 모서리. 몸통이 불투명해 뒤쪽 선은 저절로 가려진다.
+## 상자의 빛 모서리: 앞뒤 둘레 + 잇는 모서리. 불투명한 몸통에서는 뒤쪽 선이 저절로 가려지고, 기둥에서는 몸통을 통해 흐리게 비친다.
 func _box_edges(size: Vector3, bottom: float, r: float, flush: bool) -> void:
 	var half_z := size.z * 0.5
 	_outline(size, bottom, r, half_z, flush)

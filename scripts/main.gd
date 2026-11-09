@@ -4,6 +4,7 @@ extends Node3D
 
 const FLOOR_SHADER := preload("res://shaders/floor.gdshader")
 const BLOCK_SHADER := preload("res://shaders/block.gdshader")
+const PILLAR_SHADER := preload("res://shaders/pillar.gdshader")
 const NEON_SHADER := preload("res://shaders/neon.gdshader")
 const MIRROR_SHADER := preload("res://shaders/mirror.gdshader")
 const DASH_SHADER := preload("res://shaders/dash.gdshader")
@@ -43,7 +44,6 @@ const STREAK_MAX := 48          # 빛 줄기 풀 (data/speed_palette.json의 t =
 const STREAK_SEED := 606        # 줄기 자리를 고정하는 시드
 const STREAK_X := Vector2(2.9, 8.0)  # 길 바깥 좌우 거리
 const STREAK_Y := Vector2(0.4, 7.0)
-const PILLAR_CORNER_GLOSS := 0.3  # 파란 기둥 모서리의 은은한 반사
 const POP_SCALE := 1.22      # 새 기록 순간 거리 숫자가 커지는 배율 (말랑)
 const POP_UP := 0.08
 const POP_DOWN := 0.32
@@ -81,7 +81,7 @@ var _dashes: MultiMeshInstance3D
 var _dash_material: ShaderMaterial
 var _streak_material: ShaderMaterial
 var _streaks: MultiMesh
-var _kind_meshes := {}  # Kind -> {body, mirror: MultiMesh, block, reflect: ShaderMaterial}
+var _kind_meshes := {}  # Kind -> {body, mirror: MultiMesh, block, reflect: ShaderMaterial}, 기둥은 pillar: ShaderMaterial (반투명 몸통)
 var _sky_material: ShaderMaterial
 var _env: Environment
 var _rail_base := 1.0    # 지금 진하기의 난간 빛 세기
@@ -296,6 +296,9 @@ func _apply_tint(t: float) -> void:
 		if c.has(name_ + "_mark"):  # 기둥에는 기호가 없다
 			shape["block"].set_shader_parameter("mark_color", c[name_ + "_mark"])
 		shape["block"].set_shader_parameter("fog_color", c["horizon"])
+		if shape.has("pillar"):
+			shape["pillar"].set_shader_parameter("body_color", body)
+			shape["pillar"].set_shader_parameter("fog_color", c["horizon"])
 		shape["reflect"].set_shader_parameter("body_color", body)
 		shape["reflect"].set_shader_parameter("edge_color", Color(minf(edge.r, 1.0), minf(edge.g, 1.0), minf(edge.b, 1.0)))  # 화면 범위로 줄인 빛 색
 
@@ -349,7 +352,7 @@ func _sync_pieces() -> void:
 	var used := {}
 	for kind in _kind_meshes:
 		used[kind] = 0
-	for piece: Piece in _obstacles.values() + _leaving:
+	for piece: Piece in _pieces_far_first():
 		var slot: int = used[piece.kind]
 		if slot >= MAX_PIECES:
 			continue
@@ -362,6 +365,13 @@ func _sync_pieces() -> void:
 	for kind in _kind_meshes:
 		_kind_meshes[kind]["body"].visible_instance_count = used[kind]
 		_kind_meshes[kind]["mirror"].visible_instance_count = used[kind]
+
+
+## 반투명 기둥은 MultiMesh 안의 순서대로 쌓이므로 먼 것부터 쓴다
+func _pieces_far_first() -> Array:
+	var pieces: Array = _obstacles.values() + _leaving
+	pieces.sort_custom(func(a: Piece, b: Piece) -> bool: return a.position.z < b.position.z)
+	return pieces
 
 
 ## 부딪힌 뒤: 세상이 아주 잠깐 느려졌다 멈추고, 주인공은 충돌 모션을 이어 간다.
@@ -720,19 +730,25 @@ func _build_obstacle_resources() -> void:
 		var mirror := _new_pieces_mesh(meshes["mirror"], false)
 		var block := ShaderMaterial.new()
 		block.shader = BLOCK_SHADER
-		if kind == ObstacleField.Kind.BLOCK:
-			block.set_shader_parameter("corner_gloss", PILLAR_CORNER_GLOSS)
-			block.set_shader_parameter("face_tint", 0.0)  # 면 전체가 이미 파랗다
 		var reflect := ShaderMaterial.new()
 		reflect.shader = MIRROR_SHADER
 		reflect.render_priority = -1  # 젤리 발밑 그림자보다 먼저 그린다
-		for pair: Array in [[body, block], [mirror, reflect]]:
+		var body_override: Material = block
+		_kind_meshes[kind] = {"body": body, "mirror": mirror, "block": block, "reflect": reflect}
+		if kind == ObstacleField.Kind.BLOCK:  # 표면마다 재질이 달라 덮어쓰기 재질을 쓰지 않는다
+			var pillar := ShaderMaterial.new()
+			pillar.shader = PILLAR_SHADER
+			pillar.render_priority = 1  # 젤리보다 뒤에: 젤리 뒤의 기둥은 깊이에 막히고, 젤리 앞의 기둥은 그 위에 비친다
+			meshes["body"].surface_set_material(0, pillar)
+			meshes["body"].surface_set_material(1, block)
+			body_override = null
+			_kind_meshes[kind]["pillar"] = pillar
+		for pair: Array in [[body, body_override], [mirror, reflect]]:
 			var node := MultiMeshInstance3D.new()
 			node.multimesh = pair[0]
 			node.material_override = pair[1]
 			node.extra_cull_margin = 16384.0  # 반사는 셰이더가 옮겨 그리고, 영역 계산보다 몇 번 더 그리는 편이 싸다
 			_pieces_root.add_child(node)
-		_kind_meshes[kind] = {"body": body, "mirror": mirror, "block": block, "reflect": reflect}
 
 
 func _new_pieces_mesh(mesh: Mesh, custom: bool) -> MultiMesh:

@@ -24,15 +24,17 @@ func _meshes(kind: K) -> Dictionary:
 
 ## 몸통 메시에서 부위(ArtMeshes.Part) 꼭짓점의 영역. 관은 둥근 끝까지 포함한다
 func _box(kind: K, part: int) -> AABB:
-	var arrays: Array = _meshes(kind)["body"].surface_get_arrays(0)
+	var mesh: ArrayMesh = _meshes(kind)["body"]
 	var box := AABB()
 	var first := true
-	for i in arrays[Mesh.ARRAY_VERTEX].size():
-		if int(arrays[Mesh.ARRAY_TEX_UV][i].y) != part:
-			continue
-		var p: Vector3 = arrays[Mesh.ARRAY_VERTEX][i]
-		box = AABB(p, Vector3.ZERO) if first else box.expand(p)
-		first = false
+	for surface in mesh.get_surface_count():
+		var arrays: Array = mesh.surface_get_arrays(surface)
+		for i in arrays[Mesh.ARRAY_VERTEX].size():
+			if int(arrays[Mesh.ARRAY_TEX_UV][i].y) != part:
+				continue
+			var p: Vector3 = arrays[Mesh.ARRAY_VERTEX][i]
+			box = AABB(p, Vector3.ZERO) if first else box.expand(p)
+			first = false
 	return box
 
 
@@ -120,9 +122,12 @@ func test_기호는_앞면의_50에서_60퍼센트() -> void:
 
 ## 기둥은 기호 없이 키 큰 실루엣으로 읽힌다. 모양과 판정은 v0.6.0과 같다
 func test_기둥에는_기호가_없고_크기는_판정_그대로() -> void:
-	var arrays: Array = _meshes(K.BLOCK)["body"].surface_get_arrays(0)
-	for uv: Vector2 in arrays[Mesh.ARRAY_TEX_UV]:
-		assert_true(uv.y < ArtMeshes.Part.MARK, "기호 꼭짓점 없음")
+	var mesh: ArrayMesh = _meshes(K.BLOCK)["body"]
+	assert_eq(mesh.get_surface_count(), 2, "몸통과 테두리가 따로")
+	for uv: Vector2 in mesh.surface_get_arrays(0)[Mesh.ARRAY_TEX_UV]:
+		assert_eq(int(uv.y), ArtMeshes.Part.BODY, "표면 0은 몸통만")
+	for uv: Vector2 in mesh.surface_get_arrays(1)[Mesh.ARRAY_TEX_UV]:
+		assert_eq(int(uv.y), ArtMeshes.Part.EDGE, "표면 1은 테두리만, 기호 없음")
 	var body := _box(K.BLOCK, ArtMeshes.Part.BODY)
 	assert_true(is_equal_approx(body.size.x, ObstacleField.BLOCK_SIZE), "폭")
 	assert_true(is_equal_approx(body.size.y, ObstacleField.BLOCK_HEIGHT), "키")
@@ -144,14 +149,16 @@ func test_반사에는_기호가_없음() -> void:
 ## 불투명 재질은 뒷면을 잘라 낸다. 감기 방향이 뒤집히면 몸통이 투명해 보이고 기호가 사라진다 (v0.6.0에서 실제로 겪음)
 func test_몸통과_관은_바깥이_앞면() -> void:
 	for kind: K in [K.BLOCK, K.LOW, K.HIGH]:
-		var arrays: Array = _meshes(kind)["body"].surface_get_arrays(0)
-		var v: PackedVector3Array = arrays[Mesh.ARRAY_VERTEX]
-		var n: PackedVector3Array = arrays[Mesh.ARRAY_NORMAL]
+		var mesh: ArrayMesh = _meshes(kind)["body"]
 		var wrong := 0
-		for i in range(0, v.size(), 3):
-			var cross := (v[i + 1] - v[i]).cross(v[i + 2] - v[i])
-			if cross.length() > 0.000001 and cross.dot(n[i] + n[i + 1] + n[i + 2]) > 0.0:  # Godot는 시계 방향이 앞면
-				wrong += 1
+		for surface in mesh.get_surface_count():
+			var arrays: Array = mesh.surface_get_arrays(surface)
+			var v: PackedVector3Array = arrays[Mesh.ARRAY_VERTEX]
+			var n: PackedVector3Array = arrays[Mesh.ARRAY_NORMAL]
+			for i in range(0, v.size(), 3):
+				var cross := (v[i + 1] - v[i]).cross(v[i + 2] - v[i])
+				if cross.length() > 0.000001 and cross.dot(n[i] + n[i + 1] + n[i + 2]) > 0.0:  # Godot는 시계 방향이 앞면
+					wrong += 1
 		assert_eq(wrong, 0, "종류 %d: 뒤집힌 삼각형" % kind)
 
 
@@ -160,6 +167,53 @@ func test_몸통은_불투명이고_안개를_직접_섞음() -> void:
 	assert_false(code.contains("ALPHA"), "불투명")
 	assert_true(code.contains("fog_disabled"))
 	assert_false(ResourceLoader.exists("res://shaders/glass.gdshader"), "유리 재질 제거")
+
+
+## 기둥 몸통만 반투명이다. 점프·슬라이드 블록과 기둥 테두리는 불투명으로 남아 또렷하다
+func test_기둥_몸통만_반투명이고_깊이를_기록하지_않음() -> void:
+	var code: String = load("res://shaders/pillar.gdshader").code
+	assert_true(code.contains("depth_draw_never"), "뒤 장애물을 가리지 않음")
+	assert_true(code.contains("ALPHA"))
+	var main := _make_main()
+	await wait_frames()
+	var pillar: ShaderMaterial = main._kind_meshes[K.BLOCK]["pillar"]
+	var alpha := RegEx.create_from_string("body_alpha = ([0-9.]+)").search(code).get_string(1).to_float()
+	assert_true(alpha >= 0.5 and alpha <= 0.55, "불투명도 %f" % alpha)
+	assert_true(pillar.render_priority > 0, "젤리보다 뒤에 그려 앞뒤가 맞음")
+	var mesh: ArrayMesh = main._kind_meshes[K.BLOCK]["body"].mesh
+	assert_eq(mesh.surface_get_material(0), pillar)
+	assert_eq(mesh.surface_get_material(1), main._kind_meshes[K.BLOCK]["block"], "테두리는 불투명 재질")
+	for kind: K in [K.LOW, K.HIGH]:
+		assert_false(main._kind_meshes[kind].has("pillar"), "종류 %d은 그대로" % kind)
+		assert_eq(main._kind_meshes[kind]["body"].mesh.get_surface_count(), 1)
+	main._apply_tint(1.0)
+	assert_true(pillar.get_shader_parameter("body_color").is_equal_approx(Color("1268b8")), "진하기를 따라감")
+	main.queue_free()
+
+
+## 기둥 접지 그림자는 멀어도, 반사를 꺼도 남는다 (COLOR.b). 연속 기둥 사이 바닥에서 서 있는 자리를 말해 준다
+func test_기둥에만_접지_그림자() -> void:
+	for kind: K in [K.BLOCK, K.LOW, K.HIGH]:
+		var colors: PackedColorArray = _meshes(kind)["mirror"].surface_get_arrays(0)[Mesh.ARRAY_COLOR]
+		var found := 0.0
+		for c: Color in colors:
+			if c.g > 0.5 and c.b > 0.5:
+				found = maxf(found, c.a)
+		assert_true(is_equal_approx(found, ArtMeshes.SHADOW_ALPHA if kind == K.BLOCK else 0.0), "종류 %d: %f" % [kind, found])
+
+
+## 반투명은 먼 것부터 그려야 겹칠 때 맞다. MultiMesh 안의 순서가 곧 그리는 순서다
+func test_기둥은_먼_것부터_그림() -> void:
+	var main := _make_main()
+	await wait_frames()
+	while not main.prewarmed:
+		await wait_frames()
+	main.clear_pieces()
+	for z in [-10.0, -30.0, -20.0, -40.0]:  # 일부러 뒤섞어 넣는다
+		main._spawn_node({"id": 8200 + int(-z), "lane": 1, "z": z, "kind": K.BLOCK})
+	var zs: Array = main._pieces_far_first().map(func(p) -> float: return p.position.z)
+	assert_eq(zs, [-40.0, -30.0, -20.0, -10.0])
+	main.queue_free()
 
 
 func test_연속_블록의_뒤쪽만_흐림() -> void:

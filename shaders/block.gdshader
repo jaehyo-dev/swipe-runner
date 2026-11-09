@@ -1,5 +1,5 @@
 shader_type spatial;
-// 장애물 (한 메시, 종류마다 MultiMesh 하나): 불투명한 몸통 (옆은 파랑, 위·아래는 어두운 색) + 색 빛 테두리 + 앞면 기호 (옆은 없음). UV.y가 부위를, UV.x가 관 반지름을 담는다.
+// 장애물 (한 메시, 종류마다 MultiMesh 하나): 불투명한 어두운 몸통 + 색 빛 테두리 + 앞면 기호. 파란 기둥은 이 재질로 테두리만 그리고 몸통은 pillar.gdshader다. UV.y가 부위를, UV.x가 관 반지름을 담는다.
 // 관은 멀어져도 끊기지 않게 화면 기준 최소 굵기까지 넓힌다. 환경 안개 대신 직접 섞는다: 안개가 진하면 z -45의 기호가 안 읽히고, 얇으면 세상 끝이 드러나기 때문이다.
 render_mode unshaded, fog_disabled;
 
@@ -10,7 +10,6 @@ uniform vec3 mark_color : source_color = vec3(1.0);
 uniform vec3 fog_color : source_color = vec3(0.2);   // 지금의 안개 색
 uniform float face_tint = 0.07;     // 앞면 바탕의 색 비침
 uniform float top_gloss = 0.24;     // 윗면 반사 하이라이트
-uniform float corner_gloss = 0.0;   // 둥근 모서리 반사 (기둥만 켠다)
 uniform float min_pixels = 0.75;    // 관 반지름의 화면 최소 크기(픽셀)
 uniform float mark_min_pixels = 1.0; // 기호는 더 굵게: 멀리서도 읽혀야 한다
 uniform float haze_near = 6.0;      // 연속 블록의 뒤쪽 것이 흐려지기 시작하는 카메라 거리
@@ -41,9 +40,7 @@ void fragment() {
 	} else {
 		float front = max(local_normal.z, 0.0);
 		float top = max(local_normal.y, 0.0);
-		vec3 n = abs(normalize(local_normal));
-		float corner = 1.0 - max(n.x, max(n.y, n.z));  // 평평한 면은 0, 둥근 모서리에서 커진다
-		col = body_color + tint * face_tint * front + vec3(0.62, 0.6, 0.85) * (top_gloss * top * top + corner_gloss * corner);
+		col = body_color + tint * face_tint * front + vec3(0.62, 0.6, 0.85) * top_gloss * top * top;
 	}
 	ALBEDO = mix(col, fog_color, haze);
 }
