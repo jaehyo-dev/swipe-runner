@@ -41,8 +41,12 @@ uniform float flat_bottom = 1.0;  // 바닥 평평함: 1 = 땅에 닿은 평평�
 uniform float foot_ratio = 0.8;   // runner.gd FOOT_RATIO: 메시의 평평한 바닥 반지름 비율
 uniform float widest_t = 0.375;   // runner.gd WIDEST_T: 메시(땅 위)의 가장 넓은 높이 비율. 0 이하면 몸 모양 바꾸기를 끈다(물방울)
 uniform float air_widest_t = 0.49; // runner.gd AIR_WIDEST_T: 공중의 가장 넓은 높이 비율 (ART_BIBLE.md 2-4 계란형)
+// 유리 바닥 반사: 0보다 크면 이 메시는 바닥 아래로 뒤집은 복제본이다 (mirror.gdshader와 같은 방법). 값은 바닥에 닿은 곳의 불투명도
+uniform float mirror_alpha = 0.0;
+uniform float mirror_falloff = 1.1;
 
 varying vec3 lp;  // 출렁이기 전 몸 좌표: 반사광·기포가 표면에 붙어 같이 흔들린다
+varying float below;  // 반사: 뒤집기 전 바닥 아래 깊이
 
 float ring(float d, float r, float w) {
 	return smoothstep(r - w * 2.0, r - w, d) * (1.0 - smoothstep(r, r + w, d));
@@ -96,9 +100,21 @@ void vertex() {
 	VERTEX.x += lean * vy * vy;
 	VERTEX.z += drag * vy * vy;
 	VERTEX.y += sag * vy * vy;
+	if (mirror_alpha > 0.0) {  // 몸이 변한 모양 그대로를 바닥 면으로 눌러 그린다
+		vec3 w = (MODEL_MATRIX * vec4(VERTEX, 1.0)).xyz;
+		below = max(-w.y, 0.0);
+		vec3 cam = CAMERA_POSITION_WORLD;
+		vec3 on_floor = cam + (w - cam) * cam.y / (cam.y - w.y);
+		on_floor.y = 0.008;
+		VERTEX = (inverse(MODEL_MATRIX) * vec4(on_floor, 1.0)).xyz;
+	}
 }
 
 void fragment() {
+	if (mirror_alpha > 0.0) {
+		ALBEDO = mint;
+		ALPHA = mirror_alpha * exp(-below * mirror_falloff);
+	} else {
 	vec3 n = normalize(NORMAL);
 	float vy = clamp(lp.y / height, 0.0, 1.0);
 	float f = 1.0 - clamp(dot(n, VIEW), 0.0, 1.0);  // 0 = 정면(두꺼움), 1 = 가장자리(얇음)
@@ -152,4 +168,6 @@ void fragment() {
 	vec3 behind = mix(back * transmit_tint, line_tint * lum, smoothstep(0.35, 0.8, lum));  // 어두운 배경은 물들이고 밝은 선은 밝기만 살려 하늘빛 민트로
 	float alpha = clamp(mix(alpha_center, alpha_edge, smoothstep(0.5, 0.95, f)) + ground * 0.4 + min(core, 1.0) * 0.5 + hl + bub * 0.5, 0.0, 1.0);
 	ALBEDO = mix(behind, col, alpha);
+	ALPHA = 1.0;
+	}
 }

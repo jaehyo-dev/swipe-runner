@@ -76,8 +76,11 @@ const FLAT_SPREAD_TIME := 0.05   # 착지 순간 바닥이 다시 평평하게 �
 ## 점프 그림자: 최고 높이(JUMP_HEIGHT)에서의 값. 그 사이는 높이에 비례해 줄어든다
 const SHADOW_AIR_OPACITY := 0.3  # 최고 높이 진하기 (땅 1)
 const SHADOW_AIR_SIZE := 0.6     # 최고 높이 크기 (땅 1)
+const MIRROR_ALPHA := 0.25       # 유리 바닥 반사 불투명도 (바닥에 닿은 곳, ART_BIBLE.md 10)
 
 var _body: MeshInstance3D
+var _mirror: MeshInstance3D      # 바닥에 비친 몸. 같은 메시 + 같은 셰이더 값이라 모양이 변하는 대로 따라간다
+var _mirror_mat: ShaderMaterial
 var _shadow: MeshInstance3D
 var _phase := 0.0
 var _wobble := 0.0    # 윗부분이 바닥보다 옆으로 밀린 정도 (+ = 오른쪽)
@@ -206,6 +209,14 @@ func _ready() -> void:
 	_body.mesh = build_body_mesh()
 	_body.material_override = _mat
 	add_child(_body)
+
+	_mirror_mat = _mat.duplicate()
+	_mirror_mat.set_shader_parameter("mirror_alpha", MIRROR_ALPHA)
+	_mirror_mat.render_priority = -1  # 발밑 그림자보다 먼저 그린다
+	_mirror = MeshInstance3D.new()
+	_mirror.mesh = _body.mesh
+	_mirror.material_override = _mirror_mat
+	add_child(_mirror)
 
 	# 점 눈: 앞쪽(-z)에 있다. 몸이 반투명이라 눈 셰이더가 뒷모습에서는 스스로 숨는다
 	var eye_mesh := SphereMesh.new()
@@ -450,11 +461,11 @@ func _animate() -> void:
 	var front := (SLIDE_STRETCH - 1.0) * 0.5 * c
 	_body.scale = Vector3(minf(lerpf(sxz, SLIDE_WIDEN, c), BODY_WIDTH_LIMIT), lerpf(sy, SLIDE_SQUASH, c), lerpf(sxz, 1.0, c) + front + _spread)
 	_body.position = Vector3(0.0, lift, (_spread - front) * BODY_RADIUS)  # 점프만 땅에서 뜬다. 슬라이드 앞(-z) 끝은 바로 나감
-	_mat.set_shader_parameter("lean", lean())
-	_mat.set_shader_parameter("sag", sag())
+	_set_shape("lean", lean())
+	_set_shape("sag", sag())
 	# 끝날 때 앞이 먼저 모이고 뒤가 덜 모인 만큼 윗부분이 앞으로 기울어 앞부터 솟는다
-	_mat.set_shader_parameter("drag", SLIDE_DRAG * c - SLIDE_FRONT_RISE * maxf(_spread - front, 0.0))
-	_mat.set_shader_parameter("rim_wave", LAND_RIM_WAVE * clampf(-_stretch / (1.0 - LAND_PANCAKE), 0.0, 1.0))
+	_set_shape("drag", SLIDE_DRAG * c - SLIDE_FRONT_RISE * maxf(_spread - front, 0.0))
+	_set_shape("rim_wave", LAND_RIM_WAVE * clampf(-_stretch / (1.0 - LAND_PANCAKE), 0.0, 1.0))
 	if crash_t >= 0.0:
 		_apply_crash()
 	elif _reform_t >= 0.0:
@@ -462,16 +473,24 @@ func _animate() -> void:
 		_body.scale = _reform_from_scale.lerp(_body.scale, u)
 		_body.position.y = lerpf(_reform_from_y, _body.position.y, u)
 		position.z = lerpf(_reform_from_z, 0.0, u)
-		_mat.set_shader_parameter("rim_wave", _reform_from_wave * (1.0 - u))
+		_set_shape("rim_wave", _reform_from_wave * (1.0 - u))
 	_animate_drops()
+	_mirror.scale = _body.scale * Vector3(1.0, -1.0, 1.0)
+	_mirror.position = _body.position * Vector3(1.0, -1.0, 1.0)
 	_mat.set_shader_parameter("beat", _phase)
-	_mat.set_shader_parameter("flat_bottom", smoothstep(0.0, 1.0, _flat))  # 처음과 끝이 부드럽게
+	_set_shape("flat_bottom", smoothstep(0.0, 1.0, _flat))  # 처음과 끝이 부드럽게
 	# 접촉 그림자는 바닥 모양을 따라 퍼졌다 좁아지고, 점프로 뜨면 작고 옅고 부드러워진다.
 	# 높이의 제곱근을 써서 조금만 떠도 빨리 옅어진다 (낮게 뜬 몸 아래 진한 원이 까만 구멍처럼 남지 않게)
 	var h := sqrt(clampf(_body.position.y / PlayerAction.JUMP_HEIGHT, 0.0, 1.0))
 	_shadow.scale = Vector3(_body.scale.x, 1.0, _body.scale.z) * lerpf(1.0, SHADOW_AIR_SIZE, h)
 	_shadow_mat.set_shader_parameter("opacity", lerpf(1.0, SHADOW_AIR_OPACITY, h))
 	_shadow_mat.set_shader_parameter("soft", h)
+
+
+## 몸 모양을 바꾸는 셰이더 값은 반사에도 똑같이 넣는다.
+func _set_shape(param: StringName, value: float) -> void:
+	_mat.set_shader_parameter(param, value)
+	_mirror_mat.set_shader_parameter(param, value)
 
 
 ## 충돌 모양을 몸과 주인공 위치에 적용한다.
@@ -494,10 +513,10 @@ func _apply_crash() -> void:
 	var along: float = _crash["along"]
 	position.x = lerpf(_crash_from_pos.x, edge if on_x else along, reach)
 	position.z = lerpf(_crash_from_pos.z, along if on_x else edge, reach)
-	_mat.set_shader_parameter("lean", 0.0)
-	_mat.set_shader_parameter("sag", 0.0)
-	_mat.set_shader_parameter("drag", 0.0)
-	_mat.set_shader_parameter("rim_wave", LAND_RIM_WAVE * 0.4 * flow)  # 웅덩이는 넓어서 작게 줘야 테두리가 각지지 않는다
+	_set_shape("lean", 0.0)
+	_set_shape("sag", 0.0)
+	_set_shape("drag", 0.0)
+	_set_shape("rim_wave", LAND_RIM_WAVE * 0.4 * flow)  # 웅덩이는 넓어서 작게 줘야 테두리가 각지지 않는다
 	# 붙은 동안엔 뒤 카메라에 면에 눌린 둥근 원판으로 보이게 바닥을 둥글게, 웅덩이가 되며 다시 평평하게
 	_flat = lerpf(lerpf(_crash_from_flat, 0.0, reach), 1.0, flow)
 

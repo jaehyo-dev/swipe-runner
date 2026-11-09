@@ -74,8 +74,8 @@ func test_구성_요소_발_꼭지_없음_그림자_눈_둘() -> void:
 	await wait_frames()
 	assert_not_null(runner._shadow, "그림자")
 	assert_eq(runner._body.get_child_count(), 2, "눈 2 (꼭지 없음)")
-	# 몸통 한 덩어리: 달린 메시는 몸·그림자 + 착지 때만 보이는 물방울
-	assert_eq(runner.get_child_count(), 2 + Runner.DROPLET_COUNT, "러너 자식: 몸 + 그림자 + 물방울")
+	# 몸통 한 덩어리: 달린 메시는 몸·바닥 반사·그림자 + 착지 때만 보이는 물방울
+	assert_eq(runner.get_child_count(), 3 + Runner.DROPLET_COUNT, "러너 자식: 몸 + 반사 + 그림자 + 물방울")
 	for d in runner._drops:
 		assert_true(not d.visible, "달리는 동안 물방울 숨김")
 	runner.queue_free()

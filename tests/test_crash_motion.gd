@@ -55,7 +55,8 @@ func test_부딪힌_높이에_붙음() -> void:
 	assert_eq(CrashMotion.contact(Kind.LOW, 0.0, 0.0, -0.6, 0.0)["y"], 0.4, "허들: 몸 가운데")
 	assert_eq(CrashMotion.contact(Kind.HIGH, 0.0, 0.0, -0.6, 0.0)["y"], ObstacleField.HIGH_BOTTOM, "막대: 몸이 낮아도 막대 높이")
 	assert_eq(CrashMotion.contact(Kind.HIGH, 0.0, 0.0, -0.6, 1.6)["y"], ObstacleField.HIGH_TOP, "막대 위쪽을 넘어도 막대 안")
-	assert_eq(CrashMotion.contact(Kind.BLOCK, 0.0, 0.0, -0.6, 1.0)["y"], ObstacleField.BLOCK_SIZE, "블록도 높이 안")
+	assert_eq(CrashMotion.contact(Kind.BLOCK, 0.0, 0.0, -0.6, 1.0)["y"], 1.4, "기둥은 키가 커서 뛰던 높이에 그대로 붙음")
+	assert_true(CrashMotion.contact(Kind.BLOCK, 0.0, 0.0, -0.6, PlayerAction.JUMP_HEIGHT)["y"] <= ObstacleField.BLOCK_HEIGHT, "기둥 높이 안")
 
 
 func test_레인_이동_중_옆에서_부딪히면_옆면() -> void:

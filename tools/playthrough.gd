@@ -27,6 +27,10 @@ var _frame_err: Array[float] = []    # 도착 프레임의 음악 시간 - 가�
 var _wall_err: Array[float] = []     # 벽시계로 보간한 도착 시각 - 박 격자
 var _by_bpm := {}      # BPM -> {frame: [...], wall: [...]}. 도착한 박의 BPM별 오차
 var _cross := {"frame": [], "wall": []}  # 경계를 넘어 도착한 장애물만
+var _rows := {"frame": [], "wall": []}   # 박 물방울 줄이 주인공 자리에 닿은 시각 - 그 박
+var _last_row := []    # [물방울 노드 z, 벽시계 초]
+var _draws: Array[int] = []       # 프레임별 그리는 횟수
+var _prims: Array[int] = []
 var _born_step := {}   # id -> 처음 보였을 때의 사다리 단계
 var _slow_frames := 0  # 33ms 넘는 프레임
 var _wall_zero := INF
@@ -141,6 +145,9 @@ func _process(delta: float) -> void:
 		_slow_frames += 1
 	_max_time = maxf(_max_time, AudioManager.music_time)
 	_record_arrivals()
+	_record_rows()
+	_draws.append(RenderingServer.get_rendering_info(RenderingServer.RENDERING_INFO_TOTAL_DRAW_CALLS_IN_FRAME))
+	_prims.append(RenderingServer.get_rendering_info(RenderingServer.RENDERING_INFO_TOTAL_PRIMITIVES_IN_FRAME))
 	if not main.started:
 		if t >= (MOVIE_FIRST_TAP if _recording() else FIRST_TAP):
 			_tap("첫 탭")
@@ -214,6 +221,36 @@ func _record_arrivals() -> void:
 		_last_z[id] = [item["z"], wall]
 
 
+## 박 물방울 줄의 도착: 실제 노드 z가 한 박 거리를 넘어 되돌아가는 프레임이 한 줄이 z = 0에 닿은 프레임이다. v0.4.1 전 빌드에는 물방울이 없다.
+func _record_rows() -> void:
+	if not main.started or main.dead or not ("_droplets" in main):
+		_last_row = []
+		return
+	var z: float = main._droplets.position.z
+	var wall := _now()
+	if not _last_row.is_empty() and z < _last_row[0]:
+		var ladder: MusicLadder = AudioManager.ladder
+		var music: float = AudioManager.music_time
+		var beat := roundi(ladder.beat_at(music))
+		var beat_t := ladder.time_of_beat(beat)
+		_rows["frame"].append(music - beat_t)
+		var crossed: float = _last_row[1] + (wall - _last_row[1]) * (MusicLadder.BEAT_DISTANCE - _last_row[0]) / (z + MusicLadder.BEAT_DISTANCE - _last_row[0])
+		if _wall_zero != INF:  # 첫 장애물 도착에서 정한 음악 0초 기준과 같은 시계로 잰다
+			_rows["wall"].append(crossed - (_wall_zero + beat_t))
+	_last_row = [z, wall]
+
+
+static func _mean_max(values: Array) -> Dictionary:
+	if values.is_empty():
+		return {}
+	var total := 0
+	var top := 0
+	for v: int in values:
+		total += v
+		top = maxi(top, v)
+	return {"mean": snappedf(float(total) / values.size(), 0.1), "max": top}
+
+
 static func _stats(values: Array) -> Dictionary:
 	if values.is_empty():
 		return {"count": 0}
@@ -239,6 +276,7 @@ func _finish() -> void:
 		"mode": mode, "wall_secs": _now(), "music_time": _max_time, "crashes": _crashes,
 		"frames": frame, "fps": frame / maxf(t, 0.001), "delta_p50_ms": deltas[deltas.size() / 2] * 1000.0, "delta_max_ms": deltas[-1] * 1000.0,
 		"frame_err": _stats(_frame_err), "wall_err": _stats(_wall_err), "by_bpm": by_bpm,
+		"rows_frame": _stats(_rows["frame"]), "rows_wall": _stats(_rows["wall"]), "draw_calls": _mean_max(_draws), "primitives": _mean_max(_prims),
 		"cross_frame": _stats(_cross["frame"]), "cross_wall": _stats(_cross["wall"]), "slow_frames": _slow_frames, "segments": AudioManager.ladder.segments,
 		"input_sound_pairs": _gaps.size(), "input_sound_max_usec": gap_max,
 		"output_latency": AudioServer.get_output_latency(), "trace": _trace}))

@@ -23,7 +23,7 @@ static func contact(kind: ObstacleField.Kind, ox: float, rx: float, z: float, li
 	var half_x: float = ObstacleField.BLOCK_SIZE * 0.5 if kind == ObstacleField.Kind.BLOCK else ObstacleField.BAR_WIDTH * 0.5
 	var half_z: float = ObstacleField.BLOCK_SIZE * 0.5 if kind == ObstacleField.Kind.BLOCK else ObstacleField.BAR_DEPTH * 0.5
 	var bottom := 0.0
-	var top := ObstacleField.BLOCK_SIZE
+	var top := ObstacleField.BLOCK_HEIGHT
 	if kind == ObstacleField.Kind.LOW:
 		top = ObstacleField.LOW_TOP
 	elif kind == ObstacleField.Kind.HIGH:

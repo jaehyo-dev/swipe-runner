@@ -1,0 +1,74 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1200 1010" width="1200" height="1010" font-family="Apple SD Gothic Neo, Noto Sans KR, sans-serif">
+  <!-- 디렉터 시안 (v0.4.1): 길 세 안, 선택 표시, 장애물 세 종류. 직접 제작 -->
+  <defs>
+    <linearGradient id="sky" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#060A24"/><stop offset=".42" stop-color="#4A2A86"/><stop offset=".43" stop-color="#2A1659"/><stop offset="1" stop-color="#150C33"/></linearGradient>
+    <linearGradient id="glass" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#4A2A86"/><stop offset=".35" stop-color="#2F2260"/><stop offset="1" stop-color="#241A4A"/></linearGradient>
+    <linearGradient id="fade" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#fff" stop-opacity=".3"/><stop offset="1" stop-color="#fff" stop-opacity="0"/></linearGradient>
+    <filter id="glow" x="-50%" y="-50%" width="200%" height="200%"><feGaussianBlur stdDeviation="2.5" result="b"/><feMerge><feMergeNode in="b"/><feMergeNode in="SourceGraphic"/></feMerge></filter>
+    <clipPath id="panel"><rect width="360" height="560" rx="14"/></clipPath>
+    <g id="hero"><ellipse cx="180" cy="478" rx="44" ry="10" fill="#86E3E6" opacity=".22"/><path d="M144 448 q0 -42 36 -42 q36 0 36 42 q0 12 -8 14 h-56 q-8 -2 -8 -14z" fill="#86E3E6" fill-opacity=".7" stroke="#C8FFFA" stroke-width="2.5"/><path d="M158 428 q6 -12 18 -13" fill="none" stroke="#fff" stroke-width="3" stroke-linecap="round"/></g>
+    <g id="pillar"><path d="M-22 0 V-74 L-11 -84 H11 L22 -74 V0 L11 8 H-11Z" fill="#BFE6FF" fill-opacity=".22" stroke="#BFE6FF" stroke-width="2.2"/><path d="M-11 -84 L0 -102 L11 -84 M-22 -74 L0 -102 L22 -74 M-11 8 V-84 M11 8 V-84" fill="none" stroke="#BFE6FF" stroke-width="1.6"/><path d="M-4 -60 V-20 M4 -72 V-40" stroke="#BFE6FF" stroke-width="1" opacity=".7"/></g>
+    <g id="low"><rect x="-32" y="-22" width="64" height="24" rx="7" fill="#FFD25A" fill-opacity=".24" stroke="#FFD25A" stroke-width="2.2"/><path d="M-26 -5 l6 -7 l6 7 M-6 -5 l6 -7 l6 7 M14 -5 l6 -7 l6 7" fill="none" stroke="#FFD25A" stroke-width="2.4" stroke-linecap="round"/></g>
+    <g id="high"><ellipse cx="0" cy="3" rx="34" ry="7" fill="#FF5FD2" opacity=".35"/><path d="M-30 2 V-34 M30 2 V-34" stroke="#FF5FD2" stroke-width="1"/><rect x="-34" y="-68" width="68" height="34" rx="11" fill="#FF5FD2" fill-opacity=".24" stroke="#FF5FD2" stroke-width="2.2"/><path d="M-22 -57 l7 8 l7 -8 M8 -57 l7 8 l7 -8" fill="none" stroke="#FF5FD2" stroke-width="2.6" stroke-linecap="round"/></g>
+  </defs>
+  <rect width="1200" height="1010" fill="#0B0822"/>
+  <text x="600" y="38" fill="#fff" font-size="24" text-anchor="middle">스와이프 러너 v0.4.1 길 시안</text>
+
+  <!-- A 유리 트랙 -->
+  <g transform="translate(30,60)"><g clip-path="url(#panel)">
+    <rect width="360" height="560" fill="url(#sky)"/>
+    <path d="M168 240 H192 L360 500 V560 H0 V500Z" fill="url(#glass)"/>
+    <path d="M60 560 L230 300 L268 300 L120 560Z" fill="#8C80FF" opacity=".07"/>
+    <path d="M168 240 L0 500 M192 240 L360 500" stroke="#7A86FF" stroke-width="6" filter="url(#glow)"/>
+    <path d="M171 240 L34 520 M189 240 L326 520" stroke="#7A86FF" stroke-width="1" opacity=".6"/>
+    <use href="#pillar" transform="translate(116,380) scale(.8)"/><use href="#pillar" transform="translate(116,396) scale(.8,-.8)" opacity=".22"/>
+    <use href="#low" transform="translate(180,330) scale(.55)"/><use href="#high" transform="translate(222,352) scale(.75)"/>
+    <use href="#hero"/><use href="#hero" transform="translate(0,958) scale(1,-1)" opacity=".2"/>
+  </g><text x="180" y="592" fill="#fff" font-size="20" text-anchor="middle">A 유리 트랙</text><text x="180" y="616" fill="#B8B0E8" font-size="14" text-anchor="middle">어두운 유리 + 반사 + 네온 난간</text></g>
+
+  <!-- B 물방울 런웨이 -->
+  <g transform="translate(420,60)"><g clip-path="url(#panel)">
+    <rect width="360" height="560" fill="url(#sky)"/>
+    <path d="M168 240 H192 L360 500 V560 H0 V500Z" fill="#191233"/>
+    <g fill="#A8B4FF" filter="url(#glow)">
+      <ellipse cx="172" cy="262" rx="1.6" ry="1"/><ellipse cx="188" cy="262" rx="1.6" ry="1"/><ellipse cx="166" cy="286" rx="2.4" ry="1.4"/><ellipse cx="194" cy="286" rx="2.4" ry="1.4"/>
+      <ellipse cx="156" cy="320" rx="3.4" ry="2"/><ellipse cx="204" cy="320" rx="3.4" ry="2"/><ellipse cx="140" cy="370" rx="5" ry="3"/><ellipse cx="220" cy="370" rx="5" ry="3"/>
+      <ellipse cx="124" cy="418" rx="4" ry="2.4" opacity=".7"/><ellipse cx="236" cy="418" rx="4" ry="2.4" opacity=".7"/>
+      <ellipse cx="106" cy="470" rx="9" ry="5"/><ellipse cx="254" cy="470" rx="9" ry="5"/><ellipse cx="82" cy="535" rx="6.5" ry="4" opacity=".7"/><ellipse cx="278" cy="535" rx="6.5" ry="4" opacity=".7"/>
+    </g>
+    <text x="300" y="474" fill="#D8DEFF" font-size="12" text-anchor="middle">박마다 반짝</text>
+    <use href="#hero"/>
+  </g><text x="180" y="592" fill="#fff" font-size="20" text-anchor="middle">B 물방울 런웨이</text><text x="180" y="616" fill="#B8B0E8" font-size="14" text-anchor="middle">레인 경계에 박자 물방울 줄</text></g>
+
+  <!-- C 유리 타일 다리 -->
+  <g transform="translate(810,60)"><g clip-path="url(#panel)">
+    <rect width="360" height="560" fill="url(#sky)"/>
+    <g fill="#7A6BDF" fill-opacity=".32" stroke="#B8B0F5" stroke-width="1.2">
+      <path d="M173 260 h14 l5 22 h-24z"/><path d="M165 288 h30 l8 32 h-46z"/><path d="M153 328 h54 l14 52 h-82z"/><path d="M133 388 h94 l26 86 h-146z"/><path d="M100 482 h160 l50 78 h-260z"/>
+    </g>
+    <use href="#hero"/>
+  </g><text x="180" y="592" fill="#fff" font-size="20" text-anchor="middle">C 유리 타일 다리</text><text x="180" y="616" fill="#B8B0E8" font-size="14" text-anchor="middle">떠 있는 타일이 박에 빛남</text></g>
+
+  <text x="600" y="722" fill="#fff" font-size="26" text-anchor="middle">선택: A + B 물방울</text>
+
+  <!-- 장애물 세 종류 -->
+  <g transform="translate(0,760)">
+    <use href="#pillar" transform="translate(130,132) scale(1.15)"/>
+    <text x="190" y="44" fill="#BFE6FF" font-size="18">옆으로 피하기 = 얼음 기둥 #BFE6FF</text>
+    <text x="190" y="70" fill="#D8D4F0" font-size="13">육각 기둥, 낮은 뾰족 지붕, 키 약 2.1</text>
+    <text x="190" y="90" fill="#D8D4F0" font-size="13">(점프 최고 1.6보다 높아 넘을 수 없음)</text>
+    <text x="190" y="110" fill="#D8D4F0" font-size="13">세로 결 2~3줄, 모서리 빛</text>
+    <use href="#low" transform="translate(500,132) scale(1.15)"/>
+    <text x="550" y="44" fill="#FFD25A" font-size="18">점프 = 낮은 턱 #FFD25A</text>
+    <text x="550" y="70" fill="#D8D4F0" font-size="13">바닥에 붙은 둥근 턱, 높이 = 판정 높이</text>
+    <text x="550" y="90" fill="#D8D4F0" font-size="13">앞면에 위 화살(^) 3개</text>
+    <use href="#high" transform="translate(860,132) scale(1.15)"/>
+    <text x="910" y="44" fill="#FF5FD2" font-size="18">슬라이드 = 공중 막대 #FF5FD2</text>
+    <text x="910" y="70" fill="#D8D4F0" font-size="13">판정 높이에 뜬 둥근 막대, 아래는 빈칸</text>
+    <text x="910" y="90" fill="#D8D4F0" font-size="13">양끝 아주 가는 기둥(판정 없음, 레인 안쪽)</text>
+    <text x="910" y="110" fill="#D8D4F0" font-size="13">앞면 아래 화살(v) 2개, 바닥에 분홍 빛 띠</text>
+  </g>
+  <text x="600" y="930" fill="#B8B0E8" font-size="14" text-anchor="middle">길: #241A4A 어두운 유리(격자선 없음), 반사 복제본 15~25%, 옅은 빛 결 / 굵은 네온 난간 + 안쪽 가는 보조선</text>
+  <text x="600" y="954" fill="#B8B0E8" font-size="14" text-anchor="middle">물방울: 박마다 한 줄, 반 박마다 작은 줄, 위치는 장애물과 같은 음악 시간 → 이동 거리 / 박마다 1.0→1.15배(0.15초), 주인공 옆 줄만 반짝, 단계가 오를 때 0.3초 빛남</text>
+  <text x="600" y="978" fill="#B8B0E8" font-size="14" text-anchor="middle">밝기: 주인공 &gt; 장애물 테두리 &gt; 난간·물방울 &gt; 유리 면 &gt; 바닥·배경 · 멀리(z -45)에서도 실루엣이 달라 보임 · 색약에서도 모양으로 구분</text>
+</svg>

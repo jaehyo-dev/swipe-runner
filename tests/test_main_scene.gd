@@ -116,7 +116,7 @@ func test_시간이_가면_거리가_늘고_장애물_노드가_생기고_지나
 	while not main.prewarmed:  # 미리 준비용 장애물이 사라질 때까지
 		await wait_frames()
 	await wait_frames()
-	var cubes_now := main.get_children().filter(func(c): return c is MeshInstance3D and c.get_child_count() == 1)
+	var cubes_now := main.get_children().filter(func(c): return c is MeshInstance3D and c.get_child_count() == 2)
 	assert_eq(cubes_now.size(), main.field.items.size(), "미리 놓인 장애물이 처음부터 노드로 있음")
 	assert_true(cubes_now.size() > 0)
 	main.advance(12.0)
@@ -124,7 +124,7 @@ func test_시간이_가면_거리가_늘고_장애물_노드가_생기고_지나
 	assert_eq(main.travel, RunLogic.SPEED * 12.0)
 	var label: Label = main.find_child("DistanceLabel", true, false)
 	assert_eq(label.text, "108")
-	var cubes := main.get_children().filter(func(c): return c is MeshInstance3D and c.get_child_count() == 1)
+	var cubes := main.get_children().filter(func(c): return c is MeshInstance3D and c.get_child_count() == 2)
 	assert_eq(cubes.size(), main.field.items.size(), "노드 수 = 살아 있는 장애물 수")
 	main.queue_free()
 
@@ -133,27 +133,24 @@ func test_장애물_종류별_색조가_정해진_색으로_나옴() -> void:
 	var main := _make_main()
 	await wait_frames()
 	var K := ObstacleField.Kind
-	# 기획 색(ART_BIBLE.md 4번): 블록 아이스 블루, 허들 앰버, 막대 로즈 핑크
-	var expected := {K.BLOCK: Color("9edbff"), K.LOW: Color("ffc38a"), K.HIGH: Color("ff8fc8")}
+	# 기획 색(ART_BIBLE.md 4번): 기둥 아이스 블루, 턱 노랑, 막대 진분홍
+	var expected := {K.BLOCK: Color("bfe6ff"), K.LOW: Color("ffd25a"), K.HIGH: Color("ff5fd2")}
 	# 주인공 가장자리 최대 밝기 = 테두리 빛(jelly.gdshader 기본값 rim_color #C8FFFA × rim_energy 2.1)
 	var hero_peak := Color("c8fffa") * 2.1
-	# 길 선 = line_color × energy (floor.gdshader 기본값. 헤드리스에선 셰이더 기본값 조회가 안 돼 소스에서 읽음)
-	var code: String = main._floor_material.shader.code
-	var re := RegEx.create_from_string("line_color[^=]*= vec3\\(([\\d.]+), ([\\d.]+), ([\\d.]+)\\)[\\s\\S]*energy = ([\\d.]+)")
-	var m := re.search(code)
-	var road_peak := maxf(float(m.get_string(1)), maxf(float(m.get_string(2)), float(m.get_string(3)))) * float(m.get_string(4))
+	# 난간·물방울이 빛날 때의 가장 밝은 값
+	var road_peak := maxf(_peak(main.RAIL_COLOR) * main.RAIL_FLASH_ENERGY, _peak(main.DROPLET_COLOR) * main.DROPLET_MAX_ENERGY)
 	for kind in expected:
 		main._spawn_node({"id": 900 + kind, "lane": 1, "z": -10.0, "kind": kind})
 		var cube: MeshInstance3D = main._obstacles[900 + kind]
-		var edge: Color = cube.get_child(0).material_override.albedo_color
+		var edge: Color = cube.get_child(0).material_override.get_shader_parameter("color")
 		assert_eq(cube.material_override.get_shader_parameter("tint"), expected[kind], "유리 면 색 (종류 %d)" % kind)
 		# 선은 같은 색조: 가장 센 채널이 유리 색과 같고, HDR(1 초과)로 빛남
 		var glass: Color = expected[kind]
 		assert_eq(_strongest(edge), _strongest(glass), "선 색조가 유리와 같음 (종류 %d)" % kind)
 		assert_true(_peak(edge) > 1.0, "선은 HDR 발광 (종류 %d)" % kind)
-		# 밝기 순서(HDR 가장 센 채널 기준): 주인공 > 모서리 선 > 길 선
+		# 밝기 순서(HDR 가장 센 채널 기준): 주인공 > 장애물 선 > 빛나는 난간·물방울
 		assert_true(_peak(edge) < _peak(hero_peak), "선이 주인공 가장자리보다 어두움 (종류 %d)" % kind)
-		assert_true(_peak(edge) > road_peak, "선이 길 선보다 밝음 (종류 %d)" % kind)
+		assert_true(_peak(edge) > road_peak, "선이 빛나는 난간·물방울보다 밝음 (종류 %d)" % kind)
 	main.queue_free()
 
 
@@ -464,14 +461,13 @@ func test_다시_시작한_장애물은_바닥에서_퐁_솟아_살짝_넘쳤다
 	main.restart()
 	var item: Dictionary = main.field.items[0]
 	var node: Node3D = main._obstacles[item["id"]]
-	var y: float = main._kind_meshes[item["kind"]]["y"]
 	assert_true(node.scale.y < 0.01 and node.position.y < 0.01, "높이 0에서 시작")
 	var peak := 0.0
 	var started_at := Time.get_ticks_msec()
 	while Time.get_ticks_msec() - started_at < 400:
 		await wait_frames()
 		peak = maxf(peak, node.scale.y)
-		assert_true(absf(node.position.y - y * node.scale.y) < 0.001, "바닥을 기준으로 늘어남")
+		assert_eq(node.position.y, 0.0, "바닥을 기준으로 늘어남")
 	assert_true(peak > 1.02, "살짝 넘침 %f" % peak)
 	assert_true(peak < 1.2, "많이 넘치지 않음 %f" % peak)
 	assert_eq(node.scale.y, 1.0, "제 크기로 돌아옴")
@@ -705,7 +701,7 @@ func test_최고를_넘는_순간_숫자가_커졌다_돌아오고_NEW_BEST로_�
 	main.queue_free()
 
 
-func test_단계가_오를_때만_길_선이_0_3초_빛남() -> void:
+func test_단계가_오를_때만_물방울과_난간이_0_3초_빛남() -> void:
 	var main := _make_main()
 	await wait_frames()
 	main.field.items.clear()
@@ -716,7 +712,9 @@ func test_단계가_오를_때만_길_선이_0_3초_빛남() -> void:
 	var flash := func(t: float) -> float:
 		main._music_t = t
 		main._move_world()
-		return main._floor_material.get_shader_parameter("flash")
+		var amount: float = main._droplet_material.get_shader_parameter("flash")
+		assert_true(is_equal_approx(main._rail_material.get_shader_parameter("energy"), lerpf(main.RAIL_ENERGY, main.RAIL_FLASH_ENERGY, amount)), "난간도 같이")
+		return amount
 	assert_eq(flash.call(10.05), 0.0, "BPM만 오르면 신호 없음")
 	assert_eq(flash.call(19.99), 0.0)
 	assert_true(flash.call(20.0) > 0.99, "경계 박에 바로 밝음")
@@ -724,16 +722,3 @@ func test_단계가_오를_때만_길_선이_0_3초_빛남() -> void:
 	assert_eq(flash.call(20.31), 0.0, "0.3초 뒤 끝")
 	AudioManager.ladder = MusicLadder.new(0)
 	main.queue_free()
-
-
-func test_빛나는_길_선도_장애물_선보다_어두움() -> void:
-	var source := FileAccess.get_file_as_string("res://shaders/floor.gdshader")
-	var re := RegEx.create_from_string("flash_energy = ([\\d.]+)")
-	var line_max: float = re.search(source).get_string(1).to_float() * 1.0  # line_color 초록 채널이 1.0
-	for kind in main_kind_colors():
-		var e: Color = kind["edge"]
-		assert_true(line_max < maxf(e.r, maxf(e.g, e.b)), "길 선 %f" % line_max)
-
-
-func main_kind_colors() -> Array:
-	return load("res://scripts/main.gd").KIND_COLORS.values()

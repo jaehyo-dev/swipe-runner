@@ -4,14 +4,18 @@ extends Node3D
 
 const FLOOR_SHADER := preload("res://shaders/floor.gdshader")
 const GLASS_SHADER := preload("res://shaders/glass.gdshader")
+const NEON_SHADER := preload("res://shaders/neon.gdshader")
+const MIRROR_SHADER := preload("res://shaders/mirror.gdshader")
+const DROPLET_SHADER := preload("res://shaders/droplet.gdshader")
 const FONT := preload("res://assets/fonts/Poppins-ExtraLight.ttf")
-## 장애물 종류별 색조 (ART_BIBLE.md 4번 표). 파랑 = 옆으로, 앰버 = 위로, 핑크 = 아래로.
-## glass: 유리 면 색(연하게 보임), edge: 모서리 선 HDR 색(1을 넘어 안개 속에서도 보이고 글로우로 살짝 번짐)
-## 화면은 1을 넘는 채널을 1로 자르므로, 앰버·핑크는 빨강만 1을 넘겨야 노랑·자홍으로 바뀌지 않는다.
+## 장애물 종류별 색 (ART_BIBLE.md 4번 표). 파랑 = 옆으로, 노랑 = 위로, 분홍 = 아래로.
+## glass: 유리 면 색(연하게 보임), edge: 선 HDR 색(1을 넘어 안개 속에서도 보이고 글로우로 살짝 번짐)
+## 화면은 1을 넘는 채널을 1로 자른다. 분홍은 빨강만 1을 넘겨야 자홍으로 옅어지지 않고, 노랑은 빨강·초록을 함께 넘겨야 주황이 아닌 노랑이 된다 (분홍과 색을 멀리 둠).
+## near: 가까이서 유리 면 불투명도. 턱은 낮아서 면이 진해야 노랑이 보라 바닥에 묻혀 살구색이 되지 않는다.
 const KIND_COLORS := {
-	ObstacleField.Kind.BLOCK: {"glass": Color("9edbff"), "edge": Color(0.5, 1.5, 1.8)},
-	ObstacleField.Kind.LOW: {"glass": Color("ffc38a"), "edge": Color(1.6, 0.7, 0.35)},
-	ObstacleField.Kind.HIGH: {"glass": Color("ff8fc8"), "edge": Color(1.6, 0.45, 0.73)},
+	ObstacleField.Kind.BLOCK: {"glass": Color("bfe6ff"), "near": 0.16, "edge": Color(0.8, 1.35, 1.8)},
+	ObstacleField.Kind.LOW: {"glass": Color("ffd25a"), "near": 0.42, "edge": Color(1.75, 1.5, 0.12)},
+	ObstacleField.Kind.HIGH: {"glass": Color("ff5fd2"), "near": 0.24, "edge": Color(1.65, 0.3, 0.95)},
 }
 
 const RESTART_DELAY := 0.5
@@ -20,7 +24,22 @@ const POP_TIME := 0.25       # 다시 시작할 때 새 장애물이 바닥에�
 const PREWARM_FRAMES := 3    # 가림막 뒤에서 이만큼 연달아 빠른 프레임이 나오면 준비 끝 (셰이더는 그래픽 쪽에서 늦게 끝날 수 있다)
 const PREWARM_FAST_MS := 50
 const PREWARM_MAX_FRAMES := 120  # 아주 느린 기기도 언젠가는 화면을 연다
-const FLASH_TIME := 0.3      # 음악 단계가 오를 때 길 선이 빛나는 시간(초)
+const FLASH_TIME := 0.3      # 음악 단계가 오를 때 물방울과 난간이 빛나는 시간(초)
+## 길 (ART_BIBLE.md 10). 밝기 순서: 주인공 > 장애물 선 > 난간·물방울 > 유리 면 > 바닥. 빛날 때도 장애물 선(가장 어두운 분홍 1.65)보다 어둡다.
+const RAIL_COLOR := Color(0.45, 0.5, 1.0)
+const RAIL_ENERGY := 1.15
+const RAIL_FLASH_ENERGY := 1.55
+const RAIL_X := 2.36            # 난간 관 위치: 슬라이드로 퍼진 몸(1.5 + 0.775)이 닿지 않는 바깥
+const RAIL_Y := 0.09
+const RAIL_RADIUS := 0.08
+const RAIL_INNER_X := 2.14      # 안쪽 보조선
+const RAIL_INNER_RADIUS := 0.012
+const DROPLET_COLOR := Color(0.62, 0.68, 1.0)
+const DROPLET_RADIUS := 0.12
+const DROPLET_HEIGHT := 0.05    # 납작한 물방울 두께
+const DROPLET_LENGTH := 1.35    # 앞뒤 늘림: 낮은 시점에서 눌려 보이는 만큼 보정해 둥글게 보인다
+const DROPLET_ENERGY := 1.05
+const DROPLET_MAX_ENERGY := 1.55
 const POP_SCALE := 1.22      # 새 기록 순간 거리 숫자가 커지는 배율 (말랑)
 const POP_UP := 0.08
 const POP_DOWN := 0.32
@@ -49,7 +68,11 @@ var prewarmed := false
 var _swipe := SwipeDetector.new()
 var _obstacles := {}  # id -> 장애물 노드
 var _floor_material: ShaderMaterial
-var _kind_meshes := {}  # Kind -> {y:float, mesh:BoxMesh, edges:ArrayMesh, glass:ShaderMaterial, edge:StandardMaterial3D}
+var _rail_material: ShaderMaterial
+var _droplets: MultiMeshInstance3D
+var _droplet_material: ShaderMaterial
+var _mirror_material: ShaderMaterial
+var _kind_meshes := {}  # Kind -> {mesh, edges, mirror: ArrayMesh, glass, edge: ShaderMaterial}
 var _dead_time := 0.0
 var _restart_label: Label
 var _camera: Camera3D
@@ -92,6 +115,7 @@ func _process(delta: float) -> void:
 ## 첫 입력: 음악 0초와 함께 세상이 출발한다. 미리 놓인 장애물을 음악 시간에 맞춘다 (출력 지연만큼의 차이).
 func begin() -> void:
 	started = true
+	_droplet_material.set_shader_parameter("sparkle_on", 1.0)
 	AudioManager.start_music()
 	_music_t = AudioManager.music_time
 	_move_world()
@@ -121,7 +145,7 @@ func advance(delta: float, music_t := NAN) -> void:
 			return
 
 
-## 음악 시간에서 이동 거리·속도·길 선 빛남을 구해 세상에 옮긴다.
+## 음악 시간에서 이동 거리·속도·물방울 박자·빛남을 구해 세상에 옮긴다.
 func _move_world() -> void:
 	var ladder := AudioManager.ladder
 	var now := ladder.distance_at(_music_t)
@@ -129,9 +153,18 @@ func _move_world() -> void:
 	travel = now
 	speed = ladder.speed_at(_music_t)
 	_floor_material.set_shader_parameter("scroll", _scroll)
+	_droplets.position.z = BeatRows.offset(travel)
+	var beat_age: float = fposmod(ladder.beat_at(_music_t), 1.0) * MusicLadder.beat_time(ladder.segment_at(_music_t)["step"])
+	_droplet_material.set_shader_parameter("pulse", BeatRows.pulse(beat_age))
 	var age := ladder.stage_up_age(_music_t)
-	_floor_material.set_shader_parameter("flash", 1.0 - age / FLASH_TIME if age >= 0.0 and age < FLASH_TIME else 0.0)
+	_set_flash(1.0 - age / FLASH_TIME if age >= 0.0 and age < FLASH_TIME else 0.0)
 	_apply_step(field.step(travel))
+
+
+## 단계가 오를 때의 빛남 (1 → 0)을 물방울과 난간에 준다.
+func _set_flash(amount: float) -> void:
+	_droplet_material.set_shader_parameter("flash", amount)
+	_rail_material.set_shader_parameter("energy", lerpf(RAIL_ENERGY, RAIL_FLASH_ENERGY, amount))
 
 
 ## field.step() 결과를 장애물 노드에 옮긴다.
@@ -150,16 +183,13 @@ func _place_ahead(pop: bool) -> void:
 	for item in field.step(travel)["spawned"]:
 		_spawn_node(item)
 		if pop:
-			_pop_in(_obstacles[item["id"]], _kind_meshes[item["kind"]]["y"])
+			_pop_in(_obstacles[item["id"]])
 
 
 ## 높이 0에서 젤리처럼 '퐁': 바닥을 기준으로 늘어나 살짝 넘쳤다가 돌아온다. 판정은 field가 하므로 모양만 바뀐다.
-func _pop_in(node: Node3D, y: float) -> void:
-	var rise := func(s: float) -> void:
-		node.scale.y = s
-		node.position.y = y * s
-	rise.call(0.001)
-	node.create_tween().tween_method(rise, 0.001, 1.0, POP_TIME).set_trans(Tween.TRANS_BACK).set_ease(Tween.EASE_OUT)
+func _pop_in(node: Node3D) -> void:
+	node.scale.y = 0.001  # 장애물 원점이 바닥이라 바닥을 기준으로 늘어난다
+	node.create_tween().tween_property(node, "scale:y", 1.0, POP_TIME).set_trans(Tween.TRANS_BACK).set_ease(Tween.EASE_OUT)
 
 
 ## 부딪힌 뒤: 세상이 아주 잠깐 느려졌다 멈추고, 주인공은 충돌 모션을 이어 간다.
@@ -168,6 +198,7 @@ func _advance_dead(delta: float) -> void:
 	_dead_time += delta
 	_scroll += speed * slow
 	_floor_material.set_shader_parameter("scroll", _scroll)
+	_droplets.position.z += speed * slow
 	for item in field.items:
 		item["z"] += speed * slow
 		_obstacles[item["id"]].position.z = item["z"]
@@ -183,7 +214,9 @@ func _game_over(item: Dictionary) -> void:
 	dead = true
 	_dead_time = 0.0
 	AudioManager.play_crash()
-	_floor_material.set_shader_parameter("flash", 0.0)
+	_set_flash(0.0)
+	_droplet_material.set_shader_parameter("pulse", 1.0)
+	_droplet_material.set_shader_parameter("sparkle_on", 0.0)
 	record.save()
 	_best_label.visible = true
 	_best_label.text = ("NEW BEST %d" if record.broken else "BEST %d") % record.best
@@ -211,6 +244,11 @@ func restart() -> void:
 		fade.tween_property(node, "position:z", node.position.z + speed * OBSTACLE_FADE, OBSTACLE_FADE)
 		fade.chain().tween_callback(node.queue_free)
 	_place_ahead(true)
+	_droplet_material.set_shader_parameter("sparkle_on", 1.0)
+	# 박자가 0박으로 돌아가며 물방울 격자가 옮겨 가는 순간을 장애물과 같은 '퐁'으로 가린다
+	var appear := func(a: float) -> void: _droplet_material.set_shader_parameter("appear", a)
+	appear.call(0.0)
+	create_tween().tween_method(appear, 0.0, 1.0, POP_TIME).set_trans(Tween.TRANS_BACK).set_ease(Tween.EASE_OUT)
 	_camera.h_offset = 0.0
 	_camera.v_offset = 0.0
 	_restart_label.visible = false
@@ -313,15 +351,16 @@ func _spawn_node(item: Dictionary) -> void:
 
 func _make_obstacle(kind: ObstacleField.Kind, at_lane: int, z: float) -> MeshInstance3D:
 	var shape: Dictionary = _kind_meshes[kind]
-	var cube := MeshInstance3D.new()
-	cube.mesh = shape["mesh"]
-	cube.material_override = shape["glass"]
-	cube.position = Vector3(RunLogic.lane_x(at_lane), shape["y"], z)
-	var edges := MeshInstance3D.new()
-	edges.mesh = shape["edges"]
-	edges.material_override = shape["edge"]
-	cube.add_child(edges)
-	return cube
+	var body := MeshInstance3D.new()
+	body.mesh = shape["mesh"]
+	body.material_override = shape["glass"]
+	body.position = Vector3(RunLogic.lane_x(at_lane), 0.0, z)
+	for part: Array in [[shape["edges"], shape["edge"]], [shape["mirror"], _mirror_material]]:
+		var child := MeshInstance3D.new()
+		child.mesh = part[0]
+		child.material_override = part[1]
+		body.add_child(child)
+	return body
 
 
 ## 웹은 재질이 처음 그려질 때 셰이더를 만들어 그 프레임이 막힌다. 첫 화면 전에 가림막 뒤에서 모두 한 번씩 그려 둔다.
@@ -417,43 +456,67 @@ func _build_floor() -> void:
 	floor_node.material_override = _floor_material
 	floor_node.position = Vector3(0.0, 0.0, -140.0)
 	add_child(floor_node)
+	_build_rails()
+	_build_droplets()
+
+
+func _build_rails() -> void:
+	_rail_material = ShaderMaterial.new()
+	_rail_material.shader = NEON_SHADER
+	_rail_material.set_shader_parameter("color", RAIL_COLOR)
+	_rail_material.set_shader_parameter("energy", RAIL_ENERGY)
+	var rails := MeshInstance3D.new()
+	rails.name = "Rails"
+	rails.mesh = ArtMeshes.rails(RAIL_X, RAIL_Y, RAIL_RADIUS, RAIL_INNER_X, RAIL_INNER_RADIUS, 8.0, -128.0, 8.0)
+	rails.material_override = _rail_material
+	add_child(rails)
+
+
+## 레인 경계 2줄의 물방울. 노드 하나를 BeatRows.offset(이동 거리)만큼 옮겨 모든 줄을 박에 맞춘다.
+func _build_droplets() -> void:
+	_droplet_material = ShaderMaterial.new()
+	_droplet_material.shader = DROPLET_SHADER
+	_droplet_material.set_shader_parameter("color", DROPLET_COLOR)
+	_droplet_material.set_shader_parameter("base_energy", DROPLET_ENERGY)
+	_droplet_material.set_shader_parameter("max_energy", DROPLET_MAX_ENERGY)
+	var drop := SphereMesh.new()
+	drop.radius = DROPLET_RADIUS
+	drop.height = DROPLET_HEIGHT
+	drop.radial_segments = 12
+	drop.rings = 4
+	var rows := BeatRows.LAST - BeatRows.FIRST + 1
+	var many := MultiMesh.new()
+	many.transform_format = MultiMesh.TRANSFORM_3D
+	many.mesh = drop
+	many.instance_count = rows * 2
+	for i in rows:
+		var row := BeatRows.FIRST + i
+		var s := 1.0 if BeatRows.is_beat_row(row) else BeatRows.SMALL_SCALE
+		var basis := Basis.from_scale(Vector3(s, s, s * DROPLET_LENGTH))
+		for side in 2:
+			many.set_instance_transform(i * 2 + side, Transform3D(basis, Vector3((side - 0.5) * RunLogic.LANE_WIDTH, DROPLET_HEIGHT * 0.5, BeatRows.row_z(row))))
+	_droplets = MultiMeshInstance3D.new()
+	_droplets.name = "Droplets"
+	_droplets.multimesh = many
+	_droplets.material_override = _droplet_material
+	add_child(_droplets)
 
 
 func _build_obstacle_resources() -> void:
-	var bar := ObstacleField.BAR_WIDTH
-	var d := ObstacleField.BAR_DEPTH
-	var b := ObstacleField.BLOCK_SIZE
-	_add_kind(ObstacleField.Kind.BLOCK, Vector3(b, b, b), 0.0)
-	_add_kind(ObstacleField.Kind.LOW, Vector3(bar, ObstacleField.LOW_TOP, d), 0.0)
-	_add_kind(ObstacleField.Kind.HIGH, Vector3(bar, ObstacleField.HIGH_TOP - ObstacleField.HIGH_BOTTOM, d), ObstacleField.HIGH_BOTTOM)
-
-
-## 종류별 상자 메시·모서리 선 메시·색 재질 (같은 종류끼리 공유). bottom은 바닥에서 아랫면까지 높이.
-func _add_kind(kind: ObstacleField.Kind, size: Vector3, bottom: float) -> void:
-	var glass := ShaderMaterial.new()
-	glass.shader = GLASS_SHADER
-	glass.set_shader_parameter("tint", KIND_COLORS[kind]["glass"])
-	var edge := StandardMaterial3D.new()
-	edge.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
-	edge.albedo_color = KIND_COLORS[kind]["edge"]
-	var box := BoxMesh.new()
-	box.size = size
-	var h := size * 0.5
-	var corners := PackedVector3Array()
-	for i in 8:
-		corners.append(Vector3(h.x if i & 1 else -h.x, h.y if i & 2 else -h.y, h.z if i & 4 else -h.z))
-	var indices := PackedInt32Array()
-	for i in 8:
-		for bit in [1, 2, 4]:
-			if not (i & bit):
-				indices.append_array([i, i | bit])
-	var arrays := []
-	arrays.resize(Mesh.ARRAY_MAX)
-	arrays[Mesh.ARRAY_VERTEX] = corners
-	arrays[Mesh.ARRAY_INDEX] = indices
-	var edges := ArrayMesh.new()
-	edges.add_surface_from_arrays(Mesh.PRIMITIVE_LINES, arrays)
-	_kind_meshes[kind] = {"mesh": box, "edges": edges, "y": bottom + h.y, "glass": glass, "edge": edge}
+	_mirror_material = ShaderMaterial.new()
+	_mirror_material.shader = MIRROR_SHADER
+	_mirror_material.render_priority = -1  # 젤리 발밑 그림자보다 먼저 그린다
+	for kind: ObstacleField.Kind in KIND_COLORS:
+		var colors: Dictionary = KIND_COLORS[kind]
+		var meshes := ArtMeshes.obstacle(kind, colors["glass"], colors["edge"])
+		var glass := ShaderMaterial.new()
+		glass.shader = GLASS_SHADER
+		glass.set_shader_parameter("tint", colors["glass"])
+		glass.set_shader_parameter("near_alpha", colors["near"])
+		var edge := ShaderMaterial.new()
+		edge.shader = NEON_SHADER
+		edge.set_shader_parameter("color", colors["edge"])
+		_kind_meshes[kind] = {"mesh": meshes["glass"], "edges": meshes["edges"], "mirror": meshes["mirror"], "glass": glass, "edge": edge}
 
 
 func _build_ui() -> void:

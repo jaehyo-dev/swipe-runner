@@ -3,11 +3,12 @@ extends RefCounted
 ## 장애물의 생성·이동·제거 규칙. 노드는 만들지 않고 목록만 관리한다 (자동 테스트 대상).
 ## 화면(main.gd)은 step()이 돌려준 spawned/removed를 보고 노드를 만들고 지운다.
 
-## 종류: BLOCK(레인을 바꿔 피함), LOW(낮은 허들: 점프), HIGH(공중에 뜬 막대: 슬라이드)
+## 종류: BLOCK(얼음 기둥: 레인을 바꿔 피함), LOW(낮은 턱: 점프), HIGH(공중에 뜬 막대: 슬라이드)
 enum Kind { BLOCK, LOW, HIGH }
 
 ## 모양(월드 단위). 충돌 판정과 화면이 같은 값을 쓴다.
-const BLOCK_SIZE := 1.1
+const BLOCK_SIZE := 1.1      # 얼음 기둥 폭·깊이
+const BLOCK_HEIGHT := 2.1    # 얼음 기둥 키: 점프 최고점(1.6)보다 확실히 높아 넘을 수 없다 (판정에 높이는 없다)
 const BAR_WIDTH := 1.3
 const BAR_DEPTH := 0.5
 const LOW_TOP := 0.45        # 허들 윗면 높이: 점프로 이보다 높이 떠야 넘는다
