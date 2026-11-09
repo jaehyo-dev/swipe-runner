@@ -22,19 +22,22 @@ const REMOVE_Z := 6.0
 ## 시작·재시작 뒤 첫 장애물은 1마디 뒤 첫 박에 도착한다
 const FIRST_BEAT := BeatClock.BEATS_PER_BAR
 
-## 현재 살아 있는 장애물: {id:int, lane:int, z:float, kind:Kind, beat:int, arrive:float}. arrive: 주인공(z=0)에 닿을 때의 이동 거리
+## 현재 살아 있는 장애물: {id:int, lane:int, z:float, kind:Kind, beat:float, arrive:float}. arrive: 주인공(z=0)에 닿을 때의 이동 거리
 var items: Array[Dictionary] = []
 ## 지금까지 이동한 거리
 var travel := 0.0
 
+## 박을 이동 거리로 바꾸는 이번 판의 사다리. 첫 입력에 음악이 시작하며 새 사다리로 바뀐다 (main.begin)
+var ladder: MusicLadder
 var _pattern: BeatPattern
 var _coming: Dictionary  # 아직 생성하지 않은 다음 장애물
 var _next_id := 0
 
 
 ## 시드를 주면 순서가 고정된다.
-func _init(seed_value: int = 0) -> void:
-	_pattern = BeatPattern.new(seed_value, FIRST_BEAT)
+func _init(seed_value: int = 0, run_ladder := MusicLadder.new()) -> void:
+	ladder = run_ladder
+	_pattern = BeatPattern.new(seed_value, FIRST_BEAT, ladder.segments[0]["step"])
 	_coming = _pattern.next()
 
 
@@ -52,8 +55,8 @@ func step(now: float) -> Dictionary:
 		else:
 			kept.append(item)
 	items = kept
-	while _coming["beat"] * MusicLadder.BEAT_DISTANCE - now <= -SPAWN_Z:
-		var arrive: float = _coming["beat"] * MusicLadder.BEAT_DISTANCE
+	while ladder.distance_of_beat(_coming["beat"]) - now <= -SPAWN_Z:
+		var arrive := ladder.distance_of_beat(_coming["beat"])
 		var z := now - arrive
 		if z <= REMOVE_Z:  # 시간이 크게 건너뛰면(탭 전환 등) 이미 지나간 것은 만들지 않는다
 			var item := {"id": _next_id, "lane": _coming["lane"], "z": z, "kind": _coming["kind"], "beat": _coming["beat"], "arrive": arrive}

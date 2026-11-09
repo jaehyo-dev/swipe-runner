@@ -30,8 +30,10 @@ const DUCK_DB := -8.0
 const DUCK_TIME := 1.0          # 음악을 낮춘 뒤 원래대로 돌아올 때까지
 const DUCK_FADE := 0.1          # 내려가고 올라오는 데 쓰는 시간 (뚝 끊겨 들리지 않게)
 const RESTART_FADE := 0.3       # 재시작 때 지금 곡에서 첫 곡으로 겹치며 넘어가는 시간
-const SCHEDULE_LEAD := 1.0      # 경계가 이만큼 안으로 들어오면 다음 곡을 예약한다
-const SCHEDULE_MIN := 0.6       # 이보다 가까운 경계는 한 바퀴 뒤로 미룬다. 데스크톱 제너레이터 버퍼(0.5초)보다 길어야 한다
+## 경계가 이만큼 안으로 들어오면 다음 곡을 예약한다. 장애물은 z -60(속도 10에서 6초 앞)에 나오며 박 → 거리는 경계를 알아야 정해지므로, 첫 장애물보다 먼저 정한다.
+const SCHEDULE_LEAD := 7.0
+## 이보다 가까운 경계는 8마디 뒤로 미룬다. 위와 같은 이유로 6초보다 길어야 한다 (데스크톱 제너레이터 버퍼 0.5초보다도 길다)
+const SCHEDULE_MIN := 6.2
 const GENERATOR_BUFFER := 0.5   # RESTART_FADE보다 길어야 겹치는 동안 이전 곡이 끊기지 않는다
 const FADE_FLOOR_DB := -60.0
 const SWITCH_BLEND := 0.005     # 곡 경계에서 파형이 튀어 딸깍거리지 않게 겹치는 시간. 틈은 없다
@@ -57,6 +59,7 @@ var _feed: AudioStreamPlayback
 var _pushed := 0          # 이번 판에 제너레이터에 넣은 표본 수
 var _switch_frame := -1   # 이 표본에서 다음 곡으로 바꾼다
 var _switch_step := 0
+var _switch_from := 0.0   # 다음 곡을 시작할 곡 안 위치(초)
 var _clock := BeatClock.new()
 var _pool: Array[AudioStreamPlayer] = []
 var _next := 0
@@ -121,10 +124,11 @@ func _plan_next_track() -> void:
 		return
 	var at: float = plan["at"] - _clock.offset
 	if _web:
-		_web.schedule(plan["step"], at)
+		_web.schedule(plan["step"], at, plan["from"])
 	else:
 		_switch_frame = maxi(roundi(at * AudioServer.get_mix_rate()), _pushed)  # 지연이 커서 이미 넣은 표본을 지났으면 바로 다음 표본에서
 		_switch_step = plan["step"]
+		_switch_from = plan["from"]
 
 
 ## 지금 귀에 들리는 음악 위치 (판 시작 기준)
@@ -140,10 +144,10 @@ func _raw_position() -> float:
 	return position + since_mix - latency
 
 
-## 곡을 처음부터 표본 단위로 읽는 재생기. 곡 끝에서 곡 처음으로 이어진다 (track.loop)
-func open_track(track: AudioStream) -> AudioStreamPlayback:
+## 곡을 from초 위치부터 표본 단위로 읽는 재생기. 곡 끝에서 곡 처음으로 이어진다 (track.loop)
+func open_track(track: AudioStream, from := 0.0) -> AudioStreamPlayback:
 	var playback := track.instantiate_playback()
-	playback.start(0.0)
+	playback.start(from)
 	playback.mix_audio(1.0, RESAMPLE_HEAD)
 	return playback
 
@@ -161,7 +165,7 @@ func _pump_generator() -> void:
 			var blend := roundi(SWITCH_BLEND * AudioServer.get_mix_rate())
 			if room < blend:
 				return
-			var next := open_track(TRACKS[_switch_step])
+			var next := open_track(TRACKS[_switch_step], _switch_from)
 			var old_part := _feed.mix_audio(1.0, blend)
 			var new_part := next.mix_audio(1.0, blend)
 			for i in blend:

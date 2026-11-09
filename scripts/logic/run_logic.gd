@@ -5,8 +5,8 @@ extends RefCounted
 const LANE_COUNT := 3
 const LANE_WIDTH := 1.5
 const START_LANE := 1
-## 100BPM일 때 세상이 다가오는 속도 (월드 단위/초). 속도 = SPEED × BPM ÷ 100 (MusicLadder)
-const SPEED := 9.0
+## 시작(100BPM) 때 세상이 다가오는 속도 (월드 단위/초). 단계별 속도는 MusicLadder.STEPS
+const SPEED := 10.0
 
 
 ## 레인 번호를 방향(-1 왼쪽, +1 오른쪽)만큼 옮긴다. 0~2 밖으로는 나가지 않는다.

@@ -51,15 +51,15 @@ window.gameMusic = (() => {
       window.musicStart = performance.now() + 1000 * (now - c.currentTime);
       c.resume();
     },
-    // at: 판 시작 뒤 시각 (곡 반복 끝). 그 표본에 다음 곡이 시작한다. 두 곡의 파형 값이 달라 딸깍 소리가 나지 않게 짧게 겹친다 (앞 곡은 반복된 앞머리가 이어진다)
-    schedule(i, at, blend) {
+    // at: 판 시작 뒤 시각 (8마디 경계). 그 표본에 다음 곡이 from초 위치(0마디째 또는 8마디째)부터 시작한다. 두 곡의 파형 값이 달라 딸깍 소리가 나지 않게 짧게 겹친다 (앞 곡은 다음 박자로 이어진다)
+    schedule(i, at, blend, from) {
       const next = source(i, run.gain), t = t0 + at;
       cur.fader.gain.setValueAtTime(1, t);
       cur.fader.gain.linearRampToValueAtTime(0, t + blend);
       next.fader.gain.setValueAtTime(0, t);
       next.fader.gain.linearRampToValueAtTime(1, t + blend);
       cur.stop(t + blend);
-      next.start(t);
+      next.start(t, from);
       run.sources.push(next);
       cur = next;
     },
@@ -115,8 +115,8 @@ func play(step: int, fade: float) -> void:
 	_js.play(step, fade)
 
 
-func schedule(step: int, at: float) -> void:
-	_js.schedule(step, at, AudioManager.SWITCH_BLEND)
+func schedule(step: int, at: float, from: float) -> void:
+	_js.schedule(step, at, AudioManager.SWITCH_BLEND, from)
 
 
 func position() -> float:

@@ -123,7 +123,7 @@ func test_시간이_가면_거리가_늘고_장애물_노드가_생기고_지나
 	await wait_frames()  # 지워진 노드(queue_free)가 정리될 때까지
 	assert_eq(main.travel, RunLogic.SPEED * 12.0)
 	var label: Label = main.find_child("DistanceLabel", true, false)
-	assert_eq(label.text, "108")
+	assert_eq(label.text, "120")
 	var cubes := main.get_children().filter(func(c): return c is MeshInstance3D and c.get_child_count() == 2)
 	assert_eq(cubes.size(), main.field.items.size(), "노드 수 = 살아 있는 장애물 수")
 	main.queue_free()
@@ -133,17 +133,17 @@ func test_장애물_종류별_색조가_정해진_색으로_나옴() -> void:
 	var main := _make_main()
 	await wait_frames()
 	var K := ObstacleField.Kind
-	# 기획 색(ART_BIBLE.md 4번): 기둥 아이스 블루, 턱 노랑, 막대 진분홍
+	# 기획 색(ART_BIBLE.md 4·11번, t = 0): 기둥 아이스 블루, 턱 노랑, 막대 진분홍
 	var expected := {K.BLOCK: Color("bfe6ff"), K.LOW: Color("ffd25a"), K.HIGH: Color("ff5fd2")}
 	# 주인공 가장자리 최대 밝기 = 테두리 빛(jelly.gdshader 기본값 rim_color #C8FFFA × rim_energy 2.1)
 	var hero_peak := Color("c8fffa") * 2.1
 	# 난간·물방울이 빛날 때의 가장 밝은 값
-	var road_peak := maxf(_peak(main.RAIL_COLOR) * main.RAIL_FLASH_ENERGY, _peak(main.DROPLET_COLOR) * main.DROPLET_MAX_ENERGY)
+	var road_peak: float = main.ROAD_PEAK_MAX
 	for kind in expected:
 		main._spawn_node({"id": 900 + kind, "lane": 1, "z": -10.0, "kind": kind})
 		var cube: MeshInstance3D = main._obstacles[900 + kind]
 		var edge: Color = cube.get_child(0).material_override.get_shader_parameter("color")
-		assert_eq(cube.material_override.get_shader_parameter("tint"), expected[kind], "유리 면 색 (종류 %d)" % kind)
+		assert_true(cube.material_override.get_shader_parameter("tint").is_equal_approx(expected[kind]), "유리 면 색 (종류 %d)" % kind)
 		# 선은 같은 색조: 가장 센 채널이 유리 색과 같고, HDR(1 초과)로 빛남
 		var glass: Color = expected[kind]
 		assert_eq(_strongest(edge), _strongest(glass), "선 색조가 유리와 같음 (종류 %d)" % kind)
@@ -445,9 +445,9 @@ func test_다시_시작하면_앞_판을_지우고_1마디_뒤_첫_박에_도착
 	main.dead = true
 	main.restart()
 	var first: Dictionary = main.field.items[0]
-	assert_eq(first["beat"], BeatClock.BEATS_PER_BAR, "1마디 뒤 첫 박")
+	assert_eq(first["beat"], float(BeatClock.BEATS_PER_BAR), "1마디 뒤 첫 박")
 	for item in main.field.items:
-		assert_true(absf(item["z"] + item["beat"] * MusicLadder.BEAT_DISTANCE - main.travel) < 0.001, "박에서 거꾸로 계산한 자리")
+		assert_true(absf(item["z"] + AudioManager.ladder.distance_of_beat(item["beat"]) - main.travel) < 0.001, "박에서 거꾸로 계산한 자리")
 		assert_true(item["z"] >= ObstacleField.SPAWN_Z, "z -60보다 가까운 것만")
 		assert_false(old_ids.has(main._obstacles[item["id"]]), "새 노드")
 	main.queue_free()
@@ -707,13 +707,13 @@ func test_단계가_오를_때만_물방울과_난간이_0_3초_빛남() -> void
 	main.field.items.clear()
 	var ladder := MusicLadder.new(0)
 	AudioManager.ladder = ladder
-	ladder.segments.append({"start": 10.0, "beat": 64, "step": 1})  # BPM만 오름
-	ladder.segments.append({"start": 20.0, "beat": 128, "step": 2})  # 원본 → A
+	ladder.add_segment(10.0, 32, 1)  # BPM만 오름
+	ladder.add_segment(20.0, 64, 2)  # 원본 → A
 	var flash := func(t: float) -> float:
 		main._music_t = t
 		main._move_world()
 		var amount: float = main._droplet_material.get_shader_parameter("flash")
-		assert_true(is_equal_approx(main._rail_material.get_shader_parameter("energy"), lerpf(main.RAIL_ENERGY, main.RAIL_FLASH_ENERGY, amount)), "난간도 같이")
+		assert_true(is_equal_approx(main._rail_material.get_shader_parameter("energy"), minf(main._rail_energy + main.RAIL_FLASH_ADD * amount, main._road_max)), "난간도 같이")
 		return amount
 	assert_eq(flash.call(10.05), 0.0, "BPM만 오르면 신호 없음")
 	assert_eq(flash.call(19.99), 0.0)

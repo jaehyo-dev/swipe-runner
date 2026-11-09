@@ -30,6 +30,7 @@ func test_웹_내보내기는_스레드_없이_설정됨() -> void:
 	assert_eq(presets.get_value("preset.0", "name", ""), "Web", "프리셋 이름 (배포 워크플로가 이 이름을 씀)")
 	assert_eq(presets.get_value("preset.0.options", "variant/thread_support", true), false, "스레드 지원 끔")
 	assert_eq(presets.get_value("preset.0", "export_path", ""), "build/web/index.html")
+	assert_true(str(presets.get_value("preset.0", "include_filter", "")).contains("data/*.json"), "색 데이터 파일이 빌드에 들어감")
 	var excluded := str(presets.get_value("preset.0", "exclude_filter", ""))
 	for folder in ["tests/*", "tools/*", "build/*", "_site/*"]:
 		assert_true(excluded.contains(folder), "내보내기 제외: " + folder)

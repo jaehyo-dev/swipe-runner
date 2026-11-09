@@ -87,6 +87,23 @@ func test_곡을_표본_단위로_읽으면_첫_표본부터_소리가_있고_�
 		assert_true(worst < 0.002, "곡 %d 이음매 차이 %f" % [i, worst])
 
 
+## 곡을 8마디째부터 열어도 앞에서부터 읽은 것과 표본이 같아야 곡 갈아타기에 박이 어긋나지 않는다
+func test_곡을_8마디_위치에서_열면_처음부터_읽은_표본과_같음() -> void:
+	var rate := AudioServer.get_mix_rate()
+	for i in [0, 3, 6]:
+		var from := MusicLadder.span_time(i)
+		var playback: AudioStreamPlayback = AudioManager.open_track(AudioManager.TRACKS[i])
+		var left := roundi(from * rate)
+		while left > 0:
+			left -= playback.mix_audio(1.0, mini(left, 4096)).size()
+		var want := playback.mix_audio(1.0, 64)
+		var got: PackedVector2Array = AudioManager.open_track(AudioManager.TRACKS[i], from).mix_audio(1.0, 64)
+		var worst := 0.0
+		for k in 64:
+			worst = maxf(worst, (got[k] - want[k]).length())
+		assert_true(worst < 0.02, "곡 %d 차이 %f" % [i, worst])
+
+
 func test_효과음은_6개_이상_겹쳐_남() -> void:
 	assert_true(AudioManager.POOL_SIZE >= 6)
 	_start_log()
@@ -291,7 +308,7 @@ func test_음악을_시작하면_시간은_지연만큼_앞에서_출발() -> vo
 
 func test_재시작하면_곡과_템포_구간이_처음으로_돌아감() -> void:
 	AudioManager.start_music()
-	AudioManager.ladder.plan(MusicLadder.lap_time(0) - 0.8, AudioManager.SCHEDULE_LEAD, AudioManager.SCHEDULE_MIN, true)
+	AudioManager.ladder.plan(MusicLadder.span_time(0) - 6.5, AudioManager.SCHEDULE_LEAD, AudioManager.SCHEDULE_MIN, true)
 	assert_eq(AudioManager.ladder.segments.size(), 2)
 	var old: AudioStreamPlayer = AudioManager.music
 	AudioManager.restart_music()
@@ -307,7 +324,7 @@ func test_재시작하면_곡과_템포_구간이_처음으로_돌아감() -> vo
 
 func test_부딪힌_뒤에는_다음_곡을_예약하지_않음() -> void:
 	AudioManager.start_music()
-	AudioManager._clock.time = MusicLadder.lap_time(0) - 0.8  # 재생 위치가 이보다 뒤라 시계는 이 값을 유지한다
+	AudioManager._clock.time = MusicLadder.span_time(0) - 6.5  # 재생 위치가 이보다 뒤라 시계는 이 값을 유지한다
 	AudioManager._blocked = true
 	AudioManager._process(0.0)
 	assert_eq(AudioManager.ladder.segments.size(), 1, "부딪힌 뒤에는 예약 안 함")
@@ -320,8 +337,8 @@ func test_부딪힌_뒤에는_다음_곡을_예약하지_않음() -> void:
 ## 출력 지연이 커서 이미 넣은 표본을 지난 경계도 멈추지 않고 넘어간다 (경계 계산이 음수가 되면 무한 반복)
 func test_이미_넣은_표본을_지난_경계도_멈추지_않고_바뀜() -> void:
 	AudioManager.start_music()
-	AudioManager.music_time = MusicLadder.lap_time(0) - 0.8
-	AudioManager._pushed = roundi(MusicLadder.lap_time(0) * AudioServer.get_mix_rate()) + 1000  # 경계보다 1000표본 뒤까지 넣은 상태
+	AudioManager.music_time = MusicLadder.span_time(0) - 6.5
+	AudioManager._pushed = roundi(MusicLadder.span_time(0) * AudioServer.get_mix_rate()) + 1000  # 경계보다 1000표본 뒤까지 넣은 상태
 	AudioManager._plan_next_track()
 	assert_eq(AudioManager._switch_frame, AudioManager._pushed)
 	AudioManager.music.stop()

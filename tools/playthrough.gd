@@ -3,11 +3,13 @@ extends Node
 ##   박자 측정: godot --path . res://tools/playthrough.tscn -- accuracy 265  (100BPM부터 130BPM 두 바퀴까지 약 265초)
 ##   녹화: godot --path . --write-movie x.avi --fixed-fps 60 --resolution 720x1280 res://tools/playthrough.tscn -- clean 66 all 105
 ##     (clean = 안 부딪힘, movie = 12초쯤 일부러 부딪힘. 세 번째 값 Music|SFX면 그 버스만 들림, 네 번째 값은 시작 BPM)
-##   환경 변수 BEST=숫자: 예전 최고 기록을 이 값으로 두고 시작 (새 기록 장면 녹화)
+##   환경 변수 BEST=숫자: 예전 최고 기록을 이 값으로 두고 시작 (새 기록 장면 녹화), SEED=숫자: 장애물 배치
+##   사람 모델이 죽을 때까지: godot ... res://tools/playthrough.tscn -- human 300 all 100  (죽고 3초 뒤 끝)
 ##   음악 시계 시작 기록: 웹 주소에 ?mode=startup&secs=4 (첫 탭 뒤 프레임마다 재생 위치와 음악 시간)
 ## 웹 측정은 주소에 ?mode=accuracy&secs=265 (시작 BPM은 &bpm=115)
 
 const SEED := 143  # 첫 장애물부터 허들·막대가 내 레인에 온다
+const HUMAN_LINGER := 3.0  # human: 죽은 뒤 보여 주는 시간
 const Dir := SwipeDetector.Dir
 const FIRST_TAP := 0.5
 const MOVIE_FIRST_TAP := 1.5  # 녹화는 시작 대기 화면을 보여 준다
@@ -45,6 +47,8 @@ var _gaps: Array[int] = []
 var _trace := []  # startup: [탭 뒤 벽시계 ms, 재생 위치 ms, 음악 시간 ms]
 var _tap_usec := 0
 var _perf_to_now := 0.0  # 웹: performance.now 초에서 이 값을 빼면 _now() 기준이 된다
+var _human: HumanPlayer
+var _last_input := -INF
 
 
 func _ready() -> void:
@@ -64,7 +68,9 @@ func _ready() -> void:
 	if mode == "accuracy" and not OS.has_feature("web"):
 		AudioServer.set_bus_mute(0, true)  # 3분 동안 소리가 나지 않게. 믹스와 재생 위치는 그대로 돈다
 	main = load("res://scenes/main.tscn").instantiate()
-	main.seed_value = SEED
+	main.seed_value = int(OS.get_environment("SEED")) if OS.has_environment("SEED") else SEED
+	if mode == "human":
+		_human = HumanPlayer.new(main.seed_value)
 	main.best_path = "user://playthrough_best.txt"
 	if not OS.get_environment("BEST").is_empty():
 		var file := FileAccess.open(main.best_path, FileAccess.WRITE)
@@ -87,7 +93,7 @@ func _now() -> float:
 
 
 func _recording() -> bool:
-	return mode == "movie" or mode == "clean"
+	return mode == "movie" or mode == "clean" or mode == "human"
 
 
 func _on_played(sound: StringName, pitch: float) -> void:
@@ -160,6 +166,10 @@ func _process(delta: float) -> void:
 			_crash_t = t
 			_crashes += 1
 			events.append({"type": "crash", "at": _now(), "frame": frame, "music": AudioManager.music_time})
+		elif mode == "human":
+			if t - _crash_t >= HUMAN_LINGER:
+				_finish()
+			return
 		elif t - _crash_t >= RESTART_AFTER:
 			_crash_t = -1.0
 			_seek = false
@@ -168,8 +178,13 @@ func _process(delta: float) -> void:
 		_seek = true
 		_seek_lane()
 	else:
-		var dir := AutoPlayer.decide(main.field.items, main.lane, main.player, main.speed)
+		var dir: int
+		if _human:
+			dir = _human.decide(AudioManager.music_time, main.field.items, main.lane, main.player, main.speed)
+		else:
+			dir = AutoPlayer.decide(main.field.items, main.lane, main.player, main.speed, t - _last_input)
 		if dir != Dir.NONE:
+			_last_input = t
 			_swipe(dir)
 	if t >= secs + (MOVIE_FIRST_TAP if _recording() else FIRST_TAP):
 		_finish()
@@ -221,23 +236,25 @@ func _record_arrivals() -> void:
 		_last_z[id] = [item["z"], wall]
 
 
-## 박 물방울 줄의 도착: 실제 노드 z가 한 박 거리를 넘어 되돌아가는 프레임이 한 줄이 z = 0에 닿은 프레임이다. v0.4.1 전 빌드에는 물방울이 없다.
+## 박 물방울 줄의 도착: 실제 MultiMesh에서 다음 박 줄의 z를 읽어 0을 지나는 순간을 잰다.
 func _record_rows() -> void:
-	if not main.started or main.dead or not ("_droplets" in main):
+	if not main.started or main.dead:
 		_last_row = []
 		return
-	var z: float = main._droplets.position.z
+	var ladder: MusicLadder = AudioManager.ladder
+	var music: float = AudioManager.music_time
+	var now_beat := ladder.beat_at(music)
 	var wall := _now()
-	if not _last_row.is_empty() and z < _last_row[0]:
-		var ladder: MusicLadder = AudioManager.ladder
-		var music: float = AudioManager.music_time
-		var beat := roundi(ladder.beat_at(music))
+	var beat := ceilf(now_beat - 0.5)  # 가장 가까운 박
+	var slot := int((beat - BeatRows.beat_of(0, now_beat)) * 2.0) * 2
+	var z: float = main._droplets.multimesh.get_instance_transform(slot).origin.z
+	if not _last_row.is_empty() and _last_row[0] == beat and _last_row[1] < 0.0 and z >= 0.0:
 		var beat_t := ladder.time_of_beat(beat)
 		_rows["frame"].append(music - beat_t)
-		var crossed: float = _last_row[1] + (wall - _last_row[1]) * (MusicLadder.BEAT_DISTANCE - _last_row[0]) / (z + MusicLadder.BEAT_DISTANCE - _last_row[0])
+		var crossed: float = _last_row[2] + (wall - _last_row[2]) * (0.0 - _last_row[1]) / (z - _last_row[1])
 		if _wall_zero != INF:  # 첫 장애물 도착에서 정한 음악 0초 기준과 같은 시계로 잰다
 			_rows["wall"].append(crossed - (_wall_zero + beat_t))
-	_last_row = [z, wall]
+	_last_row = [beat, z, wall]
 
 
 static func _mean_max(values: Array) -> Dictionary:

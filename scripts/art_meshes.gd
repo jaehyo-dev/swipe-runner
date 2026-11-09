@@ -8,16 +8,13 @@ const TUBE_SIDES := 6
 const EDGE_RADIUS := 0.024
 const GRAIN_RADIUS := 0.014
 const ARROW_RADIUS := 0.03
-const POST_RADIUS := 0.016
 const PILLAR_ROOF_START := 1.75  # 지붕이 시작하는 높이 (꼭대기는 ObstacleField.BLOCK_HEIGHT)
 const LOW_CORNER := 0.13
 const HIGH_CORNER := 0.17
-const POST_X := 0.6              # 기둥 위치: 막대 끝(0.65) 안쪽이라 옆 레인을 침범하지 않는다
 const GRAIN_LEVEL := 0.55        # 세로 결 밝기 (모서리 = 1)
-const POST_LEVEL := 0.55
 const MIRROR_GLASS_ALPHA := 0.15 # 반사 불투명도: 15~25% 안에서 면은 낮게, 선은 높게
 const MIRROR_EDGE_ALPHA := 0.25
-const BAND_ALPHA := 0.42         # 막대 아래 바닥 빛 띠
+const BAND_ALPHA := 0.62         # 막대 아래 바닥 빛 띠: 기둥 없이 떠 있는 높이를 말해 준다
 
 var _v := PackedVector3Array()
 var _n := PackedVector3Array()
@@ -25,8 +22,8 @@ var _c := PackedColorArray()
 var _uv := PackedVector2Array()
 
 
-## 종류별 {glass, edges, mirror} 메시. tint: 면 색, edge: 선 색(반사에는 화면 범위로 줄여서 씀)
-static func obstacle(kind: ObstacleField.Kind, tint: Color, edge: Color) -> Dictionary:
+## 종류별 {glass, edges, mirror} 메시. 반사의 색은 재질 값이고(mirror.gdshader) 메시에는 면·선 구분과 불투명도만 담는다.
+static func obstacle(kind: ObstacleField.Kind) -> Dictionary:
 	var glass := ArtMeshes.new()
 	var lines := ArtMeshes.new()
 	match kind:
@@ -42,10 +39,10 @@ static func obstacle(kind: ObstacleField.Kind, tint: Color, edge: Color) -> Dict
 			glass._rounded_box(size, HIGH_CORNER, Vector3(0.0, ObstacleField.HIGH_BOTTOM + size.y * 0.5, 0.0), false)
 			lines._high_lines(size)
 	var mirror := ArtMeshes.new()
-	mirror._add_mirrored(glass, Color(tint.srgb_to_linear(), MIRROR_GLASS_ALPHA))
-	mirror._add_mirrored(lines, Color(Color(minf(edge.r, 1.0), minf(edge.g, 1.0), minf(edge.b, 1.0)).srgb_to_linear(), MIRROR_EDGE_ALPHA))
+	mirror._add_mirrored(glass, 0.0, MIRROR_GLASS_ALPHA)
+	mirror._add_mirrored(lines, 1.0, MIRROR_EDGE_ALPHA)
 	if kind == ObstacleField.Kind.HIGH:
-		mirror._floor_band(Color(tint.srgb_to_linear(), BAND_ALPHA))
+		mirror._floor_band(0.0, BAND_ALPHA)
 	return {"glass": glass.commit(), "edges": lines.commit(), "mirror": mirror.commit()}
 
 
@@ -137,9 +134,6 @@ func _high_lines(size: Vector3) -> void:
 	var z := size.z * 0.5 + 0.006
 	for x in [-0.27, 0.27]:
 		_arrow(Vector3(x, y, z), 0.17, 0.12, -1.0)
-	# 양끝 아주 가는 기둥 (판정 없음)
-	for x in [-POST_X, POST_X]:
-		_tube(Vector3(x, 0.0, 0.0), Vector3(x, ObstacleField.HIGH_BOTTOM + HIGH_CORNER, 0.0), POST_RADIUS, POST_LEVEL)
 
 
 ## 화살 하나: up이 1이면 ^, -1이면 v
@@ -214,20 +208,19 @@ func _rounded_box(size: Vector3, r: float, center: Vector3, flush: bool) -> void
 						_vertex(at, n, Color.WHITE)
 
 
-## 바닥 아래로 뒤집은 복제본을 넣는다 (mirror.gdshader가 바닥 면으로 눌러 그린다). 색과 불투명도는 꼭짓점 색에 담는다.
-func _add_mirrored(from: ArtMeshes, color: Color) -> void:
+## 바닥 아래로 뒤집은 복제본을 넣는다 (mirror.gdshader가 바닥 면으로 눌러 그린다). pick: 0 면 색, 1 선 색
+func _add_mirrored(from: ArtMeshes, pick: float, alpha: float) -> void:
 	for i in from._v.size():
 		var p := from._v[i]
-		var level: float = from._c[i].r
-		_vertex(Vector3(p.x, -p.y, p.z), from._n[i], Color(color.r, color.g, color.b, color.a * level))
+		_vertex(Vector3(p.x, -p.y, p.z), from._n[i], Color(pick, 0.0, 0.0, alpha * from._c[i].r))
 
 
-## 막대 바로 아래 바닥의 빛 띠: 가운데가 진하고 가장자리로 부드럽게 사라진다. 레인 안에만 있다.
-func _floor_band(color: Color) -> void:
-	var xs: Array[float] = [-0.73, -0.5, 0.5, 0.73]
-	var zs: Array[float] = [-0.65, -0.2, 0.2, 0.65]
+## 막대 바로 아래 바닥의 빛 띠: 가운데가 진하고 가장자리로 짧게 사라져 또렷하다. 레인 안에만 있다.
+func _floor_band(pick: float, alpha: float) -> void:
+	var xs: Array[float] = [-0.73, -0.6, 0.6, 0.73]
+	var zs: Array[float] = [-0.45, -0.25, 0.25, 0.45]
 	for i in 3:
 		for j in 3:
 			for uv: Vector2i in [Vector2i(i, j), Vector2i(i + 1, j), Vector2i(i + 1, j + 1), Vector2i(i, j), Vector2i(i + 1, j + 1), Vector2i(i, j + 1)]:
 				var inside: bool = uv.x in [1, 2] and uv.y in [1, 2]
-				_vertex(Vector3(xs[uv.x], 0.0, zs[uv.y]), Vector3.UP, Color(color.r, color.g, color.b, color.a if inside else 0.0))
+				_vertex(Vector3(xs[uv.x], 0.0, zs[uv.y]), Vector3.UP, Color(pick, 0.0, 0.0, alpha if inside else 0.0))

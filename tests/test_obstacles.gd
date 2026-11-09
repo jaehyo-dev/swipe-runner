@@ -15,7 +15,7 @@ func _run_for(field: ObstacleField, seconds: float, dt: float = 0.1) -> Dictiona
 
 
 func test_첫_입력에_음악_0초면_첫_장애물은_2_4초에_도착() -> void:
-	assert_eq(ObstacleField.new(1).step(0.0)["spawned"][0]["beat"], 4)
+	assert_eq(ObstacleField.new(1).step(0.0)["spawned"][0]["beat"], 4.0)
 
 
 func test_미리_놓기는_도착_박에서_거꾸로_계산하고_z_60보다_가까운_것만() -> void:
@@ -80,7 +80,8 @@ func test_지나가면_제거되고_목록에서_빠짐() -> void:
 func test_오래_달려도_장애물이_쌓이지_않음() -> void:
 	var field := ObstacleField.new(7)
 	var result := _run_for(field, 120.0)
-	var max_alive := ceili((ObstacleField.REMOVE_Z - ObstacleField.SPAWN_Z) / RunLogic.SPEED / 0.6) + 1
+	var rows := ceili((ObstacleField.REMOVE_Z - ObstacleField.SPAWN_Z) / MusicLadder.beat_distance(0)) + 1
+	var max_alive := rows * 3  # 한 줄에 최대 3개 (벽)
 	assert_true(field.items.size() <= max_alive, "살아 있는 수 %d" % field.items.size())
 	assert_eq(result["spawned"] - result["removed"].size(), field.items.size(), "생긴 수 - 지워진 수 = 남은 수")
 

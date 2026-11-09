@@ -8,9 +8,9 @@
 ## 정보
 - 저장소: https://github.com/jaehyo-dev/swipe-runner
 - 배포 주소: https://jaehyo-dev.github.io/swipe-runner/ (이전 버전: /versions/)
-- 테스트: `godot --headless --path . --import` 후 `bash tests/run_tests.sh` (종료 코드 확인), 도구 테스트 `python3 -m unittest discover -s tools -p "test_*.py"`
+- 테스트: `godot --headless --path . --import` 후 `bash tests/run_tests.sh` (종료 코드 확인), 도구 테스트 `python3 -m unittest discover -s tools -p "test_*.py"`, 난이도 표 `godot --headless --path . -s tools/difficulty_report.gd`
 - 웹 내보내기: `godot --headless --path . --export-release "Web" "$PWD/build/web/index.html"` (Compatibility 렌더러, 스레드 없음)
-- 구조: 계산은 `scripts/logic/`(화면과 분리, 자동 테스트), 화면은 `scripts/main.gd`·`runner.gd`·`art_meshes.gd`·`shaders/`, 소리는 오토로드 `scripts/audio_manager.gd`와 `scripts/web_music.gd`(효과음은 `tools/make_final_sounds.py`, 음악은 `tools/make_ladder_music.py`로 재현). 텍스처 그림은 쓰지 않는다.
+- 구조: 계산은 `scripts/logic/`(화면과 분리, 자동 테스트), 색 값은 `data/speed_palette.json`, 화면은 `scripts/main.gd`·`runner.gd`·`art_meshes.gd`·`shaders/`, 소리는 오토로드 `scripts/audio_manager.gd`와 `scripts/web_music.gd`(효과음은 `tools/make_final_sounds.py`, 음악은 `tools/make_ladder_music.py`로 재현). 텍스처 그림은 쓰지 않는다.
 
 ## 진행 방식
 - 큰 작업은 단계로 나누고 한 번에 한 단계만 만들어. 끝나면 멈추고 보고해. 다음 단계 기능을 미리 만들지 마.
@@ -43,3 +43,4 @@
 | v0.3.1 | 빈 시간 없애기, 소리 균형, 첫 시작 렉, 배경 음악 후보 | 완료 |
 | v0.4.0 | 속도와 템포가 같이 오르기(원본 → A → B), 최고 거리 기록 | 완료 |
 | v0.4.1 | 길과 장애물 아트: 유리 바닥·반사·난간·박자 물방울, 모양으로 읽히는 장애물 | 완료 |
+| v0.5.0 | 난이도(속도표, 8마디 템포, 단계별 패턴), 속도에 따라 진해지는 색, 장애물 반투명·막대 기둥 제거, 사람 모델 | 완료 |

@@ -7,15 +7,14 @@ const GLASS_SHADER := preload("res://shaders/glass.gdshader")
 const NEON_SHADER := preload("res://shaders/neon.gdshader")
 const MIRROR_SHADER := preload("res://shaders/mirror.gdshader")
 const DROPLET_SHADER := preload("res://shaders/droplet.gdshader")
+const SKY_SHADER := preload("res://shaders/sky.gdshader")
 const FONT := preload("res://assets/fonts/Poppins-ExtraLight.ttf")
-## 장애물 종류별 색 (ART_BIBLE.md 4번 표). 파랑 = 옆으로, 노랑 = 위로, 분홍 = 아래로.
-## glass: 유리 면 색(연하게 보임), edge: 선 HDR 색(1을 넘어 안개 속에서도 보이고 글로우로 살짝 번짐)
-## 화면은 1을 넘는 채널을 1로 자른다. 분홍은 빨강만 1을 넘겨야 자홍으로 옅어지지 않고, 노랑은 빨강·초록을 함께 넘겨야 주황이 아닌 노랑이 된다 (분홍과 색을 멀리 둠).
-## near: 가까이서 유리 면 불투명도. 턱은 낮아서 면이 진해야 노랑이 보라 바닥에 묻혀 살구색이 되지 않는다.
-const KIND_COLORS := {
-	ObstacleField.Kind.BLOCK: {"glass": Color("bfe6ff"), "near": 0.16, "edge": Color(0.8, 1.35, 1.8)},
-	ObstacleField.Kind.LOW: {"glass": Color("ffd25a"), "near": 0.42, "edge": Color(1.75, 1.5, 0.12)},
-	ObstacleField.Kind.HIGH: {"glass": Color("ff5fd2"), "near": 0.24, "edge": Color(1.65, 0.3, 0.95)},
+## 장애물 종류별 팔레트 이름 (색은 data/speed_palette.json). 파랑 = 옆으로, 노랑 = 위로, 분홍 = 아래로.
+## near: 유리 면 한 장의 불투명도. 앞뒤 두 면이 겹쳐 보이므로 화면에서는 1 - (1 - near)^2 = 약 60~65%다.
+const KINDS := {
+	ObstacleField.Kind.BLOCK: {"name": "block", "near": 0.37},
+	ObstacleField.Kind.LOW: {"name": "low", "near": 0.41},
+	ObstacleField.Kind.HIGH: {"name": "high", "near": 0.37},
 }
 
 const RESTART_DELAY := 0.5
@@ -26,20 +25,18 @@ const PREWARM_FAST_MS := 50
 const PREWARM_MAX_FRAMES := 120  # 아주 느린 기기도 언젠가는 화면을 연다
 const FLASH_TIME := 0.3      # 음악 단계가 오를 때 물방울과 난간이 빛나는 시간(초)
 ## 길 (ART_BIBLE.md 10). 밝기 순서: 주인공 > 장애물 선 > 난간·물방울 > 유리 면 > 바닥. 빛날 때도 장애물 선(가장 어두운 분홍 1.65)보다 어둡다.
-const RAIL_COLOR := Color(0.45, 0.5, 1.0)
-const RAIL_ENERGY := 1.15
-const RAIL_FLASH_ENERGY := 1.55
+const ROAD_PEAK_MAX := 1.6      # 난간·물방울의 가장 센 채널이 이보다 밝아지지 않는다
+const RAIL_FLASH_ADD := 0.4     # 단계가 오를 때 더하는 빛 세기
+const TINT_RESTART_TIME := 0.5  # 재시작 때 색이 돌아가는 시간(초)
+const SKY_RADIUS := 1500.0
 const RAIL_X := 2.36            # 난간 관 위치: 슬라이드로 퍼진 몸(1.5 + 0.775)이 닿지 않는 바깥
 const RAIL_Y := 0.09
 const RAIL_RADIUS := 0.08
 const RAIL_INNER_X := 2.14      # 안쪽 보조선
 const RAIL_INNER_RADIUS := 0.012
-const DROPLET_COLOR := Color(0.62, 0.68, 1.0)
 const DROPLET_RADIUS := 0.12
 const DROPLET_HEIGHT := 0.05    # 납작한 물방울 두께
 const DROPLET_LENGTH := 1.35    # 앞뒤 늘림: 낮은 시점에서 눌려 보이는 만큼 보정해 둥글게 보인다
-const DROPLET_ENERGY := 1.05
-const DROPLET_MAX_ENERGY := 1.55
 const POP_SCALE := 1.22      # 새 기록 순간 거리 숫자가 커지는 배율 (말랑)
 const POP_UP := 0.08
 const POP_DOWN := 0.32
@@ -71,8 +68,16 @@ var _floor_material: ShaderMaterial
 var _rail_material: ShaderMaterial
 var _droplets: MultiMeshInstance3D
 var _droplet_material: ShaderMaterial
-var _mirror_material: ShaderMaterial
-var _kind_meshes := {}  # Kind -> {mesh, edges, mirror: ArrayMesh, glass, edge: ShaderMaterial}
+var _kind_meshes := {}  # Kind -> {mesh, edges, mirror: ArrayMesh, glass, edge, reflect: ShaderMaterial}
+var _sky_material: ShaderMaterial
+var _env: Environment
+var _rail_energy := 1.0  # 지금 진하기의 난간 빛 세기
+var _road_max := 1.0     # 지금 색에서 ROAD_PEAK_MAX에 해당하는 빛 세기
+var _tint := -1.0        # 지금 화면의 색 진하기
+var _flash := 0.0        # 지금의 단계 빛남 (1 → 0)
+var _tint_from := -1.0   # 재시작 순간의 진하기. 음수면 돌아가는 중이 아니다
+var _tint_clock := 0.0   # 재시작 순간의 음악 시간
+var _row_transforms: Array[Transform3D] = []  # 물방울 한 줄의 크기·가로 자리 (z만 매 프레임 바뀐다)
 var _dead_time := 0.0
 var _restart_label: Label
 var _camera: Camera3D
@@ -85,7 +90,7 @@ var _music_t := 0.0  # 박자 기준 시간
 
 ## 시드를 고정했으면(주소의 ?seed, 테스트) 판마다 같은 배치, 아니면 판마다 새 배치
 func _new_field() -> void:
-	field = ObstacleField.new(seed_value if seed_value != 0 else randi() | 1)
+	field = ObstacleField.new(seed_value if seed_value != 0 else randi() | 1, AudioManager.ladder)
 
 
 func _ready() -> void:
@@ -98,6 +103,8 @@ func _ready() -> void:
 	_build_camera()
 	_build_floor()
 	_build_obstacle_resources()
+	_apply_tint(AudioManager.ladder.tint_at(0.0))
+	_place_rows()
 	runner = Runner.new()
 	runner.position = Vector3(RunLogic.lane_x(lane), 0.0, 0.0)
 	add_child(runner)
@@ -117,6 +124,7 @@ func begin() -> void:
 	started = true
 	_droplet_material.set_shader_parameter("sparkle_on", 1.0)
 	AudioManager.start_music()
+	field.ladder = AudioManager.ladder  # 음악과 함께 시작한 사다리: 경계가 여기에 쌓인다
 	_music_t = AudioManager.music_time
 	_move_world()
 
@@ -153,7 +161,8 @@ func _move_world() -> void:
 	travel = now
 	speed = ladder.speed_at(_music_t)
 	_floor_material.set_shader_parameter("scroll", _scroll)
-	_droplets.position.z = BeatRows.offset(travel)
+	_place_rows()
+	_apply_tint(_tint_now())
 	var beat_age: float = fposmod(ladder.beat_at(_music_t), 1.0) * MusicLadder.beat_time(ladder.segment_at(_music_t)["step"])
 	_droplet_material.set_shader_parameter("pulse", BeatRows.pulse(beat_age))
 	var age := ladder.stage_up_age(_music_t)
@@ -161,10 +170,64 @@ func _move_world() -> void:
 	_apply_step(field.step(travel))
 
 
+## 물방울 줄을 지금 박 자리에 놓는다. 음악 시간에서 바로 계산하므로 템포가 바뀌어도 박 줄은 박에 주인공 옆에 닿는다.
+func _place_rows() -> void:
+	var ladder := AudioManager.ladder
+	var now_beat := ladder.beat_at(_music_t)
+	for i in BeatRows.COUNT:
+		var z := BeatRows.row_z(ladder, _music_t, BeatRows.beat_of(i, now_beat))
+		for side in 2:
+			var slot := i * 2 + side
+			_row_transforms[slot].origin.z = z
+			_droplets.multimesh.set_instance_transform(slot, _row_transforms[slot])
+
+
+## 지금의 색 진하기: 사다리 값. 재시작 뒤 0.5초는 그 순간의 진하기에서 부드럽게 돌아간다.
+func _tint_now() -> float:
+	var target := AudioManager.ladder.tint_at(_music_t)
+	if _tint_from < 0.0:
+		return target
+	var back := (_music_t - _tint_clock) / TINT_RESTART_TIME
+	if back >= 1.0:
+		_tint_from = -1.0
+		return target
+	return lerpf(_tint_from, target, smoothstep(0.0, 1.0, maxf(back, 0.0)))
+
+
+## 진하기 t의 색을 재질 값으로만 옮긴다. 새 재질을 만들지 않아 셰이더를 다시 준비할 일이 없고, 값이 그대로면 아무것도 하지 않는다.
+func _apply_tint(t: float) -> void:
+	if t == _tint:
+		return
+	_tint = t
+	var c := SpeedPalette.at(t)
+	_sky_material.set_shader_parameter("top", c["sky_top"])
+	_sky_material.set_shader_parameter("horizon", c["horizon"])
+	_env.fog_light_color = c["horizon"]
+	_floor_material.set_shader_parameter("road_color", c["floor"])
+	_floor_material.set_shader_parameter("rail_color", c["rail"])
+	var rail: Color = c["rail"]
+	_rail_energy = c["rail_energy"]
+	_road_max = ROAD_PEAK_MAX / maxf(rail.r, maxf(rail.g, rail.b))
+	_rail_material.set_shader_parameter("color", rail)
+	_rail_material.set_shader_parameter("energy", minf(_rail_energy + RAIL_FLASH_ADD * _flash, _road_max))
+	_droplet_material.set_shader_parameter("color", rail)
+	_droplet_material.set_shader_parameter("base_energy", _rail_energy)
+	_droplet_material.set_shader_parameter("max_energy", _road_max)
+	for kind: ObstacleField.Kind in KINDS:
+		var name_: String = KINDS[kind]["name"]
+		var shape: Dictionary = _kind_meshes[kind]
+		var edge: Color = c[name_ + "_edge"]
+		shape["glass"].set_shader_parameter("tint", c[name_])
+		shape["edge"].set_shader_parameter("color", edge)
+		shape["reflect"].set_shader_parameter("glass_color", c[name_])
+		shape["reflect"].set_shader_parameter("edge_color", Color(minf(edge.r, 1.0), minf(edge.g, 1.0), minf(edge.b, 1.0)))  # 화면 범위로 줄인 선 색
+
+
 ## 단계가 오를 때의 빛남 (1 → 0)을 물방울과 난간에 준다.
 func _set_flash(amount: float) -> void:
+	_flash = amount
 	_droplet_material.set_shader_parameter("flash", amount)
-	_rail_material.set_shader_parameter("energy", lerpf(RAIL_ENERGY, RAIL_FLASH_ENERGY, amount))
+	_rail_material.set_shader_parameter("energy", minf(_rail_energy + RAIL_FLASH_ADD * amount, _road_max))
 
 
 ## field.step() 결과를 장애물 노드에 옮긴다.
@@ -229,8 +292,10 @@ func _game_over(item: Dictionary) -> void:
 func restart() -> void:
 	dead = false
 	_dead_time = 0.0
+	_tint_from = _tint  # 부딪힌 순간의 색에서 돌아간다
 	AudioManager.restart_music()
 	_music_t = AudioManager.music_time
+	_tint_clock = _music_t
 	travel = AudioManager.ladder.distance_at(_music_t)  # 출력 지연만큼 음수에서 출발: 다음 프레임에 길이 뒤로 튀지 않게
 	player = PlayerAction.new()
 	_swipe = SwipeDetector.new()
@@ -244,6 +309,8 @@ func restart() -> void:
 		fade.tween_property(node, "position:z", node.position.z + speed * OBSTACLE_FADE, OBSTACLE_FADE)
 		fade.chain().tween_callback(node.queue_free)
 	_place_ahead(true)
+	_droplets.position.z = 0.0  # 부딪힌 뒤 밀려 간 만큼 되돌린다
+	_place_rows()
 	_droplet_material.set_shader_parameter("sparkle_on", 1.0)
 	# 박자가 0박으로 돌아가며 물방울 격자가 옮겨 가는 순간을 장애물과 같은 '퐁'으로 가린다
 	var appear := func(a: float) -> void: _droplet_material.set_shader_parameter("appear", a)
@@ -355,7 +422,7 @@ func _make_obstacle(kind: ObstacleField.Kind, at_lane: int, z: float) -> MeshIns
 	body.mesh = shape["mesh"]
 	body.material_override = shape["glass"]
 	body.position = Vector3(RunLogic.lane_x(at_lane), 0.0, z)
-	for part: Array in [[shape["edges"], shape["edge"]], [shape["mirror"], _mirror_material]]:
+	for part: Array in [[shape["edges"], shape["edge"]], [shape["mirror"], shape["reflect"]]]:
 		var child := MeshInstance3D.new()
 		child.mesh = part[0]
 		child.material_override = part[1]
@@ -404,31 +471,33 @@ func _prewarm() -> void:
 # ---------- 장면 만들기 ----------
 
 func _build_environment() -> void:
-	# 하늘: 위는 어두운 남색, 지평선은 보라. 안개 색을 지평선과 맞춰 먼 곳이 자연스럽게 흐려진다.
-	var horizon := Color("4a2a86")
-	var sky_mat := ProceduralSkyMaterial.new()
-	sky_mat.sky_top_color = Color("060a24")
-	sky_mat.sky_horizon_color = horizon
-	sky_mat.ground_horizon_color = horizon
-	sky_mat.ground_bottom_color = Color("2a1659")
-	sky_mat.sky_curve = 0.18
-	var sky := Sky.new()
-	sky.sky_material = sky_mat
-	var env := Environment.new()
-	env.background_mode = Environment.BG_SKY
-	env.sky = sky
-	env.fog_enabled = true
-	env.fog_light_color = horizon
-	env.fog_density = 0.035
-	env.fog_sky_affect = 0.0
-	env.glow_enabled = true
-	env.glow_intensity = 1.0
-	env.glow_strength = 1.1
-	env.glow_bloom = 0.15
-	env.glow_hdr_threshold = 0.9
+	# 안개 색을 지평선과 맞춰 먼 곳이 자연스럽게 흐려진다. 색은 _apply_tint가 정한다.
+	_env = Environment.new()
+	_env.background_mode = Environment.BG_CLEAR_COLOR
+	_env.fog_enabled = true
+	_env.fog_density = 0.035
+	_env.fog_sky_affect = 0.0
+	_env.glow_enabled = true
+	_env.glow_intensity = 1.0
+	_env.glow_strength = 1.1
+	_env.glow_bloom = 0.15
+	_env.glow_hdr_threshold = 0.9
 	var world := WorldEnvironment.new()
-	world.environment = env
+	world.environment = _env
 	add_child(world)
+	_sky_material = ShaderMaterial.new()
+	_sky_material.shader = SKY_SHADER
+	var dome := SphereMesh.new()
+	dome.radius = SKY_RADIUS
+	dome.height = SKY_RADIUS * 2.0
+	dome.radial_segments = 16
+	dome.rings = 8
+	var sky := MeshInstance3D.new()
+	sky.name = "Sky"
+	sky.mesh = dome
+	sky.material_override = _sky_material
+	sky.position = Vector3(0.0, 3.3, 5.4)  # 카메라 자리
+	add_child(sky)
 
 
 func _build_camera() -> void:
@@ -449,7 +518,6 @@ func _fit_camera() -> void:
 func _build_floor() -> void:
 	_floor_material = ShaderMaterial.new()
 	_floor_material.shader = FLOOR_SHADER
-	_floor_material.set_shader_parameter("rail_color", RAIL_COLOR)
 	var plane := PlaneMesh.new()
 	plane.size = Vector2(400.0, 400.0)
 	var floor_node := MeshInstance3D.new()
@@ -464,8 +532,6 @@ func _build_floor() -> void:
 func _build_rails() -> void:
 	_rail_material = ShaderMaterial.new()
 	_rail_material.shader = NEON_SHADER
-	_rail_material.set_shader_parameter("color", RAIL_COLOR)
-	_rail_material.set_shader_parameter("energy", RAIL_ENERGY)
 	var rails := MeshInstance3D.new()
 	rails.name = "Rails"
 	rails.mesh = ArtMeshes.rails(RAIL_X, RAIL_Y, RAIL_RADIUS, RAIL_INNER_X, RAIL_INNER_RADIUS, 8.0, -128.0, 8.0)
@@ -473,29 +539,24 @@ func _build_rails() -> void:
 	add_child(rails)
 
 
-## 레인 경계 2줄의 물방울. 노드 하나를 BeatRows.offset(이동 거리)만큼 옮겨 모든 줄을 박에 맞춘다.
+## 레인 경계 2줄의 물방울. MultiMesh 하나에 담고 줄 z만 프레임마다 바꾼다 (_place_rows).
 func _build_droplets() -> void:
 	_droplet_material = ShaderMaterial.new()
 	_droplet_material.shader = DROPLET_SHADER
-	_droplet_material.set_shader_parameter("color", DROPLET_COLOR)
-	_droplet_material.set_shader_parameter("base_energy", DROPLET_ENERGY)
-	_droplet_material.set_shader_parameter("max_energy", DROPLET_MAX_ENERGY)
 	var drop := SphereMesh.new()
 	drop.radius = DROPLET_RADIUS
 	drop.height = DROPLET_HEIGHT
 	drop.radial_segments = 12
 	drop.rings = 4
-	var rows := BeatRows.LAST - BeatRows.FIRST + 1
 	var many := MultiMesh.new()
 	many.transform_format = MultiMesh.TRANSFORM_3D
 	many.mesh = drop
-	many.instance_count = rows * 2
-	for i in rows:
-		var row := BeatRows.FIRST + i
-		var s := 1.0 if BeatRows.is_beat_row(row) else BeatRows.SMALL_SCALE
-		var basis := Basis.from_scale(Vector3(s, s, s * DROPLET_LENGTH))
+	many.instance_count = BeatRows.COUNT * 2
+	for i in BeatRows.COUNT:
+		var size := 1.0 if BeatRows.is_beat_row(i) else BeatRows.SMALL_SCALE
+		var basis := Basis.from_scale(Vector3(size, size, size * DROPLET_LENGTH))
 		for side in 2:
-			many.set_instance_transform(i * 2 + side, Transform3D(basis, Vector3((side - 0.5) * RunLogic.LANE_WIDTH, DROPLET_HEIGHT * 0.5, BeatRows.row_z(row))))
+			_row_transforms.append(Transform3D(basis, Vector3((side - 0.5) * RunLogic.LANE_WIDTH, DROPLET_HEIGHT * 0.5, 0.0)))
 	_droplets = MultiMeshInstance3D.new()
 	_droplets.name = "Droplets"
 	_droplets.multimesh = many
@@ -504,20 +565,17 @@ func _build_droplets() -> void:
 
 
 func _build_obstacle_resources() -> void:
-	_mirror_material = ShaderMaterial.new()
-	_mirror_material.shader = MIRROR_SHADER
-	_mirror_material.render_priority = -1  # 젤리 발밑 그림자보다 먼저 그린다
-	for kind: ObstacleField.Kind in KIND_COLORS:
-		var colors: Dictionary = KIND_COLORS[kind]
-		var meshes := ArtMeshes.obstacle(kind, colors["glass"], colors["edge"])
+	for kind: ObstacleField.Kind in KINDS:
+		var meshes := ArtMeshes.obstacle(kind)
 		var glass := ShaderMaterial.new()
 		glass.shader = GLASS_SHADER
-		glass.set_shader_parameter("tint", colors["glass"])
-		glass.set_shader_parameter("near_alpha", colors["near"])
+		glass.set_shader_parameter("near_alpha", KINDS[kind]["near"])
 		var edge := ShaderMaterial.new()
 		edge.shader = NEON_SHADER
-		edge.set_shader_parameter("color", colors["edge"])
-		_kind_meshes[kind] = {"mesh": meshes["glass"], "edges": meshes["edges"], "mirror": meshes["mirror"], "glass": glass, "edge": edge}
+		var reflect := ShaderMaterial.new()
+		reflect.shader = MIRROR_SHADER
+		reflect.render_priority = -1  # 젤리 발밑 그림자보다 먼저 그린다
+		_kind_meshes[kind] = {"mesh": meshes["glass"], "edges": meshes["edges"], "mirror": meshes["mirror"], "glass": glass, "edge": edge, "reflect": reflect}
 
 
 func _build_ui() -> void:
