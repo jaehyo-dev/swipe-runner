@@ -449,6 +449,7 @@ func _fit_camera() -> void:
 func _build_floor() -> void:
 	_floor_material = ShaderMaterial.new()
 	_floor_material.shader = FLOOR_SHADER
+	_floor_material.set_shader_parameter("rail_color", RAIL_COLOR)
 	var plane := PlaneMesh.new()
 	plane.size = Vector2(400.0, 400.0)
 	var floor_node := MeshInstance3D.new()

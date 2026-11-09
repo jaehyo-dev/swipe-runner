@@ -158,18 +158,15 @@ func _outline(size: Vector3, bottom: float, r: float, z: float, flat_bottom: boo
 	var cr := r * sqrt(0.5)
 	var at_z: float = z - signf(z) * inset
 	var points: Array[Vector2] = []
-	for corner: Vector3 in [Vector3(half_x - cr, high - cr, 0.0), Vector3(-half_x + cr, high - cr, 90.0)]:
+	var corners: Array[Vector3] = [Vector3(half_x - cr, high - cr, 0.0), Vector3(-half_x + cr, high - cr, 90.0)]
+	if not flat_bottom:
+		corners += [Vector3(-half_x + cr, low + cr, 180.0), Vector3(half_x - cr, low + cr, 270.0)]
+	for corner in corners:
 		for i in 5:
 			var a := deg_to_rad(corner.z + 22.5 * i)
 			points.append(Vector2(corner.x + cos(a) * cr, corner.y + sin(a) * cr))
-	if flat_bottom:
-		points.append(Vector2(-half_x, low))
-		points.append(Vector2(half_x, low))
-	else:
-		for corner: Vector3 in [Vector3(-half_x + cr, low + cr, 180.0), Vector3(half_x - cr, low + cr, 270.0)]:
-			for i in 5:
-				var a := deg_to_rad(corner.z + 22.5 * i)
-				points.append(Vector2(corner.x + cos(a) * cr, corner.y + sin(a) * cr))
+	if flat_bottom:  # 왼쪽 위 모서리에서 내려와 바닥을 지나 처음 점으로 닫힌다
+		points += [Vector2(-half_x, low), Vector2(half_x, low)]
 	for i in points.size():
 		var p := points[i]
 		var q := points[(i + 1) % points.size()]

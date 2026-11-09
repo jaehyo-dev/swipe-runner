@@ -18,7 +18,6 @@ for (const [name, viewport, shots] of [['phone', { width: 390, height: 844 }, 4]
   await page.keyboard.press('ArrowLeft'); // 시드 143의 첫 장애물을 피하고 더 달린다
   await page.waitForTimeout(3200);
   await page.screenshot({ path: `${out}/${name}_run.png` });
-  await page.waitForFunction(() => true);
   await page.waitForTimeout(9000); // 그대로 두면 부딪힌다
   await page.screenshot({ path: `${out}/${name}_gameover.png` });
   if (shots === 4) {

@@ -22,7 +22,6 @@ for bpm in 100 130; do
 done
 movie "$root" top 31.6 130
 ffmpeg -y -v error -ss 1.5 -i "$tmp/top.avi" -t 30 -vf "scale=trunc(iw/2)*2:trunc(ih/2)*2" -c:v libx264 -crf 26 -preset medium -pix_fmt yuv420p -c:a aac -b:a 160k "$out/play_130.mp4"
-# 단계가 오르는 순간 (100 → ... 105 → 110 경계 비교)은 flash는 자동 테스트로 확인
 size "$root" 720x1280
 godot --path . --resolution 720x1280 res://tools/art_sheet.tscn -- "$tmp" 2>&1 | grep -E "SCRIPT ERROR" || true
 python3 "$out/read_sheet.py" "$tmp" "$out/read_sheet.png"

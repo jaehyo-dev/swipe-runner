@@ -1,5 +1,6 @@
 extends TestCase
 ## v0.4.1 길·장애물 아트의 규칙: 보이는 모양 = 판정 범위, 판정 값 그대로, 물방울 줄은 박에 닿음, 반사는 몸을 따라감.
+## 충돌 소리·음악을 실제로 켜서 AudioManager 상태가 남는다. test_audio보다 뒤에 돌도록 파일 이름을 test_track_로 시작한다.
 
 const K := ObstacleField.Kind
 const STEP := 1.0 / 60.0
@@ -133,11 +134,12 @@ func test_물방울_노드는_이동_거리를_따르고_멈추면_부풂과_반
 	var main := _make_main()
 	await wait_frames()
 	main.field.items.clear()
-	main.advance(2.0 + 0.02)  # 박 직후
+	main.advance(1.8 + 0.03)  # 3박(1.8초) 0.03초 뒤
 	var mat: ShaderMaterial = main._droplet_material
 	assert_true(is_equal_approx(main._droplets.position.z, fposmod(main.travel, 5.4)))
-	assert_true(mat.get_shader_parameter("pulse") >= 1.0)
-	main.dead = false
+	assert_true(mat.get_shader_parameter("pulse") > 1.1, "박 직후 부풂")
+	main.advance(0.2)
+	assert_eq(mat.get_shader_parameter("pulse"), 1.0, "0.15초 뒤 돌아옴")
 	var item := {"id": 7000, "lane": main.lane, "z": 0.0, "kind": K.BLOCK, "beat": 0, "arrive": main.travel}
 	main.field.items.append(item)
 	main._spawn_node(item)

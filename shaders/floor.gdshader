@@ -10,7 +10,7 @@ uniform vec3 road_color : source_color = vec3(0.141, 0.102, 0.29);   // #241A4A
 uniform vec3 sheen_color : source_color = vec3(0.55, 0.5, 1.0);
 uniform float sheen_strength = 0.05; // 빛 결 밝기 (너무 밝으면 줄무늬로 읽힌다)
 uniform float sheen_flow = 0.35;     // 세상보다 느리게 흘러 면 안쪽에 있는 빛처럼 보인다
-uniform vec3 rail_color : source_color = vec3(0.45, 0.5, 1.0);       // main.gd RAIL_COLOR와 같은 색조
+uniform vec3 rail_color : source_color;  // main.gd RAIL_COLOR
 uniform float rail_glow = 0.09;      // 가장자리에 비친 난간 빛
 
 varying vec3 wpos;
