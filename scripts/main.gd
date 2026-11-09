@@ -3,24 +3,30 @@ extends Node3D
 ## 계산은 scripts/logic/ 의 클래스가 맡고, 여기서는 그 결과를 화면에 옮기기만 한다.
 
 const FLOOR_SHADER := preload("res://shaders/floor.gdshader")
-const GLASS_SHADER := preload("res://shaders/glass.gdshader")
+const BLOCK_SHADER := preload("res://shaders/block.gdshader")
 const NEON_SHADER := preload("res://shaders/neon.gdshader")
 const MIRROR_SHADER := preload("res://shaders/mirror.gdshader")
-const DROPLET_SHADER := preload("res://shaders/droplet.gdshader")
+const DASH_SHADER := preload("res://shaders/dash.gdshader")
+const LASER_SHADER := preload("res://shaders/laser.gdshader")
+const STREAK_SHADER := preload("res://shaders/streak.gdshader")
+const SHARD_SHADER := preload("res://shaders/shard.gdshader")
 const SKY_SHADER := preload("res://shaders/sky.gdshader")
 const FONT := preload("res://assets/fonts/Poppins-ExtraLight.ttf")
-## 장애물 종류별 팔레트 이름 (색은 data/speed_palette.json). 파랑 = 옆으로, 노랑 = 위로, 분홍 = 아래로.
+## 장애물 종류별 팔레트 이름 (색은 data/speed_palette.json). 파랑 = 옆으로, 주황 = 위로, 분홍 = 아래로.
 const KINDS := {
 	ObstacleField.Kind.BLOCK: "block",
 	ObstacleField.Kind.LOW: "low",
 	ObstacleField.Kind.HIGH: "high",
 }
-## 그리는 순서: 반사(-1) → 주인공(0) → 장애물 깊이 → 장애물 색. 주인공이 먼저 깊이를 쓰므로 뒤에 있는 장애물은 주인공을 덮지 않는다.
-const DEPTH_PRIORITY := 1
-const COLOR_PRIORITY := 2
+## 투명한 것의 그리는 순서: 레이저(-2) → 반사(-1) → 주인공(0) → 조각(1). 주인공은 화면 복사 위에 ALPHA 1로 그리므로 먼저 그린 가산 빛을 덮는다.
+const LASER_PRIORITY := -2
+const SHARD_PRIORITY := 1
 const MAX_PIECES := 96       # 종류마다 동시에 그릴 수 있는 장애물 수. z -60~+6에 들어오는 수보다 넉넉하다
-const FOLLOW_GAP := 22.0     # 같은 레인의 앞 기둥이 이만큼 안이면 연속 기둥으로 본다 (2박 + 조금)
-const FOLLOW_HAZE := 0.3     # 연속 기둥의 뒤쪽 것이 안개 색으로 흐려지는 양
+const FOLLOW_GAP := 22.0     # 같은 레인의 앞 블록이 이만큼 안이면 연속 블록으로 본다 (2박 + 조금)
+const FOLLOW_HAZE := 0.3     # 연속 블록의 뒤쪽 것이 안개 색으로 흐려지는 양
+const FOG_DENSITY := 0.035   # 세상 전체의 안개. 장애물만 안개를 끄고 직접 섞는다 (block.gdshader)
+const GLOW_INTENSITY := 1.3  # 얇은 관에서도 바깥으로 빛이 번지게
+const GLOW_WIDE := 0.6       # 넓게 퍼지는 번짐 층
 const GLOW_LOW := 0.5        # 프레임이 밀릴 때 낮춘 빛 번짐 세기
 
 const RESTART_DELAY := 0.5
@@ -29,24 +35,24 @@ const POP_TIME := 0.25       # 다시 시작할 때 새 장애물이 바닥에�
 const PREWARM_FRAMES := 3    # 가림막 뒤에서 이만큼 연달아 빠른 프레임이 나오면 준비 끝 (셰이더는 그래픽 쪽에서 늦게 끝날 수 있다)
 const PREWARM_FAST_MS := 50
 const PREWARM_MAX_FRAMES := 120  # 아주 느린 기기도 언젠가는 화면을 연다
-const FLASH_TIME := 0.3      # 음악 단계가 오를 때 물방울과 난간이 빛나는 시간(초)
-## 길 (ART_BIBLE.md 10). 밝기 순서: 주인공 > 장애물 선 > 난간·물방울 > 유리 면 > 바닥. 빛날 때도 장애물 선(가장 어두운 분홍 1.65)보다 어둡다.
-const ROAD_PEAK_MAX := 1.6      # 난간·물방울의 가장 센 채널이 이보다 밝아지지 않는다
-const RAIL_FLASH_ADD := 0.4     # 단계가 오를 때 더하는 빛 세기
+const FLASH_TIME := 0.3      # 음악 단계가 오를 때 레이저 전체가 번쩍이는 시간(초)
+## 무대 (ART_BIBLE.md 10). 밝기 순서: 주인공 > 장애물 기호 > 테두리 > 레이저·난간 > 빛 줄기 > 바닥·하늘
+const ROAD_PEAK_MAX := StageLight.PEAK_MAX  # 대시의 가장 센 채널이 이보다 밝아지지 않는다
 const TINT_RESTART_TIME := 0.5  # 재시작 때 색이 돌아가는 시간(초)
 const SKY_RADIUS := 1500.0
-const RAIL_X := 2.36            # 난간 관 위치: 슬라이드로 퍼진 몸(1.5 + 0.775)이 닿지 않는 바깥
-const RAIL_Y := 0.09
-const RAIL_RADIUS := 0.08
-const RAIL_INNER_X := 2.14      # 안쪽 보조선
-const RAIL_INNER_RADIUS := 0.012
-const DROPLET_RADIUS := 0.12
-const DROPLET_HEIGHT := 0.05    # 납작한 물방울 두께
-const DROPLET_LENGTH := 1.35    # 앞뒤 늘림: 낮은 시점에서 눌려 보이는 만큼 보정해 둥글게 보인다
+const RAIL_X := 2.38            # 난간 관 위치: 슬라이드로 퍼진 몸(1.5 + 0.775)이 닿지 않는 바깥
+const RAIL_Y := 0.1
+const RAIL_RADIUS := 0.1
+const DASH_SIZE := Vector3(0.07, 0.02, 1.2)  # 레인 경계 빛 대시
+const STREAK_MAX := 48          # 빛 줄기 풀 (data/speed_palette.json의 t = 1 값)
+const STREAK_SEED := 606        # 줄기 자리를 고정하는 시드
+const STREAK_X := Vector2(2.9, 8.0)  # 길 바깥 좌우 거리
+const STREAK_Y := Vector2(0.4, 7.0)
+const SHARD_POOL := 128         # 동시에 그릴 수 있는 조각 수: 줄 3개 × 세 레인 × 14조각보다 넉넉하다
 const POP_SCALE := 1.22      # 새 기록 순간 거리 숫자가 커지는 배율 (말랑)
 const POP_UP := 0.08
 const POP_DOWN := 0.32
-const BOOT_COLOR := Color(0.027, 0.04, 0.14)  # project.godot boot_splash/bg_color와 같은 색: 로딩에서 가림막으로 이어져 보이게
+const BOOT_COLOR := Color(0.02, 0.016, 0.051)  # project.godot boot_splash/bg_color와 같은 색: 로딩에서 가림막으로 이어져 보이게
 
 ## 0이면 실행할 때마다 무작위. 테스트에서는 0이 아닌 값을 줘서 장애물 레인을 고정한다.
 @export var seed_value := 0
@@ -76,21 +82,30 @@ var _animating := 0              # 크기가 변하는 중인 트윈 수
 var _pieces_root: Node3D         # 장애물 MultiMesh의 부모. 세상과 함께 움직여 장애물마다 값을 바꾸지 않는다
 var _floor_material: ShaderMaterial
 var _rail_material: ShaderMaterial
-var _droplets: MultiMeshInstance3D
-var _droplet_material: ShaderMaterial
-var _kind_meshes := {}  # Kind -> {body, mirror: MultiMesh, depth, glass, reflect: ShaderMaterial}
+var _dashes: MultiMeshInstance3D
+var _dash_material: ShaderMaterial
+var _laser_material: ShaderMaterial
+var _streak_material: ShaderMaterial
+var _streaks: MultiMesh
+var _shards: MultiMesh
+var _shard_free: Array[int] = []       # 비어 있는 조각 칸
+var _shard_live: Array[Dictionary] = []  # 살아 있는 조각: {slot, owner, birth, from, velocity, size, spin, color}
+var _stage_clock := 0.0                # 레이저와 조각의 시계: 재시작해도 되돌아가지 않는다
+var _kind_meshes := {}  # Kind -> {body, mirror: MultiMesh, block, reflect: ShaderMaterial}
 var _sky_material: ShaderMaterial
 var _env: Environment
-var _rail_energy := 1.0  # 지금 진하기의 난간 빛 세기
-var _road_max := 1.0     # 지금 색에서 ROAD_PEAK_MAX에 해당하는 빛 세기
+var _laser_base := 0.5   # 지금 진하기의 레이저 빛 세기
+var _laser_peak := 1.0   # 지금 레이저 색의 가장 센 채널
 var _tint := -1.0        # 지금 화면의 색 진하기
 var _flash := 0.0        # 지금의 단계 빛남 (1 → 0)
+var _beat_flash := 0.0   # 지금의 박 번쩍임 비율
 var _tint_from := -1.0   # 재시작 순간의 진하기. 음수면 돌아가는 중이 아니다
 var _tint_clock := 0.0   # 재시작 순간의 음악 시간
 var _row_beats: Array[float] = []  # 칸마다 지금 담긴 박. 바뀐 칸만 다시 쓴다
-var _row_segments := 0            # 물방울 줄을 쓸 때의 사다리 구간 수. 구간이 늘면 앞으로 올 줄의 자리가 바뀐다
+var _row_segments := 0            # 대시 줄을 쓸 때의 사다리 구간 수. 구간이 늘면 앞으로 올 줄의 자리가 바뀐다
 var _row_ladder: MusicLadder
 var _quality := QualityGuard.new()
+var _effect_level := 0  # 지금 적용된 효과 단계
 var _last_frame_usec := 0
 var _dead_time := 0.0
 var _restart_label: Label
@@ -109,6 +124,7 @@ class Piece:
 	var position: Vector3
 	var scale := Vector3.ONE
 	var haze := 0.0
+	var broken := false  # 부서지고 판정도 끝나 그리지 않는다
 
 
 ## 시드를 고정했으면(주소의 ?seed, 테스트) 판마다 같은 배치, 아니면 판마다 새 배치
@@ -156,14 +172,18 @@ func _watch_frames() -> void:
 	_last_frame_usec = now
 
 
-## 효과 단계: 1 반사 끄기, 2 MSAA 2x, 3 빛 번짐 낮추기. 이 단계까지 전부 적용한다.
+## 효과 단계: 1 빛 줄기 줄이기, 2 레이저 줄이기, 3 반사 끄기, 4 MSAA 2x, 5 빛 번짐 낮추기. 이 단계까지 전부 적용한다.
 func apply_quality(level: int) -> void:
+	_effect_level = level
+	var t := _tint
+	_tint = -1.0
+	_apply_tint(t)  # 줄기·레이저 수는 진하기 값과 함께 정해진다
 	for kind in _kind_meshes:
-		_kind_meshes[kind]["reflect"].set_shader_parameter("reflect_on", 0.0 if level >= 1 else 1.0)
-	runner.set_reflection(level < 1)
-	if level >= 2:
+		_kind_meshes[kind]["reflect"].set_shader_parameter("reflect_on", 0.0 if level >= 3 else 1.0)
+	runner.set_reflection(level < 3)
+	if level >= 4:
 		get_viewport().msaa_3d = Viewport.MSAA_2X
-	if level >= 3:
+	if level >= 5:
 		_env.glow_intensity = GLOW_LOW
 
 
@@ -175,7 +195,7 @@ func _fit_render_scale() -> void:
 ## 첫 입력: 음악 0초와 함께 세상이 출발한다. 미리 놓인 장애물을 음악 시간에 맞춘다 (출력 지연만큼의 차이).
 func begin() -> void:
 	started = true
-	_droplet_material.set_shader_parameter("sparkle_on", 1.0)
+	_dash_material.set_shader_parameter("sparkle_on", 1.0)
 	AudioManager.start_music()
 	field.ladder = AudioManager.ladder  # 음악과 함께 시작한 사다리: 경계가 여기에 쌓인다
 	_music_t = AudioManager.music_time
@@ -186,6 +206,9 @@ func begin() -> void:
 ## 세상은 음악 시간에서 계산한 이동 거리만큼 움직이고, 주인공 동작은 프레임 시간으로 움직인다.
 func advance(delta: float, music_t := NAN) -> void:
 	_music_t = _music_t + delta if is_nan(music_t) else music_t
+	_stage_clock += delta
+	_laser_material.set_shader_parameter("clock", _stage_clock)
+	_step_shards()
 	if dead:
 		_advance_dead(delta)
 		return
@@ -199,35 +222,47 @@ func advance(delta: float, music_t := NAN) -> void:
 	_distance_label.text = str(int(travel))
 	if record.update(int(travel)):
 		_on_new_record()
+	var shattered := false
 	for item in field.items:
 		var dx := runner.position.x - RunLogic.lane_x(item["lane"])
 		if not item.has("cleared") and PlayerAction.hits(item["kind"], dx, item["z"], player.height(), player.is_ducking()):
 			_game_over(item)
 			return
+		if item["z"] >= 0.0 and not item.has("broken"):
+			item["broken"] = true
+			_shatter(item)
+			shattered = true
+		if item.has("broken") and item["z"] > PlayerAction.HIT_Z and not _obstacles[item["id"]].broken:
+			_obstacles[item["id"]].broken = true  # 판정이 끝난 뒤에야 몸통을 숨긴다: 보이지 않는 장애물에 부딪히는 일이 없다
+			_pieces_dirty = true
+	if shattered:  # 같은 박에 여러 개가 부서져도 소리는 하나
+		AudioManager.play_shatter()
 
 
-## 음악 시간에서 이동 거리·속도·물방울 박자·빛남을 구해 세상에 옮긴다.
+## 음악 시간에서 이동 거리·속도·대시 박자·레이저 번쩍임을 구해 세상에 옮긴다.
 func _move_world() -> void:
 	var ladder := AudioManager.ladder
 	var now := ladder.distance_at(_music_t)
 	_scroll += now - travel
 	travel = now
 	speed = ladder.speed_at(_music_t)
-	_floor_material.set_shader_parameter("scroll", _scroll)
+	_streak_material.set_shader_parameter("scroll", _scroll)
 	_place_rows()
 	_apply_tint(_tint_now())
-	var beat_age: float = fposmod(ladder.beat_at(_music_t), 1.0) * MusicLadder.beat_time(ladder.segment_at(_music_t)["step"])
-	_droplet_material.set_shader_parameter("pulse", BeatRows.pulse(beat_age))
+	var beat := ladder.beat_at(_music_t)
+	var beat_time := MusicLadder.beat_time(ladder.segment_at(_music_t)["step"])
+	_dash_material.set_shader_parameter("pulse", BeatRows.pulse(fposmod(beat, 1.0) * beat_time))
+	_beat_flash = StageLight.beat_flash(beat, beat_time)
 	var age := ladder.stage_up_age(_music_t)
 	_set_flash(1.0 - age / FLASH_TIME if age >= 0.0 and age < FLASH_TIME else 0.0)
 	_apply_step(field.step(travel))
 
 
-## 물방울 줄을 지금 박 자리에 놓는다. 음악 시간에서 바로 계산하므로 템포가 바뀌어도 박 줄은 박에 주인공 옆에 닿는다.
+## 대시 줄을 지금 박 자리에 놓는다. 음악 시간에서 바로 계산하므로 템포가 바뀌어도 박 줄은 박에 주인공 옆에 닿는다.
 ## 줄은 이동 거리 좌표로 고정해 두고 부모만 움직인다. 값을 쓰는 칸은 새로 들어온 박과, 구간이 늘어 자리가 바뀐 줄뿐이다.
 func _place_rows() -> void:
 	var ladder := AudioManager.ladder
-	_droplets.position.z = ladder.distance_at(_music_t)
+	_dashes.position.z = ladder.distance_at(_music_t)
 	var now_beat := ladder.beat_at(_music_t)
 	var rewrite := ladder != _row_ladder or ladder.segments.size() != _row_segments
 	_row_ladder = ladder
@@ -238,11 +273,9 @@ func _place_rows() -> void:
 		if not rewrite and _row_beats[slot] == beat:
 			continue
 		_row_beats[slot] = beat
-		var size := 1.0 if BeatRows.is_beat_row(slot) else BeatRows.SMALL_SCALE
-		var basis := Basis.from_scale(Vector3(size, size, size * DROPLET_LENGTH))
 		for side in 2:
-			var origin := Vector3((side - 0.5) * RunLogic.LANE_WIDTH, DROPLET_HEIGHT * 0.5, -ladder.distance_of_beat(beat))
-			_droplets.multimesh.set_instance_transform(slot * 2 + side, Transform3D(basis, origin))
+			var origin := Vector3((side - 0.5) * RunLogic.LANE_WIDTH, DASH_SIZE.y * 0.5, -ladder.distance_of_beat(beat))
+			_dashes.multimesh.set_instance_transform(slot * 2 + side, Transform3D(Basis.IDENTITY, origin))
 
 
 ## 지금의 색 진하기: 사다리 값. 재시작 뒤 0.5초는 그 순간의 진하기에서 부드럽게 돌아간다.
@@ -268,30 +301,80 @@ func _apply_tint(t: float) -> void:
 	_env.fog_light_color = c["horizon"]
 	_floor_material.set_shader_parameter("road_color", c["floor"])
 	_floor_material.set_shader_parameter("rail_color", c["rail"])
+	_floor_material.set_shader_parameter("haze_color", c["horizon"])
+	_rail_material.set_shader_parameter("color", c["rail"])
+	_rail_material.set_shader_parameter("energy", c["rail_energy"])
 	var rail: Color = c["rail"]
-	_rail_energy = c["rail_energy"]
-	_road_max = ROAD_PEAK_MAX / maxf(rail.r, maxf(rail.g, rail.b))
-	_rail_material.set_shader_parameter("color", rail)
-	_rail_material.set_shader_parameter("energy", minf(_rail_energy + RAIL_FLASH_ADD * _flash, _road_max))
-	_droplet_material.set_shader_parameter("color", rail)
-	_droplet_material.set_shader_parameter("base_energy", _rail_energy)
-	_droplet_material.set_shader_parameter("max_energy", _road_max)
+	_dash_material.set_shader_parameter("color", rail)
+	_dash_material.set_shader_parameter("max_energy", ROAD_PEAK_MAX / maxf(rail.r, maxf(rail.g, rail.b)))
+	var blue: Color = c["laser_blue"]
+	var pink: Color = c["laser_pink"]
+	_laser_material.set_shader_parameter("blue", blue)
+	_laser_material.set_shader_parameter("pink", pink)
+	_laser_material.set_shader_parameter("count", QualityGuard.lasers(c["laser_count"], _effect_level))
+	_laser_base = c["laser_energy"]
+	_laser_peak = maxf(maxf(blue.r, maxf(blue.g, blue.b)), maxf(pink.r, maxf(pink.g, pink.b)))
+	_set_flash(_flash)
+	_streaks.visible_instance_count = QualityGuard.streaks(c["streak_count"], _effect_level)
+	_streak_material.set_shader_parameter("streak_length", c["streak_length"])
+	_streak_material.set_shader_parameter("level", c["streak_alpha"])
 	for kind: ObstacleField.Kind in KINDS:
 		var name_: String = KINDS[kind]
 		var shape: Dictionary = _kind_meshes[kind]
 		var edge: Color = c[name_ + "_edge"]
-		shape["glass"].set_shader_parameter("tint", c[name_])
-		shape["glass"].set_shader_parameter("edge_color", edge)
-		shape["glass"].set_shader_parameter("fog_color", c["horizon"])
-		shape["reflect"].set_shader_parameter("glass_color", c[name_])
-		shape["reflect"].set_shader_parameter("edge_color", Color(minf(edge.r, 1.0), minf(edge.g, 1.0), minf(edge.b, 1.0)))  # 화면 범위로 줄인 선 색
+		shape["block"].set_shader_parameter("body_color", c["body"])
+		shape["block"].set_shader_parameter("tint", c[name_])
+		shape["block"].set_shader_parameter("edge_color", edge)
+		shape["block"].set_shader_parameter("mark_color", c[name_ + "_mark"])
+		shape["block"].set_shader_parameter("fog_color", c["horizon"])
+		shape["reflect"].set_shader_parameter("body_color", c["body"])
+		shape["reflect"].set_shader_parameter("edge_color", Color(minf(edge.r, 1.0), minf(edge.g, 1.0), minf(edge.b, 1.0)))  # 화면 범위로 줄인 빛 색
 
 
-## 단계가 오를 때의 빛남 (1 → 0)을 물방울과 난간에 준다.
+## 단계가 오를 때의 빛남 (1 → 0)과 박 번쩍임을 레이저에 준다.
 func _set_flash(amount: float) -> void:
 	_flash = amount
-	_droplet_material.set_shader_parameter("flash", amount)
-	_rail_material.set_shader_parameter("energy", minf(_rail_energy + RAIL_FLASH_ADD * amount, _road_max))
+	_laser_material.set_shader_parameter("energy", StageLight.energy(_laser_base, _beat_flash, amount, _laser_peak))
+
+
+## 장애물이 박에 빛 조각으로 부서진다. 판정은 그대로라 z 0.7까지는 아직 부딪힐 수 있어 몸통은 그때까지 남긴다 (2~3프레임, advance).
+func _shatter(item: Dictionary) -> void:
+	var name_: String = KINDS[item["kind"]]
+	var c := SpeedPalette.at(_tint)
+	var color: Color = c[name_ + "_edge"]
+	var bright: Color = c[name_ + "_mark"]
+	var at := Vector3(RunLogic.lane_x(item["lane"]), 0.0, item["z"])
+	for shard: Dictionary in Shatter.burst(item["kind"], item["id"] * 7919 + 1, speed):
+		if _shard_free.is_empty():
+			break  # 풀이 차면 조각을 덜 그린다
+		shard["slot"] = _shard_free.pop_back()
+		shard["owner"] = item["id"]
+		shard["birth"] = _stage_clock
+		shard["from"] += at
+		shard["color"] = (bright if shard["mark"] else color).srgb_to_linear()  # 인스턴스 색은 source_color 변환을 거치지 않는다
+		_shard_live.append(shard)
+	_step_shards()
+
+
+## 살아 있는 조각만 값을 쓴다. 조각이 없는 프레임에는 아무것도 하지 않는다.
+func _step_shards() -> void:
+	for i in range(_shard_live.size() - 1, -1, -1):
+		var shard: Dictionary = _shard_live[i]
+		var age: float = _stage_clock - shard["birth"]
+		var fade := Shatter.fade(age)
+		if fade <= 0.0:
+			_free_shard(i)
+			continue
+		var basis := Basis.from_euler(shard["spin"] * (1.0 + age * 5.0)).scaled(Vector3.ONE * shard["size"] * sqrt(fade))
+		_shards.set_instance_transform(shard["slot"], Transform3D(basis, Shatter.position_at(shard, age)))
+		_shards.set_instance_color(shard["slot"], shard["color"] * fade)
+
+
+func _free_shard(index: int) -> void:
+	var slot: int = _shard_live[index]["slot"]
+	_shards.set_instance_transform(slot, Transform3D(Basis.from_scale(Vector3.ZERO), Vector3.ZERO))
+	_shard_free.append(slot)
+	_shard_live.remove_at(index)
 
 
 ## field.step() 결과를 장애물 노드에 옮긴다.
@@ -338,7 +421,7 @@ func _sync_pieces() -> void:
 		used[kind] = 0
 	for piece: Piece in _obstacles.values() + _leaving:
 		var slot: int = used[piece.kind]
-		if slot >= MAX_PIECES:
+		if slot >= MAX_PIECES or piece.broken:
 			continue
 		used[piece.kind] = slot + 1
 		var at := Transform3D(Basis.from_scale(piece.scale), Vector3(piece.position.x, piece.position.y, piece.position.z - _scroll))
@@ -356,8 +439,8 @@ func _advance_dead(delta: float) -> void:
 	var slow := CrashMotion.slow_delta(_dead_time, delta)
 	_dead_time += delta
 	_scroll += speed * slow
-	_floor_material.set_shader_parameter("scroll", _scroll)
-	_droplets.position.z += speed * slow
+	_streak_material.set_shader_parameter("scroll", _scroll)
+	_dashes.position.z += speed * slow
 	for item in field.items:
 		item["z"] += speed * slow
 		_obstacles[item["id"]].position.z = item["z"]
@@ -373,9 +456,14 @@ func _game_over(item: Dictionary) -> void:
 	dead = true
 	_dead_time = 0.0
 	AudioManager.play_crash()
+	_beat_flash = 0.0
 	_set_flash(0.0)
-	_droplet_material.set_shader_parameter("pulse", 1.0)
-	_droplet_material.set_shader_parameter("sparkle_on", 0.0)
+	_dash_material.set_shader_parameter("pulse", 0.0)
+	_dash_material.set_shader_parameter("sparkle_on", 0.0)
+	if item.has("broken"):  # 부서진 직후 판정 범위 안에서 부딪혔다: 충돌한 장애물은 부서지지 않는다
+		for i in range(_shard_live.size() - 1, -1, -1):
+			if _shard_live[i]["owner"] == item["id"]:
+				_free_shard(i)
 	record.save()
 	_best_label.visible = true
 	_best_label.text = ("NEW BEST %d" if record.broken else "BEST %d") % record.best
@@ -409,11 +497,11 @@ func restart() -> void:
 			_leaving.erase(piece)
 			_animation_done())
 	_place_ahead(true)
-	_droplets.position.z = 0.0  # 부딪힌 뒤 밀려 간 만큼 되돌린다
+	_dashes.position.z = 0.0  # 부딪힌 뒤 밀려 간 만큼 되돌린다
 	_place_rows()
-	_droplet_material.set_shader_parameter("sparkle_on", 1.0)
-	# 박자가 0박으로 돌아가며 물방울 격자가 옮겨 가는 순간을 장애물과 같은 '퐁'으로 가린다
-	var appear := func(a: float) -> void: _droplet_material.set_shader_parameter("appear", a)
+	_dash_material.set_shader_parameter("sparkle_on", 1.0)
+	# 박자가 0박으로 돌아가며 대시 격자가 옮겨 가는 순간을 장애물과 같은 '퐁'으로 가린다
+	var appear := func(a: float) -> void: _dash_material.set_shader_parameter("appear", a)
 	appear.call(0.0)
 	create_tween().tween_method(appear, 0.0, 1.0, POP_TIME).set_trans(Tween.TRANS_BACK).set_ease(Tween.EASE_OUT)
 	_camera.h_offset = 0.0
@@ -519,7 +607,7 @@ func _spawn_node(item: Dictionary) -> void:
 	_pieces_dirty = true
 
 
-## 같은 레인에 바로 앞서 오는 기둥이 있으면 뒤쪽 것을 조금 흐리게 한다: 연속 기둥이 한 덩어리로 보이지 않게 하는 깊이 단서
+## 같은 레인에 바로 앞서 오는 옆 블록이 있으면 뒤쪽 것을 조금 흐리게 한다: 연속 블록이 한 덩어리로 보이지 않게 하는 깊이 단서
 func _haze_of(piece: Piece) -> float:
 	if piece.kind != ObstacleField.Kind.BLOCK:
 		return 0.0
@@ -536,6 +624,13 @@ func clear_pieces() -> void:
 	_pieces_dirty = true
 
 
+## 조각 재질도 첫 부서짐 전에 한 번 그려 둔다 (가림막 뒤, 풀에 바로 돌려줌)
+func _shatter_sample() -> void:
+	var slot: int = _shard_free.pop_back()
+	_shard_live.append({"slot": slot, "owner": -1, "birth": _stage_clock, "from": Vector3(0.0, 1.0, -4.0), "velocity": Vector3.ZERO, "size": 0.2, "spin": Vector3.ZERO, "color": Color.WHITE})
+	_step_shards()
+
+
 ## 웹은 재질이 처음 그려질 때 셰이더를 만들어 그 프레임이 막힌다. 첫 화면 전에 가림막 뒤에서 모두 한 번씩 그려 둔다.
 ## 같은 뷰포트에서 그려야 안개·글로우까지 같은 셰이더 조합이 준비된다.
 func _prewarm() -> void:
@@ -549,6 +644,7 @@ func _prewarm() -> void:
 		samples.append(sample)
 		_leaving.append(sample)
 	_pieces_dirty = true
+	_shatter_sample()
 	var drop: MeshInstance3D = runner.make_prewarm_drop()
 	drop.position = Vector3(0.0, 1.0, -3.0)
 	world.add_child(drop)
@@ -578,6 +674,8 @@ func _prewarm() -> void:
 	for sample in samples:
 		_leaving.erase(sample)
 	_pieces_dirty = true
+	for i in range(_shard_live.size() - 1, -1, -1):
+		_free_shard(i)
 	prewarmed = true
 	if OS.has_feature("web"):
 		JavaScriptBridge.eval("window.gameReady = performance.now()")  # 첫 화면이 드러난 시각: 프레임 측정의 시작점
@@ -590,11 +688,12 @@ func _build_environment() -> void:
 	_env = Environment.new()
 	_env.background_mode = Environment.BG_CLEAR_COLOR
 	_env.fog_enabled = true
-	_env.fog_density = 0.035
+	_env.fog_density = FOG_DENSITY
 	_env.fog_sky_affect = 0.0
 	_env.glow_enabled = true
-	_env.glow_intensity = 1.0
+	_env.glow_intensity = GLOW_INTENSITY
 	_env.glow_strength = 1.1
+	_env.set_glow_level(3, GLOW_WIDE)
 	_env.glow_bloom = 0.15
 	_env.glow_hdr_threshold = 0.9
 	var world := WorldEnvironment.new()
@@ -641,7 +740,10 @@ func _build_floor() -> void:
 	floor_node.position = Vector3(0.0, 0.0, -140.0)
 	add_child(floor_node)
 	_build_rails()
-	_build_droplets()
+	_build_dashes()
+	_build_lasers()
+	_build_streaks()
+	_build_shards()
 
 
 func _build_rails() -> void:
@@ -649,33 +751,88 @@ func _build_rails() -> void:
 	_rail_material.shader = NEON_SHADER
 	var rails := MeshInstance3D.new()
 	rails.name = "Rails"
-	rails.mesh = ArtMeshes.rails(RAIL_X, RAIL_Y, RAIL_RADIUS, RAIL_INNER_X, RAIL_INNER_RADIUS, 8.0, -128.0, 8.0)
+	rails.mesh = ArtMeshes.rails(RAIL_X, RAIL_Y, RAIL_RADIUS, 8.0, -128.0, 8.0)
 	rails.material_override = _rail_material
 	add_child(rails)
 
 
-## 레인 경계 2줄의 물방울. MultiMesh 하나에 담고 줄 z만 프레임마다 바꾼다 (_place_rows).
-func _build_droplets() -> void:
-	_droplet_material = ShaderMaterial.new()
-	_droplet_material.shader = DROPLET_SHADER
-	var drop := SphereMesh.new()
-	drop.radius = DROPLET_RADIUS
-	drop.height = DROPLET_HEIGHT
-	drop.radial_segments = 12
-	drop.rings = 4
+## 레인 경계 2줄의 대시. MultiMesh 하나에 담고 새 박의 줄만 값을 쓴다 (_place_rows).
+func _build_dashes() -> void:
+	_dash_material = ShaderMaterial.new()
+	_dash_material.shader = DASH_SHADER
+	var dash := BoxMesh.new()
+	dash.size = DASH_SIZE
 	var many := MultiMesh.new()
 	many.transform_format = MultiMesh.TRANSFORM_3D
-	many.mesh = drop
+	many.mesh = dash
 	many.instance_count = BeatRows.COUNT * 2
 	_row_beats.resize(BeatRows.COUNT)
-	_droplets = MultiMeshInstance3D.new()
-	_droplets.name = "Droplets"
-	_droplets.multimesh = many
-	_droplets.material_override = _droplet_material
-	add_child(_droplets)
+	_dashes = MultiMeshInstance3D.new()
+	_dashes.name = "Dashes"
+	_dashes.multimesh = many
+	_dashes.material_override = _dash_material
+	add_child(_dashes)
 
 
-## 종류마다 MultiMesh: 몸통 깊이, 몸통 색, 반사 세 번만 그린다. 장애물이 늘어도 그리는 횟수는 같다.
+## 지평선 양쪽의 레이저. 메시 하나에 전부 들어 있고 재질 값으로만 움직인다.
+func _build_lasers() -> void:
+	_laser_material = ShaderMaterial.new()
+	_laser_material.shader = LASER_SHADER
+	_laser_material.render_priority = LASER_PRIORITY
+	var lasers := MeshInstance3D.new()
+	lasers.name = "Lasers"
+	lasers.mesh = ArtMeshes.lasers()
+	lasers.material_override = _laser_material
+	lasers.extra_cull_margin = 16384.0  # 셰이더가 옮겨 그린다
+	add_child(lasers)
+
+
+## 카메라 옆 빛 줄기. 자리는 고정이고 움직임은 셰이더가 이동 거리로 계산한다. 앞쪽 칸부터 보이므로 어떤 개수에서도 고르게 흩어져 있다.
+func _build_streaks() -> void:
+	_streak_material = ShaderMaterial.new()
+	_streak_material.shader = STREAK_SHADER
+	var rng := RandomNumberGenerator.new()
+	rng.seed = STREAK_SEED
+	_streaks = MultiMesh.new()
+	_streaks.transform_format = MultiMesh.TRANSFORM_3D
+	_streaks.mesh = BoxMesh.new()
+	_streaks.instance_count = STREAK_MAX
+	for i in STREAK_MAX:
+		var side := -1.0 if i % 2 == 0 else 1.0
+		var at := Vector3(side * rng.randf_range(STREAK_X.x, STREAK_X.y), rng.randf_range(STREAK_Y.x, STREAK_Y.y), rng.randf_range(0.0, 60.0))
+		_streaks.set_instance_transform(i, Transform3D(Basis.IDENTITY, at))
+	var node := MultiMeshInstance3D.new()
+	node.name = "Streaks"
+	node.multimesh = _streaks
+	node.material_override = _streak_material
+	node.extra_cull_margin = 16384.0
+	add_child(node)
+
+
+## 빛 조각 풀. 미리 만들어 두고 칸만 돌려 쓴다.
+func _build_shards() -> void:
+	var material := ShaderMaterial.new()
+	material.shader = SHARD_SHADER
+	material.render_priority = SHARD_PRIORITY
+	var mesh := PrismMesh.new()
+	mesh.size = Vector3(1.0, 1.0, 0.2)
+	_shards = MultiMesh.new()
+	_shards.transform_format = MultiMesh.TRANSFORM_3D
+	_shards.use_colors = true
+	_shards.mesh = mesh
+	_shards.instance_count = SHARD_POOL
+	for i in SHARD_POOL:
+		_shards.set_instance_transform(i, Transform3D(Basis.from_scale(Vector3.ZERO), Vector3.ZERO))
+		_shard_free.append(i)
+	var node := MultiMeshInstance3D.new()
+	node.name = "Shards"
+	node.multimesh = _shards
+	node.material_override = material
+	node.extra_cull_margin = 16384.0
+	add_child(node)
+
+
+## 종류마다 MultiMesh: 몸통과 반사 두 번만 그린다. 장애물이 늘어도 그리는 횟수는 같다.
 func _build_obstacle_resources() -> void:
 	_pieces_root = Node3D.new()
 	_pieces_root.name = "Pieces"
@@ -684,30 +841,25 @@ func _build_obstacle_resources() -> void:
 		var meshes := ArtMeshes.obstacle(kind)
 		var body := _new_pieces_mesh(meshes["body"], true)
 		var mirror := _new_pieces_mesh(meshes["mirror"], false)
-		var depth := ShaderMaterial.new()
-		depth.shader = GLASS_SHADER
-		depth.set_shader_parameter("pass_alpha", 0.0)
-		depth.render_priority = DEPTH_PRIORITY
-		var glass := ShaderMaterial.new()
-		glass.shader = GLASS_SHADER
-		glass.render_priority = COLOR_PRIORITY
+		var block := ShaderMaterial.new()
+		block.shader = BLOCK_SHADER
 		var reflect := ShaderMaterial.new()
 		reflect.shader = MIRROR_SHADER
 		reflect.render_priority = -1  # 젤리 발밑 그림자보다 먼저 그린다
-		for pair: Array in [[body, depth], [body, glass], [mirror, reflect]]:
+		for pair: Array in [[body, block], [mirror, reflect]]:
 			var node := MultiMeshInstance3D.new()
 			node.multimesh = pair[0]
 			node.material_override = pair[1]
 			node.extra_cull_margin = 16384.0  # 반사는 셰이더가 옮겨 그리고, 영역 계산보다 몇 번 더 그리는 편이 싸다
 			_pieces_root.add_child(node)
-		_kind_meshes[kind] = {"body": body, "mirror": mirror, "depth": depth, "glass": glass, "reflect": reflect}
+		_kind_meshes[kind] = {"body": body, "mirror": mirror, "block": block, "reflect": reflect}
 
 
 func _new_pieces_mesh(mesh: Mesh, custom: bool) -> MultiMesh:
 	var many := MultiMesh.new()
 	many.transform_format = MultiMesh.TRANSFORM_3D
 	many.use_custom_data = custom
-	many.use_colors = true  # 끄면 꼭짓점 색(COLOR)의 RGB가 0으로 읽혀 테두리가 검게 나온다
+	many.use_colors = true  # 끄면 꼭짓점 색(COLOR)의 RGB가 0으로 읽혀 반사가 검게 나온다
 	many.mesh = mesh
 	many.instance_count = MAX_PIECES
 	for i in MAX_PIECES:

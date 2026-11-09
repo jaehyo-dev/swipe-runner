@@ -57,7 +57,7 @@ func test_버스와_기본_크기() -> void:
 
 
 func test_소리_파일_길이와_음악_반복_설정() -> void:
-	var want := {&"lane": 0.10, &"jump": 0.22, &"slide": 0.28, &"land": 0.37, &"crash": 0.43}
+	var want := {&"lane": 0.10, &"jump": 0.22, &"slide": 0.28, &"land": 0.37, &"crash": 0.43, &"shatter": 0.16}
 	for sound in want:
 		var stream: AudioStreamWAV = AudioManager.SFX[sound]
 		assert_true(absf(stream.get_length() - want[sound]) < 0.02, "%s %f" % [sound, stream.get_length()])

@@ -8,7 +8,9 @@ const MAX_PIXELS := 2880.0 * 1620.0  # 맥북 전체 화면처럼 가로로 넓�
 const WINDOW := 2.0           # 이만큼의 프레임을 모아 판단한다(초)
 const LIMIT := 0.020          # 이 구간의 99% 프레임이 이보다 길면 한 단계 낮춘다(초)
 const IGNORE_OVER := 0.25     # 탭 전환 같은 긴 멈춤은 렉이 아니다
-const LEVELS := 3             # 1 반사 끄기, 2 MSAA 2x, 3 빛 번짐 낮추기
+const LEVELS := 5             # 1 빛 줄기 줄이기, 2 레이저 줄이기, 3 반사 끄기, 4 MSAA 2x, 5 빛 번짐 낮추기
+const STREAK_LOW := 0.35      # 1단계부터 빛 줄기를 이 비율로
+const LASER_LOW := 2.0        # 2단계부터 레이저 줄 수 상한 (양쪽 한 줄씩)
 
 var level := 0
 
@@ -21,6 +23,16 @@ static func render_scale(size: Vector2i) -> float:
 	if size.x <= 0 or size.y <= 0:
 		return 1.0
 	return minf(minf(1.0, MAX_HEIGHT / size.y), sqrt(MAX_PIXELS / (size.x * size.y)))
+
+
+## 품질 단계 level에서 그릴 빛 줄기 수
+static func streaks(count: float, at_level: int) -> int:
+	return int(count * (STREAK_LOW if at_level >= 1 else 1.0))
+
+
+## 품질 단계 level에서 그릴 레이저 줄 수 (소수는 다음 줄이 서서히 나타나는 중)
+static func lasers(count: float, at_level: int) -> float:
+	return minf(count, LASER_LOW) if at_level >= 2 else count
 
 
 ## 프레임 시간(초)을 넣는다. 이번에 단계를 낮췄으면 true

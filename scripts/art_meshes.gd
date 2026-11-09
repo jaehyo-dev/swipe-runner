@@ -1,71 +1,100 @@
 class_name ArtMeshes
 extends RefCounted
-## 장애물·난간 메시를 코드로 만든다 (텍스처 없음). 모양 기준은 ART_BIBLE.md 6·10장.
-## 장애물 몸통과 앞면 테두리는 한 메시·한 재질이라 종류마다 MultiMesh 하나로 그린다 (glass.gdshader). 뒤쪽 테두리는 만들지 않는다.
+## 장애물·난간·레이저 메시를 코드로 만든다 (텍스처 없음). 모양 기준은 ART_BIBLE.md 6·10장.
+## 장애물 몸통·테두리·기호는 한 메시·한 재질이라 종류마다 MultiMesh 하나로 그린다 (block.gdshader).
 ## 모든 장애물은 바닥(y=0)을 원점으로 삼고, 크기는 ObstacleField 판정 값에서 그대로 가져온다 (보이는 모양 = 판정 범위).
-## 선은 가는 관(tube)이라 메시 하나에 모이고, 관 반지름을 UV.x에 담아 neon.gdshader가 멀리서 최소 굵기를 지키게 한다.
+## 선은 가는 관(tube)이라 메시 하나에 모이고, 관 반지름을 UV.x, 부위를 UV.y에 담아 셰이더가 멀리서 최소 굵기를 지키게 한다.
+
+enum Part { BODY, EDGE, MARK }
 
 const TUBE_SIDES := 6
+const CAP_RINGS := 3
 const ELLIPSE_SIDES := 20
-const EDGE_RADIUS := 0.024
-const GRAIN_RADIUS := 0.014
-const ARROW_RADIUS := 0.03
-const PILLAR_ROOF_START := 1.75  # 지붕이 시작하는 높이 (꼭대기는 ObstacleField.BLOCK_HEIGHT)
-const LOW_CORNER := 0.13
-const HIGH_CORNER := 0.17
-const GRAIN_LEVEL := 0.55        # 세로 결 밝기 (모서리 = 1)
-const MIRROR_GLASS_ALPHA := 0.15 # 반사 불투명도: 15~25% 안에서 면은 낮게, 선은 높게
-const MIRROR_EDGE_ALPHA := 0.25
-const POOL_ALPHA := 0.3          # 막대 아래 빛 웅덩이 가운데 불투명도 (35% 이하): 기둥 없이 떠 있는 높이를 말해 준다
-const POOL_HALF := Vector2(0.58, 0.46)    # 웅덩이 반지름 (x, z): 막대 폭의 절반 0.65보다 살짝 좁게
-const SHADOW_ALPHA := 0.6        # 기둥 접지 그림자 가운데 불투명도: 어디에 서 있는지 읽히게
-const SHADOW_HALF := Vector2(0.85, 0.95)  # 그림자 반지름 (x, z): 기둥 밑면(0.55, 0.64)보다 조금 크게
+const EDGE_RADIUS := 0.034
+const CORNER := {ObstacleField.Kind.BLOCK: 0.1, ObstacleField.Kind.LOW: 0.09, ObstacleField.Kind.HIGH: 0.11}
+const MARK_SHARE := 0.55         # 기호 크기: 앞면 폭·높이의 55% (둥근 끝까지 포함)
+const MARK_RADIUS := {ObstacleField.Kind.BLOCK: 0.058, ObstacleField.Kind.LOW: 0.044, ObstacleField.Kind.HIGH: 0.05}
+const BLOCK_MARK_GAP := 0.14     # ‹ ›의 꺾쇠 사이 빈틈의 절반
+const MIRROR_BODY_ALPHA := 0.5   # 반사 불투명도: 몸통은 어두워 바닥을 가리는 역할, 빛은 또렷하게
+const MIRROR_EDGE_ALPHA := 0.3
+const POOL_ALPHA := 0.3          # 슬라이드 블록 아래 빛 웅덩이 가운데 불투명도 (35% 이하): 떠 있는 높이를 말해 준다
+const POOL_HALF := Vector2(0.58, 0.46)    # 웅덩이 반지름 (x, z): 블록 폭의 절반 0.65보다 살짝 좁게
+const LASER_COUNT := 6           # 양쪽 번갈아: 앞에서부터 켜지므로 4줄이면 양쪽 2줄씩
+const LASER_ORIGIN := Vector3(34.0, -1.0, -150.0)  # 첫 줄 시작점 (x는 양쪽)
+const LASER_STEP := 30.0         # 같은 쪽 다음 줄이 더 바깥으로 가는 거리
 
 var _v := PackedVector3Array()
 var _n := PackedVector3Array()
 var _c := PackedColorArray()
 var _uv := PackedVector2Array()
+var _part := Part.BODY
 
 
 ## 종류별 {body, mirror} 메시. 색은 재질 값이다.
-## body: 몸통 + 앞면 테두리. UV.x > 0이면 테두리 관 (glass.gdshader), COLOR.r은 테두리 밝기.
-## mirror: 바닥 반사 + 바닥 흔적. COLOR.r 면(0)·선(1), COLOR.g 그림자, COLOR.b 1이면 멀어도 그리는 바닥 흔적, COLOR.a 불투명도 (mirror.gdshader)
+## body: 몸통 + 테두리 + 기호. UV.x 관 반지름(몸통 0), UV.y 부위.
+## mirror: 바닥 반사 + 바닥 흔적. COLOR.r 몸통(0)·빛(1), COLOR.b 1이면 멀어도 그리는 바닥 흔적, COLOR.a 불투명도 (mirror.gdshader)
 static func obstacle(kind: ObstacleField.Kind) -> Dictionary:
-	var glass := ArtMeshes.new()
+	var size: Vector3 = _size_of(kind)
+	var bottom: float = ObstacleField.HIGH_BOTTOM if kind == ObstacleField.Kind.HIGH else 0.0
+	var flush: bool = kind != ObstacleField.Kind.HIGH
+	var corner: float = CORNER[kind]
+	var body := ArtMeshes.new()
+	body._rounded_box(size, corner, Vector3(0.0, bottom + size.y * 0.5, 0.0), flush)
+	var front := ArtMeshes.new()
+	front._outline(size, bottom, corner, size.z * 0.5, flush)
+	var mirror := ArtMeshes.new()
+	mirror._add_mirrored(body, 0.0, MIRROR_BODY_ALPHA)
+	mirror._add_mirrored(front, 1.0, MIRROR_EDGE_ALPHA)  # 앞 테두리만 비친다. 기호는 비치지 않는다: 뒤집힌 ^는 슬라이드 기호 v로 읽힌다
 	var lines := ArtMeshes.new()
+	lines._part = Part.EDGE
+	lines._box_edges(size, bottom, corner, flush)
+	lines._part = Part.MARK
+	lines._mark(kind, size, bottom)
+	if kind == ObstacleField.Kind.HIGH:
+		mirror._floor_ellipse(POOL_HALF, Color(1.0, 0.0, 1.0, POOL_ALPHA))
+	body._add_all(lines)
+	return {"body": body.commit(), "mirror": mirror.commit()}
+
+
+static func _size_of(kind: ObstacleField.Kind) -> Vector3:
 	match kind:
 		ObstacleField.Kind.BLOCK:
-			glass._pillar_faces()
-			lines._pillar_lines()
+			return Vector3(ObstacleField.BLOCK_SIZE, ObstacleField.BLOCK_HEIGHT, ObstacleField.BLOCK_SIZE)
 		ObstacleField.Kind.LOW:
-			var size := Vector3(ObstacleField.BAR_WIDTH, ObstacleField.LOW_TOP, ObstacleField.BAR_DEPTH)
-			glass._rounded_box(size, LOW_CORNER, Vector3(0.0, size.y * 0.5, 0.0), true)
-			lines._low_lines(size)
-		ObstacleField.Kind.HIGH:
-			var size := Vector3(ObstacleField.BAR_WIDTH, ObstacleField.HIGH_TOP - ObstacleField.HIGH_BOTTOM, ObstacleField.BAR_DEPTH)
-			glass._rounded_box(size, HIGH_CORNER, Vector3(0.0, ObstacleField.HIGH_BOTTOM + size.y * 0.5, 0.0), false)
-			lines._high_lines(size)
-	var mirror := ArtMeshes.new()
-	mirror._add_mirrored(glass, 0.0, MIRROR_GLASS_ALPHA)
-	mirror._add_mirrored(lines, 1.0, MIRROR_EDGE_ALPHA)
-	if kind == ObstacleField.Kind.HIGH:
-		mirror._floor_ellipse(POOL_HALF, Color(0.0, 0.0, 1.0, POOL_ALPHA))
-	elif kind == ObstacleField.Kind.BLOCK:
-		mirror._floor_ellipse(SHADOW_HALF, Color(0.0, 1.0, 1.0, SHADOW_ALPHA))
-	glass._add_all(lines)
-	return {"body": glass.commit(), "mirror": mirror.commit()}
+			return Vector3(ObstacleField.BAR_WIDTH, ObstacleField.LOW_TOP, ObstacleField.BAR_DEPTH)
+		_:
+			return Vector3(ObstacleField.BAR_WIDTH, ObstacleField.HIGH_TOP - ObstacleField.HIGH_BOTTOM, ObstacleField.BAR_DEPTH)
 
 
-## 양옆 난간 한 벌: 굵은 네온 관 + 안쪽의 가는 보조선. 길이 방향으로 나눠 멀리까지 원근과 안개가 자연스럽다.
-static func rails(x: float, tube_y: float, tube_radius: float, inner_x: float, inner_radius: float, z_near: float, z_far: float, piece: float) -> ArrayMesh:
+## 양옆 난간: 굵은 네온 관 + 위쪽의 흰빛 심(UV.y = EDGE). 길이 방향으로 나눠 멀리까지 원근과 안개가 자연스럽다.
+static func rails(x: float, tube_y: float, tube_radius: float, z_near: float, z_far: float, piece: float) -> ArrayMesh:
 	var m := ArtMeshes.new()
+	var core_y := tube_y + tube_radius * 0.8
+	var core_radius := tube_radius * 0.2
 	var z := z_near
 	while z > z_far:
 		var next := z - piece
 		for side in [-1.0, 1.0]:
-			m._tube(Vector3(side * x, tube_y, z), Vector3(side * x, tube_y, next), tube_radius, 1.0)
-			m._tube(Vector3(side * inner_x, inner_radius, z), Vector3(side * inner_x, inner_radius, next), inner_radius, 0.5)
+			m._part = Part.BODY
+			m._tube(Vector3(side * x, tube_y, z), Vector3(side * x, tube_y, next), tube_radius)
+			m._part = Part.EDGE
+			m._tube(Vector3(side * x, core_y, z), Vector3(side * x, core_y, next), core_radius)
 		z = next
+	return m.commit()
+
+
+## 레이저 6줄 한 메시. 줄마다 사각형 하나, 움직임은 laser.gdshader가 계산한다.
+static func lasers() -> ArrayMesh:
+	var m := ArtMeshes.new()
+	for i in LASER_COUNT:
+		var side := -1.0 if i % 2 == 0 else 1.0
+		var at := Vector3(side * (LASER_ORIGIN.x + (i / 2) * LASER_STEP), LASER_ORIGIN.y, LASER_ORIGIN.z)
+		var c := Color(float(i % 2 == (i / 2) % 2), i / float(LASER_COUNT - 1), fposmod(i * 0.37, 1.0), fposmod(i * 0.61, 1.0))
+		for uv: Vector2 in [Vector2(0.0, -1.0), Vector2(1.0, -1.0), Vector2(1.0, 1.0), Vector2(0.0, -1.0), Vector2(1.0, 1.0), Vector2(0.0, 1.0)]:
+			m._v.append(at)
+			m._n.append(Vector3.BACK)
+			m._c.append(c)
+			m._uv.append(uv)
 	return m.commit()
 
 
@@ -85,72 +114,60 @@ func _vertex(p: Vector3, n: Vector3, c: Color, tube_radius := 0.0) -> void:
 	_v.append(p)
 	_n.append(n)
 	_c.append(c)
-	_uv.append(Vector2(tube_radius, 0.0))
+	_uv.append(Vector2(tube_radius, float(_part)))
 
 
-func _flat_tri(a: Vector3, b: Vector3, c: Vector3) -> void:
-	var n := (b - a).cross(c - a).normalized()
-	for p in [a, b, c]:
-		_vertex(p, n, Color.WHITE)
-
-
-## 높이 y의 육각 꼭짓점. x 폭과 z 깊이를 BLOCK_SIZE에 맞추려고 z만 늘린다. 카메라 쪽으로 평평한 면 하나가 보인다.
-static func _hex(i: int, y: float) -> Vector3:
-	var half := ObstacleField.BLOCK_SIZE * 0.5
-	var a := TAU * i / 6.0
-	return Vector3(cos(a) * half, y, sin(a) * half / sin(TAU / 6.0))
-
-
-func _pillar_faces() -> void:
-	var top := Vector3(0.0, ObstacleField.BLOCK_HEIGHT, 0.0)
-	for i in 6:
-		var a := _hex(i, 0.0)
-		var b := _hex(i + 1, 0.0)
-		var c := _hex(i + 1, PILLAR_ROOF_START)
-		var d := _hex(i, PILLAR_ROOF_START)
-		_flat_tri(a, b, c)
-		_flat_tri(a, c, d)
-		_flat_tri(d, c, top)
-
-
-## 카메라 쪽(z > 0)에 있는 꼭짓점과 모서리만 그린다: 0(오른쪽)~3(왼쪽). 꼭짓점 0과 3은 옆 윤곽이다.
-func _pillar_lines() -> void:
-	var top := Vector3(0.0, ObstacleField.BLOCK_HEIGHT, 0.0)
-	for i in 4:
-		_tube(_hex(i, 0.0), _hex(i, PILLAR_ROOF_START), EDGE_RADIUS)
-		_tube(_hex(i, PILLAR_ROOF_START), top, EDGE_RADIUS)
-		if i < 3:
-			_tube(_hex(i, 0.0), _hex(i + 1, 0.0), EDGE_RADIUS)
-			_tube(_hex(i, PILLAR_ROOF_START), _hex(i + 1, PILLAR_ROOF_START), EDGE_RADIUS)
-	# 앞면 세로 결 3줄 (길이가 달라 얼음 금처럼 보인다)
-	var z := ObstacleField.BLOCK_SIZE * 0.5 + 0.004
-	for grain: Vector3 in [Vector3(-0.15, 0.25, 1.1), Vector3(0.0, 0.7, 1.62), Vector3(0.14, 0.18, 0.85)]:
-		_tube(Vector3(grain.x, grain.y, z), Vector3(grain.x, grain.z, z), GRAIN_RADIUS, GRAIN_LEVEL)
-
-
-func _low_lines(size: Vector3) -> void:
-	_outline(size, 0.0, LOW_CORNER, size.z * 0.5, true)
-	# 앞면의 위쪽 화살 ^ 3개
-	var y := size.y * 0.5
-	var z := size.z * 0.5 + 0.006
-	for x in [-0.42, 0.0, 0.42]:
-		_arrow(Vector3(x, y, z), 0.13, 0.085, 1.0)
-
-
-func _high_lines(size: Vector3) -> void:
-	_outline(size, ObstacleField.HIGH_BOTTOM, HIGH_CORNER, size.z * 0.5, false)
-	# 앞면의 아래 화살 v 2개
-	var y := ObstacleField.HIGH_BOTTOM + size.y * 0.5
-	var z := size.z * 0.5 + 0.006
-	for x in [-0.27, 0.27]:
-		_arrow(Vector3(x, y, z), 0.17, 0.12, -1.0)
-
-
-## 화살 하나: up이 1이면 ^, -1이면 v
-func _arrow(center: Vector3, half_w: float, half_h: float, up: float) -> void:
-	var tip := center + Vector3(0.0, half_h * up, 0.0)
+## 상자의 빛 모서리: 앞뒤 둘레 + 잇는 모서리. 몸통이 불투명해 뒤쪽 선은 저절로 가려진다.
+func _box_edges(size: Vector3, bottom: float, r: float, flush: bool) -> void:
+	var half_z := size.z * 0.5
+	_outline(size, bottom, r, half_z, flush)
+	_outline(size, bottom, r, -half_z, flush)
+	var inset := r * (1.0 - sqrt(0.5))
+	var x := size.x * 0.5 - inset
+	var top := bottom + size.y - inset
+	var low := bottom + (0.0 if flush else inset)
 	for side in [-1.0, 1.0]:
-		_tube(center + Vector3(side * half_w, -half_h * up, 0.0), tip, ARROW_RADIUS)
+		for y in [top, low]:
+			_tube(Vector3(side * x, y, half_z - inset), Vector3(side * x, y, -half_z + inset), EDGE_RADIUS)
+
+
+## 앞면 기호: 굵고 둥근 선 하나. 옆 = ‹ ›, 점프 = ^, 슬라이드 = v. 폭과 높이가 앞면의 MARK_SHARE가 되도록 둥근 끝을 뺀 자리에 놓는다.
+func _mark(kind: ObstacleField.Kind, size: Vector3, bottom: float) -> void:
+	var r: float = MARK_RADIUS[kind]
+	var half_w := size.x * MARK_SHARE * 0.5 - r
+	var half_h := size.y * MARK_SHARE * 0.5 - r
+	var y := bottom + size.y * 0.5
+	var z := size.z * 0.5 - r * 0.3  # 앞면에서 살짝 솟은 관
+	match kind:
+		ObstacleField.Kind.BLOCK:
+			for side: float in [-1.0, 1.0]:
+				var inner := side * BLOCK_MARK_GAP
+				_chevron(Vector3(side * half_w, y, z), Vector3(inner, y + half_h, z), Vector3(inner, y - half_h, z), r)
+		ObstacleField.Kind.LOW:
+			_chevron(Vector3(0.0, y + half_h, z), Vector3(-half_w, y - half_h, z), Vector3(half_w, y - half_h, z), r)
+		ObstacleField.Kind.HIGH:
+			_chevron(Vector3(0.0, y - half_h, z), Vector3(-half_w, y + half_h, z), Vector3(half_w, y + half_h, z), r)
+
+
+## 꺾쇠 하나: 꼭짓점 tip에서 두 끝으로 가는 둥근 선
+func _chevron(tip: Vector3, end_a: Vector3, end_b: Vector3, r: float) -> void:
+	_cap(tip, r)
+	for end: Vector3 in [end_a, end_b]:
+		_tube(tip, end, r)
+		_cap(end, r)
+
+
+## 선 끝의 둥근 마개: 작은 공
+func _cap(center: Vector3, r: float) -> void:
+	var point := func(i: int, j: int) -> Vector3:
+		var lat := PI * i / CAP_RINGS
+		var lon := TAU * j / TUBE_SIDES
+		return Vector3(sin(lat) * cos(lon), cos(lat), sin(lat) * sin(lon))
+	for i in CAP_RINGS:
+		for j in TUBE_SIDES:
+			for pair: Vector2i in [Vector2i(i, j), Vector2i(i + 1, j), Vector2i(i + 1, j + 1), Vector2i(i, j), Vector2i(i + 1, j + 1), Vector2i(i, j + 1)]:
+				var n: Vector3 = point.call(pair.x, pair.y)
+				_vertex(center + n * r, n, Color.WHITE, r)
 
 
 ## 둥근 직사각형 테두리 (앞뒤 면 가장자리). 둥근 면 위에 올라오도록 안쪽으로 조금 들인다. flat_bottom이면 아래 모서리는 각지게 바닥에 붙는다.
@@ -188,7 +205,7 @@ func _tube(a: Vector3, b: Vector3, radius: float, level := 1.0) -> void:
 		var a1 := TAU * (i + 1) / TUBE_SIDES
 		var n0 := side * cos(a0) + up * sin(a0)
 		var n1 := side * cos(a1) + up * sin(a1)
-		for pn: Array in [[a, n0], [b, n1], [b, n0], [a, n0], [a, n1], [b, n1]]:
+		for pn: Array in [[a, n0], [b, n0], [b, n1], [a, n0], [b, n1], [a, n1]]:  # 바깥이 앞면 (불투명 재질은 뒷면을 잘라 낸다)
 			_vertex(pn[0] + pn[1] * radius, pn[1], c, radius)
 
 
@@ -205,7 +222,10 @@ func _rounded_box(size: Vector3, r: float, center: Vector3, flush: bool) -> void
 		for face in [-1.0, 1.0]:
 			for i in us.size() - 1:
 				for j in ws.size() - 1:
-					for uv: Vector2i in [Vector2i(i, j), Vector2i(i + 1, j), Vector2i(i + 1, j + 1), Vector2i(i, j), Vector2i(i + 1, j + 1), Vector2i(i, j + 1)]:
+					var corners: Array[Vector2i] = [Vector2i(i, j), Vector2i(i + 1, j), Vector2i(i + 1, j + 1), Vector2i(i, j), Vector2i(i + 1, j + 1), Vector2i(i, j + 1)]
+					if face > 0.0:  # 불투명 몸통은 뒷면을 잘라 내므로 면마다 감기 방향을 바깥쪽으로 맞춘다
+						corners.reverse()
+					for uv: Vector2i in corners:
 						var p := Vector3.ZERO
 						p[axis] = face * half[axis]
 						p[u] = us[uv.x]

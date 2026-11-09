@@ -4,7 +4,7 @@ shader_type spatial;
 render_mode unshaded, depth_draw_never, fog_disabled;
 
 uniform vec3 glow_color : source_color = vec3(0.525, 0.890, 0.902);  // 몸 아쿠아 민트 #86E3E6
-uniform float glow_strength = 0.2;   // 빛 고리 세기 (주인공보다 훨씬 어둡게)
+uniform float glow_strength = 0.34;  // 빛 고리 세기 (주인공보다 훨씬 어둡게)
 uniform float glow_inner = 0.46;     // 빛 고리가 시작하는 곳 (몸의 가장 넓은 폭 0.44 바로 바깥, 판 크기를 몸에 비례시켜 값은 그대로)
 uniform float shadow_strength = 0.85;  // 접촉 그림자 진하기
 uniform float shadow_edge = 0.4;     // 접촉 그림자가 진하게 유지되는 반지름 (몸 바닥 0.35보다 살짝 바깥)

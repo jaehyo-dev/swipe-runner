@@ -8,6 +8,8 @@
 그림 텍스처는 쓰지 않았다. 주인공·길·장애물은 기본 메시와 직접 쓴 셰이더(`shaders/`)로 만들었다 (직접 제작).
 주인공 질감 시안 `assets/concept/jelly_options.svg`(v0.2.0·A·B·C 비교)는 이 프로젝트에서 직접 만든 SVG다 (직접 제작, 화면 확인 기준용, 게임에는 들어가지 않음).
 길 시안 `assets/concept/road_options.svg`(A·B·C와 장애물 3종)도 직접 만든 SVG다 (직접 제작, 수정 없음, 화면 확인 기준용, 게임에는 들어가지 않음).
+
+네온 무대 시안 `assets/concept/neon_stage.svg`(무대 한 장면과 장애물 세 종류)도 직접 만든 SVG다 (직접 제작, 수정 없음, 화면 확인 기준용, 게임에는 들어가지 않음).
 소리 후보 2차 `review/v0.2.8/sounds_v2/`의 C 후보 4개는 아래 Kenney CC0 소리를 가공했고(원본 파일별 표·라이선스 전문은 같은 폴더 LICENSES.md와 sources/), A·B 후보 8개는 `make_sounds_v2.py`로 직접 합성했다 (화면 확인 기록이라 게임에는 들어가지 않음).
 
 | 이름 | 버전 | 만든 사람 | 라이선스 | 출처 | 쓰는 곳 | 수정 |
@@ -26,6 +28,7 @@
 | Interface Sounds (scratch_001, drop_001) | 1.0 | Kenney | CC0 1.0 | https://kenney.nl/assets/interface-sounds | `sfx/land.wav` | 있음 |
 | 40 CC0 water / splash / slime SFX (splash_02) | 받은 날 2026-11-08 | rubberduck | CC0 1.0 (페이지 표시가 근거) | https://opengameart.org/content/40-cc0-water-splash-slime-sfx | `sfx/crash.wav` | 있음 |
 | 레인 이동·점프·슬라이드 효과음 | - | 이 프로젝트 (직접 합성) | 프로젝트 소유 | `review/v0.2.8/` | `sfx/lane.wav`, `jump.wav`, `slide.wav` | - |
+| 부서짐 효과음 (후보 A·B·C) | - | 이 프로젝트 (직접 합성, 외부 음원 없음) | 프로젝트 소유 | `review/v0.6.0/shatter_sounds/make_shatter_sounds.py` | `sfx/shatter.wav` (후보 A), 듣기 페이지 | - |
 | 배경 음악 Jelly Pulse (원본·A Drive·B Drive+ 13곡) | - | 이 프로젝트 (직접 합성) | 프로젝트 소유 | `tools/make_ladder_music.py` | `music/bgm_*.ogg` | - |
 
 ## 배경 음악 후보 (v0.3.1, 화면 확인 기록)

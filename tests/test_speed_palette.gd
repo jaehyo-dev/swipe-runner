@@ -4,7 +4,7 @@ extends TestCase
 const TS := [0.0, 0.5, 1.0]
 const KINDS := ["block", "low", "high"]
 const HERO := Color("86e3e6")  # 주인공 몸 (ART_BIBLE.md 2-3). 팔레트에 없다: 주인공 색은 바뀌지 않는다
-const HERO_PEAK := 2.1 * 1.0   # 주인공 가장자리 최대 밝기 (jelly.gdshader rim_color #C8FFFA × rim_energy 2.1)
+const HERO_PEAK := 2.4 * 1.0   # 주인공 가장자리 최대 밝기 (jelly.gdshader rim_color #C8FFFA × rim_energy 2.4)
 ## Machado 2009 적록색약 (선형 RGB에 곱한다, review/v0.4.1/read_sheet.py와 같은 값)
 const DEUTAN := [[0.367322, 0.860646, -0.227968], [0.280085, 0.672501, 0.047413], [-0.011820, 0.042940, 0.968881]]
 
@@ -44,15 +44,17 @@ func _gray(c: Color) -> Color:
 
 
 func test_표의_값이_데이터_파일_양끝과_같음() -> void:
-	var want0 := {"sky_top": "0b0a24", "horizon": "3a2470", "floor": "241a4a", "rail": "8fa8ff", "block": "bfdcff", "low": "ffd25a", "high": "ff5fd2"}
-	var want1 := {"sky_top": "0a0030", "horizon": "8a1fd6", "floor": "3a0f6e", "rail": "7b5cff", "block": "4fa0ff", "low": "ffa000", "high": "ff0fa0"}
+	var want0 := {"sky_top": "05040d", "horizon": "241650", "floor": "0c0a1c", "rail": "7b5cff", "body": "120e24", "block": "2fb8ff", "low": "ff9a1f", "high": "ff2fa8"}
+	var want1 := {"sky_top": "05040d", "horizon": "3d1880", "floor": "0e0a24", "rail": "7b5cff", "body": "120e24", "block": "0faeff", "low": "ff9405", "high": "ff0c9c"}
 	var at0 := SpeedPalette.at(0.0)
 	var at1 := SpeedPalette.at(1.0)
 	for key in want0:
 		assert_eq(at0[key].to_html(false), want0[key], key)
 		assert_eq(at1[key].to_html(false), want1[key], key)
-	assert_eq(at0["rail_energy"], 1.0)
-	assert_eq(at1["rail_energy"], 1.6)
+	assert_eq(at0["laser_count"], 4.0, "레이저 t=0 4줄")
+	assert_eq(at1["laser_count"], 6.0, "레이저 t=1 6줄")
+	assert_true(at1["laser_energy"] > at0["laser_energy"], "레이저가 강해짐")
+	assert_true(at1["streak_count"] > at0["streak_count"] and at1["streak_length"] > at0["streak_length"], "빛 줄기가 많고 길어짐")
 
 
 func test_사이_값은_선형으로_섞임() -> void:
@@ -60,8 +62,8 @@ func test_사이_값은_선형으로_섞임() -> void:
 	var at1 := SpeedPalette.at(1.0)
 	var mid := SpeedPalette.at(0.25)
 	for key in at0:
-		if key == "rail_energy":
-			assert_true(is_equal_approx(mid[key], lerpf(at0[key], at1[key], 0.25)))
+		if at0[key] is float:
+			assert_true(is_equal_approx(mid[key], lerpf(at0[key], at1[key], 0.25)), key)
 		else:
 			assert_true(mid[key].is_equal_approx(at0[key].lerp(at1[key], 0.25)), key)
 
@@ -69,32 +71,44 @@ func test_사이_값은_선형으로_섞임() -> void:
 func test_장애물_세_색의_색상_차이는_60도_이상() -> void:
 	for t in TS:
 		var c := SpeedPalette.at(t)
-		for part in ["", "_edge"]:
+		for part in ["", "_edge", "_mark"]:
 			for pair in [["block", "low"], ["low", "high"], ["high", "block"]]:
 				var gap := _hue_gap(_screen(c[pair[0] + part]), _screen(c[pair[1] + part]))
 				assert_true(gap >= 60.0, "t=%f %s%s %s: %f도" % [t, pair[0], part, pair[1], gap])
 
 
-func test_같은_색_계열이고_채도와_깊이만_오름() -> void:
+func test_장애물_색은_같은_계열이고_채도만_오름() -> void:
 	var at0 := SpeedPalette.at(0.0)
 	var at1 := SpeedPalette.at(1.0)
-	for key in ["block", "low", "high", "rail"]:
-		var limit := 30.0 if key == "rail" else 10.0  # 난간은 보라빛 파랑 안에서 움직인다 (사용자 표)
-		assert_true(_hue_gap(at0[key], at1[key]) < limit, "%s 색상 유지 %f도" % [key, _hue_gap(at0[key], at1[key])])
+	for key in KINDS:
+		assert_true(_hue_gap(at0[key], at1[key]) < 10.0, "%s 색상 유지 %f도" % [key, _hue_gap(at0[key], at1[key])])
 		assert_true(at1[key].s > at0[key].s, "%s 채도가 오름" % key)
 
 
-## 민트는 주인공 전용 (ART_BIBLE.md 색 규칙). 테두리는 HDR 값과, 화면에서 잘린 값 둘 다 본다
-func test_주인공과_다른_모든_요소의_색상_차이는_30도_이상() -> void:
+## 민트는 주인공 전용 (ART_BIBLE.md 색 규칙). HDR 값과 화면에서 잘린 값 둘 다 본다.
+## 옆 장애물 파랑은 사용자 표의 색(200도)이라 예외: 색상 15도 이상 + 주인공보다 채도가 높아 구분된다
+func test_주인공과_다른_모든_요소의_색상_차이() -> void:
 	for t in TS:
 		var c := SpeedPalette.at(t)
 		for key: String in c:
-			if key == "rail_energy":
+			if c[key] is float:
 				continue
 			for color: Color in [c[key], _screen(c[key])]:
-				assert_true(_hue_gap(HERO, color) >= 30.0, "t=%f %s: %f도" % [t, key, _hue_gap(HERO, color)])
-	for fixed in ["8c80ff", "060817"]:  # 빛 결, 바닥 바탕: 셰이더에 고정된 색
-		assert_true(_hue_gap(HERO, Color(fixed)) >= 30.0, fixed)
+				var gap := _hue_gap(HERO, color)
+				if key.begins_with("block"):
+					assert_true(gap >= 15.0 and color.s > HERO.s, "t=%f %s: %f도, 채도 %f" % [t, key, gap, color.s])
+				else:
+					assert_true(gap >= 30.0, "t=%f %s: %f도" % [t, key, gap])
+	assert_true(_hue_gap(HERO, Color("060817")) >= 30.0, "길 밖 바닥: 셰이더에 고정된 색")
+
+
+## 레이저는 장애물 색과 헷갈리지 않게 채도를 한 단계 낮춘다
+func test_레이저는_장애물보다_채도가_낮음() -> void:
+	for t in TS:
+		var c := SpeedPalette.at(t)
+		for laser in ["laser_blue", "laser_pink"]:
+			for kind in KINDS:
+				assert_true(c[laser].s < c[kind].s, "t=%f %s < %s" % [t, laser, kind])
 
 
 func test_장애물_테두리와_바닥_대비는_3대1_이상() -> void:
@@ -121,14 +135,12 @@ func test_흑백과_적록색약에서도_테두리가_바닥에서_보임() -> 
 				assert_true(ratio >= 3.0, "t=%f %s %f" % [t, kind, ratio])
 
 
-func test_밝기_순서는_진해져도_유지() -> void:
+## 주인공 > 장애물 기호 > 테두리 > 레이저·난간 > 빛 줄기 > 바닥·하늘 (HDR 가장 센 채널, 번쩍임이 가장 셀 때 기준)
+func test_밝기_순서는_진해져도_번쩍여도_유지() -> void:
 	for t in TS:
-		var c := SpeedPalette.at(t)
-		var rail: Color = c["rail"]
-		var road_peak: float = maxf(rail.r, maxf(rail.g, rail.b)) * c["rail_energy"]
-		for kind in KINDS:
-			var edge: Color = c[kind + "_edge"]
-			var peak: float = maxf(edge.r, maxf(edge.g, edge.b))
-			assert_true(peak < HERO_PEAK, "t=%f %s 테두리 %f < 주인공" % [t, kind, peak])
-			assert_true(peak > 1.6, "t=%f %s 테두리 %f: 빛나는 난간 상한(1.6)보다 밝음" % [t, kind, peak])
-			assert_true(road_peak < peak, "t=%f 난간 %f < %s 테두리 %f" % [t, road_peak, kind, peak])
+		var row := BrightnessOrder.table(t, HERO_PEAK)
+		assert_true(row["hero"] > row["mark"], "t=%f 주인공 > 기호: %s" % [t, row])
+		assert_true(row["mark"] > row["edge"], "t=%f 기호 > 테두리: %s" % [t, row])
+		assert_true(row["edge"] > row["stage"], "t=%f 테두리 > 레이저·난간: %s" % [t, row])
+		assert_true(row["laser_rest"] > row["streak"], "t=%f 평소 레이저 > 빛 줄기: %s" % [t, row])
+		assert_true(row["streak"] > row["ground"], "t=%f 빛 줄기 > 바닥·하늘: %s" % [t, row])

@@ -127,27 +127,25 @@ func test_시간이_가면_거리가_늘고_장애물_노드가_생기고_지나
 	main.queue_free()
 
 
-func test_장애물_종류별_색조가_정해진_색으로_나옴() -> void:
+func test_장애물_종류별_색이_정해진_색으로_나옴() -> void:
 	var main := _make_main()
 	await wait_frames()
 	var K := ObstacleField.Kind
-	# 기획 색(ART_BIBLE.md 4·11번, t = 0): 기둥 아이스 블루, 턱 노랑, 막대 진분홍
-	var expected := {K.BLOCK: Color("bfdcff"), K.LOW: Color("ffd25a"), K.HIGH: Color("ff5fd2")}
-	# 주인공 가장자리 최대 밝기 = 테두리 빛(jelly.gdshader 기본값 rim_color #C8FFFA × rim_energy 2.1)
-	var hero_peak := Color("c8fffa") * 2.1
-	# 난간·물방울이 빛날 때의 가장 밝은 값
-	var road_peak: float = main.ROAD_PEAK_MAX
+	# 사용자 표(ART_BIBLE.md 4·11장, t = 0): 파랑 옆, 주황 위, 분홍 아래
+	var expected := {K.BLOCK: Color("2fb8ff"), K.LOW: Color("ff9a1f"), K.HIGH: Color("ff2fa8")}
+	var hero_peak := Color("c8fffa") * 2.4  # 주인공 가장자리 최대 밝기 (jelly.gdshader)
 	for kind in expected:
-		var material: ShaderMaterial = main._kind_meshes[kind]["glass"]
+		var material: ShaderMaterial = main._kind_meshes[kind]["block"]
 		var edge: Color = material.get_shader_parameter("edge_color")
-		assert_true(material.get_shader_parameter("tint").is_equal_approx(expected[kind]), "유리 면 색 (종류 %d)" % kind)
-		# 선은 같은 색조: 가장 센 채널이 유리 색과 같고, HDR(1 초과)로 빛남
-		var glass: Color = expected[kind]
-		assert_eq(_strongest(edge), _strongest(glass), "선 색조가 유리와 같음 (종류 %d)" % kind)
-		assert_true(_peak(edge) > 1.0, "선은 HDR 발광 (종류 %d)" % kind)
-		# 밝기 순서(HDR 가장 센 채널 기준): 주인공 > 장애물 선 > 빛나는 난간·물방울
-		assert_true(_peak(edge) < _peak(hero_peak), "선이 주인공 가장자리보다 어두움 (종류 %d)" % kind)
-		assert_true(_peak(edge) > road_peak, "선이 빛나는 난간·물방울보다 밝음 (종류 %d)" % kind)
+		var mark: Color = material.get_shader_parameter("mark_color")
+		assert_true(material.get_shader_parameter("tint").is_equal_approx(expected[kind]), "색 (종류 %d)" % kind)
+		assert_true(material.get_shader_parameter("body_color").is_equal_approx(Color("120e24")), "몸통 (종류 %d)" % kind)
+		assert_eq(_strongest(edge), _strongest(expected[kind]), "테두리 색조 (종류 %d)" % kind)
+		assert_true(_peak(edge) > 1.0, "테두리는 HDR 발광 (종류 %d)" % kind)
+		# 밝기 순서(HDR 가장 센 채널 기준): 주인공 > 기호 > 테두리 > 레이저·난간
+		assert_true(_peak(mark) < _peak(hero_peak), "기호가 주인공보다 어두움 (종류 %d)" % kind)
+		assert_true(_peak(mark) > _peak(edge), "기호가 테두리보다 밝음 (종류 %d)" % kind)
+		assert_true(_peak(edge) > main.ROAD_PEAK_MAX, "테두리가 번쩍이는 무대보다 밝음 (종류 %d)" % kind)
 	main.queue_free()
 
 
@@ -495,7 +493,7 @@ func test_재시작_뒤_0_82초_동안_어떤_장애물도_닿을_수_없음() -
 	main.queue_free()
 
 
-func test_첫_화면_전에_세_종류와_물방울과_글자를_가림막_뒤에서_그린다() -> void:
+func test_첫_화면_전에_세_종류와_조각과_글자를_가림막_뒤에서_그린다() -> void:
 	var main: Node3D = load("res://scenes/main.tscn").instantiate()
 	main.seed_value = 1234
 	add_child(main)
@@ -509,6 +507,7 @@ func test_첫_화면_전에_세_종류와_물방울과_글자를_가림막_뒤�
 	main._sync_pieces()
 	for kind in main._kind_meshes:
 		assert_true(main._kind_meshes[kind]["body"].visible_instance_count > 0, "장애물 %d을 그림" % kind)
+	assert_eq(main._shard_live.size(), 1, "조각 재질도 그림")
 	var cover: ColorRect = main.find_children("*", "ColorRect", true, false)[0]
 	assert_true(cover.get_parent().layer > 1, "화면 맨 위 가림막")
 	assert_eq(main.find_children("*", "Label", true, false).size(), 7, "숫자·안내·최고 글자도 그림")
@@ -517,6 +516,7 @@ func test_첫_화면_전에_세_종류와_물방울과_글자를_가림막_뒤�
 		await wait_frames()
 	await wait_frames()
 	assert_eq(main.find_children("*", "ColorRect", true, false).size(), 0, "가림막 사라짐")
+	assert_eq(main._shard_live.size(), 0, "준비용 조각 정리")
 	assert_true(_count_nodes(main) < nodes_during, "준비용 노드 정리")
 	assert_eq(main.find_children("*", "Label", true, false).size(), 4)
 	main.queue_free()
@@ -693,7 +693,7 @@ func test_최고를_넘는_순간_숫자가_커졌다_돌아오고_NEW_BEST로_�
 	main.queue_free()
 
 
-func test_단계가_오를_때만_물방울과_난간이_0_3초_빛남() -> void:
+func test_단계가_오를_때만_레이저_전체가_0_3초_번쩍임() -> void:
 	var main := _make_main()
 	await wait_frames()
 	main.field.items.clear()
@@ -704,9 +704,9 @@ func test_단계가_오를_때만_물방울과_난간이_0_3초_빛남() -> void
 	var flash := func(t: float) -> float:
 		main._music_t = t
 		main._move_world()
-		var amount: float = main._droplet_material.get_shader_parameter("flash")
-		assert_true(is_equal_approx(main._rail_material.get_shader_parameter("energy"), minf(main._rail_energy + main.RAIL_FLASH_ADD * amount, main._road_max)), "난간도 같이")
-		return amount
+		assert_true(is_equal_approx(main._laser_material.get_shader_parameter("energy"), StageLight.energy(main._laser_base, main._beat_flash, main._flash, main._laser_peak)), "레이저에 들어감")
+		assert_true(is_equal_approx(main._rail_material.get_shader_parameter("energy"), SpeedPalette.at(main._tint)["rail_energy"]), "난간은 번쩍이지 않음: 진하기 값 그대로")
+		return main._flash
 	assert_eq(flash.call(10.05), 0.0, "BPM만 오르면 신호 없음")
 	assert_eq(flash.call(19.99), 0.0)
 	assert_true(flash.call(20.0) > 0.99, "경계 박에 바로 밝음")

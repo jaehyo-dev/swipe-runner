@@ -17,7 +17,7 @@ from scipy.signal import lfilter
 ROOT = Path(__file__).resolve().parent.parent
 SRC = ROOT / "review/v0.2.8"
 OUT = ROOT / "assets/audio"
-REPORT = ROOT / "review/v0.3.0"
+REPORT = ROOT / "review/v0.6.0/final_sounds"  # 측정표. v0.3.0 기록은 그때 것으로 남긴다
 sys.path.insert(0, str(SRC / "sounds_v2"))
 import make_sounds_v2 as v2  # 후보 보고서와 같은 자로 재려고 측정 함수를 함께 쓴다
 
@@ -31,6 +31,7 @@ SOUNDS = {
     "slide": ("sounds_v3/slide_a.wav", 7, 12000.0, 0.28),
     "land": ("sounds_v2/land_c.wav", -10, 12000.0, 0.37),
     "crash": ("sounds_v3/crash_c.wav", 9, 9500.0, 0.43),
+    "shatter": ("../v0.6.0/shatter_sounds/shatter_a.wav", 0, None, 0.16),  # 사용자가 다른 후보를 고르면 여기만 바꾼다
 }
 LENGTH_TOLERANCE = 0.02
 

@@ -24,7 +24,7 @@ uniform vec3 line_tint : source_color = vec3(0.6, 1.0, 1.0);        // 비쳐 �
 
 // --- 색 (ART_BIBLE.md 팔레트) ---
 uniform vec3 rim_color : source_color = vec3(0.784, 1.0, 0.980);   // #C8FFFA 얇은 가장자리
-uniform float rim_energy = 2.1;     // 테두리 발광: 화면에서 가장 밝아야 함 (장애물 선 1.6~1.8보다 위)
+uniform float rim_energy = 2.4;     // 테두리 발광: 화면에서 가장 밝아야 함 (장애물 기호 1.9~1.98보다 위)
 uniform vec3 band_color : source_color = vec3(0.184, 0.592, 0.659); // #2F97A8 안쪽 띠
 uniform vec3 mint : source_color = vec3(0.525, 0.890, 0.902);      // #86E3E6 몸 (아쿠아 민트)
 uniform vec3 core_color : source_color = vec3(0.918, 1.0, 1.0);     // #EAFFFF 속빛

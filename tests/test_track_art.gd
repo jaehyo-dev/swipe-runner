@@ -1,5 +1,5 @@
 extends TestCase
-## v0.4.1 길·장애물 아트의 규칙: 보이는 모양 = 판정 범위, 판정 값 그대로, 물방울 줄은 박에 닿음, 반사는 몸을 따라감.
+## 무대·장애물 아트의 규칙: 보이는 모양 = 판정 범위, 판정 값 그대로, 대시 줄은 박에 닿음, 반사는 몸을 따라감, 지나간 장애물은 부서짐.
 ## 충돌 소리·음악을 실제로 켜서 AudioManager 상태가 남는다. test_audio보다 뒤에 돌도록 파일 이름을 test_track_로 시작한다.
 
 const K := ObstacleField.Kind
@@ -22,13 +22,13 @@ func _meshes(kind: K) -> Dictionary:
 	return ArtMeshes.obstacle(kind)
 
 
-## 몸통 메시에서 면(UV.x == 0) 또는 테두리 관(UV.x > 0) 꼭짓점의 영역
-func _box(kind: K, lines: bool) -> AABB:
+## 몸통 메시에서 부위(ArtMeshes.Part) 꼭짓점의 영역. 관은 둥근 끝까지 포함한다
+func _box(kind: K, part: int) -> AABB:
 	var arrays: Array = _meshes(kind)["body"].surface_get_arrays(0)
 	var box := AABB()
 	var first := true
 	for i in arrays[Mesh.ARRAY_VERTEX].size():
-		if (arrays[Mesh.ARRAY_TEX_UV][i].x > 0.0) != lines:
+		if int(arrays[Mesh.ARRAY_TEX_UV][i].y) != part:
 			continue
 		var p: Vector3 = arrays[Mesh.ARRAY_VERTEX][i]
 		box = AABB(p, Vector3.ZERO) if first else box.expand(p)
@@ -72,21 +72,21 @@ func test_보이는_면이_판정_크기에_정확히_맞음() -> void:
 		K.HIGH: [Vector3(1.3, 0.7, 0.5), 0.62],
 	}
 	for kind in cases:
-		var box: AABB = _box(kind, false)
+		var box: AABB = _box(kind, ArtMeshes.Part.BODY)
 		assert_true(box.size.is_equal_approx(cases[kind][0]), "크기 %s: %s" % [kind, box.size])
 		assert_true(is_equal_approx(box.position.y, cases[kind][1]), "아랫면 %s: %f" % [kind, box.position.y])
 		assert_true(absf(box.position.x + box.size.x * 0.5) < 0.001 and absf(box.position.z + box.size.z * 0.5) < 0.001, "레인 가운데 %s" % kind)
 
 
-func test_기둥은_점프보다_확실히_높음() -> void:
+func test_옆_블록은_점프보다_확실히_높음() -> void:
 	assert_true(ObstacleField.BLOCK_HEIGHT - PlayerAction.JUMP_HEIGHT >= 0.4)
 
 
-func test_막대에는_기둥이_없고_아래_빛_웅덩이는_막대보다_좁고_가장자리가_사라짐() -> void:
+func test_슬라이드_블록에는_받침이_없고_아래_빛_웅덩이는_블록보다_좁고_가장자리가_사라짐() -> void:
 	var half := RunLogic.LANE_WIDTH * 0.5
 	var meshes := _meshes(K.HIGH)
-	var lines: AABB = _box(K.HIGH, true)
-	assert_true(lines.position.y >= ObstacleField.HIGH_BOTTOM - 0.1, "선이 막대 아래로 내려가지 않음 %f" % lines.position.y)
+	var lines: AABB = _box(K.HIGH, ArtMeshes.Part.EDGE)
+	assert_true(lines.position.y >= ObstacleField.HIGH_BOTTOM - 0.1, "선이 블록 아래로 내려가지 않음 %f" % lines.position.y)
 	assert_true(lines.position.x > -half, "선")
 	var center := 0.0
 	var arrays: Array = meshes["mirror"].surface_get_arrays(0)
@@ -105,27 +105,60 @@ func test_막대에는_기둥이_없고_아래_빛_웅덩이는_막대보다_좁
 	assert_true(center > 0.2 and center <= 0.35, "가운데 %f" % center)
 
 
-## 자기 뒤쪽 테두리와 화살이 앞으로 비쳐 두 겹으로 보이지 않게 뒷면 선은 만들지 않는다
-func test_테두리는_앞면에만_있음() -> void:
-	for kind: K in [K.LOW, K.HIGH]:
-		assert_true(_box(kind, true).position.z > 0.0, "%d: 뒤쪽 선 없음 %f" % [kind, _box(kind, true).position.z])
-	assert_true(_box(K.BLOCK, true).position.z > -0.1, "기둥: 카메라 쪽 모서리만 %f" % _box(K.BLOCK, true).position.z)
+## 기호 하나가 면의 50~60% (둥근 끝까지 포함한 폭과 높이), 앞면에 있고 면 안에 든다
+func test_기호는_앞면의_50에서_60퍼센트() -> void:
+	for kind: K in [K.BLOCK, K.LOW, K.HIGH]:
+		var face: AABB = _box(kind, ArtMeshes.Part.BODY)
+		var mark: AABB = _box(kind, ArtMeshes.Part.MARK)
+		for axis in 2:
+			var share: float = mark.size[axis] / face.size[axis]
+			assert_true(share >= 0.5 and share <= 0.6, "종류 %d 축 %d: %f" % [kind, axis, share])
+		assert_true(absf(mark.get_center().y - face.get_center().y) < 0.001, "종류 %d: 가운데" % kind)
+		assert_true(mark.end.z > face.end.z, "종류 %d: 앞면에서 솟음" % kind)
+		assert_true(mark.position.z > 0.0, "종류 %d: 앞면에만" % kind)
 
 
-func test_기둥에는_바닥에_부드러운_접지_그림자() -> void:
-	var arrays: Array = _meshes(K.BLOCK)["mirror"].surface_get_arrays(0)
-	var center := 0.0
-	var reach := 0.0
-	for i in arrays[Mesh.ARRAY_VERTEX].size():
-		var p: Vector3 = arrays[Mesh.ARRAY_VERTEX][i]
-		if p.y == 0.0 and arrays[Mesh.ARRAY_COLOR][i].g == 1.0:
-			center = maxf(center, arrays[Mesh.ARRAY_COLOR][i].a)
-			reach = maxf(reach, absf(p.x))
-	assert_true(center > 0.3, "진하기 %f" % center)
-	assert_true(reach > ObstacleField.BLOCK_SIZE * 0.5 and reach < RunLogic.LANE_WIDTH * 0.75, "기둥보다 조금 넓음 %f" % reach)
+## 뒤집힌 ^는 슬라이드 기호 v로 읽힌다
+func test_반사에는_기호가_없음() -> void:
+	for kind: K in [K.BLOCK, K.LOW, K.HIGH]:
+		var mark := _box(kind, ArtMeshes.Part.MARK)
+		assert_true(mark.size.x > 0.0, "몸통에는 기호가 있음")
+		var arrays: Array = _meshes(kind)["mirror"].surface_get_arrays(0)
+		for i in arrays[Mesh.ARRAY_VERTEX].size():
+			var p: Vector3 = arrays[Mesh.ARRAY_VERTEX][i]
+			if arrays[Mesh.ARRAY_COLOR][i].r > 0.5 and arrays[Mesh.ARRAY_COLOR][i].b < 0.5:
+				assert_true(absf(p.x) > mark.end.x or absf(p.y + mark.get_center().y) > mark.size.y * 0.5, "종류 %d: 기호 자리에 빛 없음 %s" % [kind, p])
 
 
-func test_연속_기둥의_뒤쪽만_흐림() -> void:
+## 불투명 재질은 뒷면을 잘라 낸다. 감기 방향이 뒤집히면 몸통이 투명해 보이고 기호가 사라진다 (v0.6.0에서 실제로 겪음)
+func test_몸통과_관은_바깥이_앞면() -> void:
+	for kind: K in [K.BLOCK, K.LOW, K.HIGH]:
+		var arrays: Array = _meshes(kind)["body"].surface_get_arrays(0)
+		var v: PackedVector3Array = arrays[Mesh.ARRAY_VERTEX]
+		var n: PackedVector3Array = arrays[Mesh.ARRAY_NORMAL]
+		var wrong := 0
+		for i in range(0, v.size(), 3):
+			var cross := (v[i + 1] - v[i]).cross(v[i + 2] - v[i])
+			if cross.length() > 0.000001 and cross.dot(n[i] + n[i + 1] + n[i + 2]) > 0.0:  # Godot는 시계 방향이 앞면
+				wrong += 1
+		assert_eq(wrong, 0, "종류 %d: 뒤집힌 삼각형" % kind)
+
+
+func test_몸통은_불투명이고_안개를_직접_섞음() -> void:
+	var code: String = load("res://shaders/block.gdshader").code
+	assert_false(code.contains("ALPHA"), "불투명")
+	assert_true(code.contains("fog_disabled"))
+	assert_false(ResourceLoader.exists("res://shaders/glass.gdshader"), "유리 재질 제거")
+
+
+## 가산 혼합에 안개가 있으면 안개 색이 그대로 더해져 사각형째 떠 보인다
+func test_가산_셰이더는_안개를_끔() -> void:
+	for path in ["res://shaders/laser.gdshader", "res://shaders/shard.gdshader"]:
+		var code: String = load(path).code
+		assert_true(code.contains("blend_add") and code.contains("fog_disabled"), path)
+
+
+func test_연속_블록의_뒤쪽만_흐림() -> void:
 	var main := _make_main()
 	await wait_frames()
 	main.clear_pieces()
@@ -153,7 +186,7 @@ func test_장애물은_종류별_MultiMesh_하나이고_바뀔_때만_다시_씀
 	assert_eq(main._kind_meshes[K.BLOCK]["body"].visible_instance_count, 5)
 	assert_eq(main._kind_meshes[K.BLOCK]["mirror"].visible_instance_count, 5)
 	assert_eq(main._kind_meshes[K.LOW]["body"].visible_instance_count, 0)
-	assert_eq(main._pieces_root.get_child_count(), 3 * main.KINDS.size(), "종류마다 깊이·색·반사")
+	assert_eq(main._pieces_root.get_child_count(), 2 * main.KINDS.size(), "종류마다 몸통·반사")
 	assert_false(main._pieces_dirty, "다 썼음")
 	main._scroll += 3.0
 	main._sync_pieces()
@@ -162,7 +195,7 @@ func test_장애물은_종류별_MultiMesh_하나이고_바뀔_때만_다시_씀
 	main.queue_free()
 
 
-func test_물방울은_새로_들어온_줄만_다시_씀() -> void:
+func test_대시는_새로_들어온_줄만_다시_씀() -> void:
 	var main := _make_main()
 	await wait_frames()
 	main.field.items.clear()
@@ -175,64 +208,60 @@ func test_물방울은_새로_들어온_줄만_다시_씀() -> void:
 	var changed := 0
 	for i in BeatRows.COUNT:
 		changed += 1 if main._row_beats[i] != before[i] else 0
-	assert_eq(changed, 2, "한 박에 두 칸(박 줄, 반 박 줄)")
+	assert_eq(changed, 1, "한 박에 한 칸")
 	main.queue_free()
 
 
-func test_프레임이_밀리면_효과를_낮춤() -> void:
+func test_프레임이_밀리면_줄기_레이저_반사_MSAA_빛_번짐_순서로_낮춤() -> void:
 	var main := _make_main()
 	await wait_frames()
 	var msaa: int = get_viewport().msaa_3d
 	var glow: float = main._env.glow_intensity
+	main._tint = -1.0
+	main._apply_tint(1.0)
+	var streaks: int = main._streaks.visible_instance_count
+	assert_eq(streaks, 48, "t=1 빛 줄기")
+	assert_eq(main._laser_material.get_shader_parameter("count"), 6.0, "t=1 레이저")
 	main.apply_quality(1)
-	assert_eq(main._kind_meshes[K.BLOCK]["reflect"].get_shader_parameter("reflect_on"), 0.0, "1단계 반사 끔")
+	assert_true(main._streaks.visible_instance_count < streaks, "1단계 줄기")
+	assert_eq(main._laser_material.get_shader_parameter("count"), 6.0, "레이저는 그대로")
+	main.apply_quality(2)
+	assert_eq(main._laser_material.get_shader_parameter("count"), QualityGuard.LASER_LOW, "2단계 레이저")
+	assert_true(main.runner._mirror.visible, "반사는 그대로")
+	main.apply_quality(3)
+	assert_eq(main._kind_meshes[K.BLOCK]["reflect"].get_shader_parameter("reflect_on"), 0.0, "3단계 반사 끔")
 	assert_false(main.runner._mirror.visible, "주인공 반사도")
 	assert_eq(get_viewport().msaa_3d, msaa, "MSAA는 그대로")
-	main.apply_quality(2)
-	assert_eq(get_viewport().msaa_3d, Viewport.MSAA_2X, "2단계 MSAA 2x")
+	main.apply_quality(4)
+	assert_eq(get_viewport().msaa_3d, Viewport.MSAA_2X, "4단계 MSAA 2x")
 	assert_eq(main._env.glow_intensity, glow, "빛 번짐은 그대로")
-	main.apply_quality(3)
-	assert_true(main._env.glow_intensity < glow, "3단계 빛 번짐 낮춤")
+	main.apply_quality(5)
+	assert_true(main._env.glow_intensity < glow, "5단계 빛 번짐 낮춤")
 	get_viewport().msaa_3d = msaa
 	main.queue_free()
 
 
-## 깊이를 먼저 쓰고 색을 칠하므로 화소마다 맨 앞면 한 장만 보인다: 화면 불투명도 = 몸통 불투명도
-func test_몸통_불투명도는_70퍼센트이고_깊이를_먼저_씀() -> void:
-	var main := _make_main()
-	await wait_frames()
-	var code: String = load("res://shaders/glass.gdshader").code
-	assert_true(absf(code.get_slice("body_alpha = ", 1).get_slice(";", 0).to_float() - 0.7) < 0.0001)
-	assert_true(code.contains("depth_draw_always"))
-	for kind in main.KINDS:
-		var shape: Dictionary = main._kind_meshes[kind]
-		assert_eq(shape["depth"].get_shader_parameter("pass_alpha"), 0.0, "깊이만")
-		assert_true(shape["depth"].render_priority < shape["glass"].render_priority, "깊이 먼저")
-		assert_true(shape["depth"].render_priority > 0, "주인공 다음: 뒤 장애물이 주인공을 덮지 않음")
-	main.queue_free()
-
-
-func test_반사는_바닥_아래이고_불투명도는_15에서_25퍼센트() -> void:
+func test_반사는_바닥_아래이고_몸통과_빛의_불투명도가_정해진_값() -> void:
 	for kind in [K.BLOCK, K.LOW, K.HIGH]:
 		var arrays: Array = _meshes(kind)["mirror"].surface_get_arrays(0)
 		var alphas := {}
 		for i in arrays[Mesh.ARRAY_VERTEX].size():
 			var a: float = arrays[Mesh.ARRAY_COLOR][i].a
 			if a > 0.0 and arrays[Mesh.ARRAY_VERTEX][i].y < 0.0:
-				assert_true(a <= 0.25 + 0.001, "불투명도 상한 %f" % a)
 				alphas[snappedf(a, 0.01)] = true
-		assert_true(alphas.has(0.15) and alphas.has(0.25), "면 15%%, 선 25%%: %s" % str(alphas))
+		assert_eq(alphas.size(), 2, str(alphas))
+		assert_true(alphas.has(snappedf(ArtMeshes.MIRROR_BODY_ALPHA, 0.01)) and alphas.has(snappedf(ArtMeshes.MIRROR_EDGE_ALPHA, 0.01)), str(alphas))
 
 
 func test_세_종류의_실루엣_높이가_다름() -> void:
-	var pillar: AABB = _box(K.BLOCK, false)
-	var low: AABB = _box(K.LOW, false)
-	var high: AABB = _box(K.HIGH, false)
-	assert_true(pillar.end.y > high.end.y + 0.5, "기둥이 가장 키가 큼")
-	assert_true(low.end.y < high.position.y, "턱 윗면이 막대 아랫면보다 아래: 막대 아래가 비어 보임")
+	var pillar: AABB = _box(K.BLOCK, ArtMeshes.Part.BODY)
+	var low: AABB = _box(K.LOW, ArtMeshes.Part.BODY)
+	var high: AABB = _box(K.HIGH, ArtMeshes.Part.BODY)
+	assert_true(pillar.end.y > high.end.y + 0.5, "옆 블록이 가장 키가 큼")
+	assert_true(low.end.y < high.position.y, "낮은 블록 윗면이 떠 있는 블록 아랫면보다 아래: 아래가 비어 보임")
 
 
-func test_물방울_줄은_템포가_바뀌어도_박에_주인공_자리에_닿음() -> void:
+func test_대시_줄은_템포가_바뀌어도_박에_주인공_자리에_닿음() -> void:
 	var ladder := MusicLadder.new(0)
 	ladder.add_segment(19.2, 32, 1)
 	ladder.add_segment(37.49, 64, 6)
@@ -241,12 +270,10 @@ func test_물방울_줄은_템포가_바뀌어도_박에_주인공_자리에_닿
 		assert_true(absf(BeatRows.row_z(ladder, t, beat)) < 0.000001, "박 %d" % beat)
 
 
-func test_줄은_짝수_자리가_박이고_주인공_앞뒤를_덮으며_간격이_구간_속도를_따름() -> void:
-	assert_true(BeatRows.is_beat_row(0))
-	assert_false(BeatRows.is_beat_row(1))
+func test_줄은_박_거리마다_하나이고_주인공_앞뒤를_덮으며_간격이_구간_속도를_따름() -> void:
 	assert_eq(BeatRows.beat_of(0, 10.3), 9.0)
-	assert_eq(BeatRows.beat_of(1, 10.3), 9.5)
-	assert_eq(BeatRows.beat_of(4, 10.9), 11.0)
+	assert_eq(BeatRows.beat_of(1, 10.3), 10.0)
+	assert_eq(BeatRows.beat_of(4, 10.9), 13.0)
 	for step in MusicLadder.STEPS.size():
 		var ladder := MusicLadder.new(step)
 		var t := 3.0
@@ -267,41 +294,41 @@ func test_실제_줄_노드가_박에_주인공_자리에_닿음() -> void:
 		main._place_rows()
 		# 헤드리스 렌더러는 MultiMesh 값을 돌려주지 않으므로 칸에 담긴 박과 부모 위치로 확인한다. 실제 값은 tools/playthrough.gd가 웹에서 잰다
 		assert_eq(main._row_beats[BeatRows.slot_of(beat)], beat, "그 박이 들어 있는 칸")
-		assert_true(absf(main._droplets.position.z - ladder.distance_of_beat(beat)) < 0.0001, "부모가 그 박의 이동 거리에 있어 z = 0")
+		assert_true(absf(main._dashes.position.z - ladder.distance_of_beat(beat)) < 0.0001, "부모가 그 박의 이동 거리에 있어 z = 0")
 	main.queue_free()
 
 
-func test_박마다_1_15배까지_부풀고_0_15초에_돌아옴() -> void:
-	assert_eq(BeatRows.pulse(0.0), 1.0)
-	assert_eq(BeatRows.pulse(BeatRows.PULSE_TIME), 1.0)
-	assert_eq(BeatRows.pulse(0.3), 1.0)
+func test_박에_바로_밝아지고_0_15초에_돌아옴() -> void:
+	assert_eq(BeatRows.pulse(0.0), 0.0)
+	assert_eq(BeatRows.pulse(BeatRows.PULSE_TIME), 0.0)
+	assert_eq(BeatRows.pulse(0.3), 0.0)
 	var peak := 0.0
 	for i in 150:
 		peak = maxf(peak, BeatRows.pulse(i * 0.001))
-	assert_true(absf(peak - 1.15) < 0.001, "최대 %f" % peak)
+	assert_true(absf(peak - 1.0) < 0.001, "최대 %f" % peak)
 
 
-func test_물방울은_박에_부풀고_멈추면_부풂과_반짝임이_꺼짐() -> void:
+func test_대시는_박에_밝아지고_멈추면_꺼짐() -> void:
 	var main := _make_main()
 	await wait_frames()
 	main.field.items.clear()
 	main.advance(1.8 + 0.03)  # 3박(1.8초) 0.03초 뒤
-	var mat: ShaderMaterial = main._droplet_material
-	assert_true(mat.get_shader_parameter("pulse") > 1.1, "박 직후 부풂")
+	var mat: ShaderMaterial = main._dash_material
+	assert_true(mat.get_shader_parameter("pulse") > 0.5, "박 직후 밝음")
 	main.advance(0.2)
-	assert_eq(mat.get_shader_parameter("pulse"), 1.0, "0.15초 뒤 돌아옴")
+	assert_eq(mat.get_shader_parameter("pulse"), 0.0, "0.15초 뒤 돌아옴")
 	var item := {"id": 7000, "lane": main.lane, "z": 0.0, "kind": K.BLOCK, "beat": 0, "arrive": main.travel}
 	main.field.items.append(item)
 	main._spawn_node(item)
 	main.advance(STEP)
 	assert_true(main.dead, "부딪힘")
-	assert_eq(mat.get_shader_parameter("pulse"), 1.0)
+	assert_eq(mat.get_shader_parameter("pulse"), 0.0)
 	assert_eq(mat.get_shader_parameter("sparkle_on"), 0.0, "멈춘 줄이 계속 빛나지 않음")
-	var z: float = main._droplets.position.z
+	var z: float = main._dashes.position.z
 	main.advance(STEP)
-	assert_true(main._droplets.position.z > z, "느려지는 동안 장애물과 같이 다가옴")
+	assert_true(main._dashes.position.z > z, "느려지는 동안 장애물과 같이 다가옴")
 	main.restart()
-	assert_eq(main._droplets.position.z, 0.0, "밀린 만큼 되돌림")
+	assert_eq(main._dashes.position.z, 0.0, "밀린 만큼 되돌림")
 	assert_eq(mat.get_shader_parameter("appear"), 0.0, "재시작 때 '퐁'으로 다시 나타남")
 	assert_eq(mat.get_shader_parameter("sparkle_on"), 1.0)
 	main.queue_free()
@@ -313,10 +340,10 @@ func test_대기_화면에서는_줄이_반짝이지_않고_출발하면_반짝�
 	main.best_path = TEST_BEST
 	add_child(main)
 	main.set_process(false)
-	var on: Variant = main._droplet_material.get_shader_parameter("sparkle_on")
+	var on: Variant = main._dash_material.get_shader_parameter("sparkle_on")
 	assert_true(on == null or on == 0.0, "대기 중 꺼짐")
 	main.begin()
-	assert_eq(main._droplet_material.get_shader_parameter("sparkle_on"), 1.0)
+	assert_eq(main._dash_material.get_shader_parameter("sparkle_on"), 1.0)
 	main.queue_free()
 
 
@@ -418,39 +445,43 @@ func test_색은_속도를_따라_진해지고_재질을_새로_만들지_않음
 	var main := _make_main()
 	await wait_frames()
 	main.field.items.clear()
-	var glass: ShaderMaterial = main._kind_meshes[K.BLOCK]["glass"]
+	var block: ShaderMaterial = main._kind_meshes[K.BLOCK]["block"]
 	main.advance(0.0, 1.0)
 	assert_eq(main._tint, 0.0)
-	assert_true(_sky_top(main).is_equal_approx(Color("0b0a24")), "t=0 하늘")
-	assert_true(glass.get_shader_parameter("tint").is_equal_approx(Color("bfdcff")))
-	assert_true(main._env.fog_light_color.is_equal_approx(Color("3a2470")), "안개 = 지평선")
+	assert_true(_sky_top(main).is_equal_approx(Color("05040d")), "t=0 하늘")
+	assert_true(block.get_shader_parameter("tint").is_equal_approx(Color("2fb8ff")))
+	assert_true(main._env.fog_light_color.is_equal_approx(Color("241650")), "안개 = 지평선")
+	assert_eq(main._laser_material.get_shader_parameter("count"), 4.0, "t=0 레이저 4줄")
 	ladder.add_segment(9.6, 16, 12)
 	main.advance(0.0, 9.6 + 60.0 / 160.0 * 4.0)  # 2마디의 절반
 	assert_true(absf(main._tint - 0.5) < 0.001, "절반 %f" % main._tint)
 	main._music_t = 30.0  # 큰 시간 건너뛰기로 장애물에 부딪히지 않게 색만 계산한다
 	main._apply_tint(main._tint_now())
 	assert_eq(main._tint, 1.0)
-	assert_true(_sky_top(main).is_equal_approx(Color("0a0030")), "t=1 하늘")
-	assert_true(glass.get_shader_parameter("tint").is_equal_approx(Color("4fa0ff")))
-	assert_eq(main._kind_meshes[K.BLOCK]["glass"], glass, "같은 재질")
-	assert_true(main._kind_meshes[K.HIGH]["reflect"].get_shader_parameter("glass_color").is_equal_approx(Color("ff0fa0")), "반사도 같은 색")
+	assert_true(_sky_top(main).is_equal_approx(Color("05040d")), "t=1 하늘")
+	assert_true(main._env.fog_light_color.is_equal_approx(Color("3d1880")), "t=1 안개 짙게")
+	assert_true(block.get_shader_parameter("tint").is_equal_approx(Color("0faeff")))
+	assert_eq(main._kind_meshes[K.BLOCK]["block"], block, "같은 재질")
+	assert_eq(main._laser_material.get_shader_parameter("count"), 6.0, "t=1 레이저 6줄")
+	assert_eq(main._streaks.visible_instance_count, 48, "t=1 빛 줄기")
 	AudioManager.ladder = MusicLadder.new(0)
 	main.queue_free()
 
 
-func test_빛날_때도_난간과_물방울은_상한을_넘지_않음() -> void:
+func test_번쩍여도_레이저와_대시는_상한을_넘지_않음() -> void:
 	var main := _make_main()
 	await wait_frames()
 	for t in [0.0, 0.5, 1.0]:
 		main._tint = -1.0
 		main._apply_tint(t)
+		main._beat_flash = StageLight.BAR_BOOST
 		main._set_flash(1.0)
+		assert_true(main._laser_peak * main._laser_material.get_shader_parameter("energy") <= main.ROAD_PEAK_MAX + 0.001, "레이저 t=%f" % t)
 		var rail: Color = main._rail_material.get_shader_parameter("color")
-		var peak := maxf(rail.r, maxf(rail.g, rail.b))
-		assert_true(peak * main._rail_material.get_shader_parameter("energy") <= main.ROAD_PEAK_MAX + 0.001, "난간 t=%f" % t)
-		assert_true(peak * main._droplet_material.get_shader_parameter("max_energy") <= main.ROAD_PEAK_MAX + 0.001, "물방울 t=%f" % t)
+		assert_true(maxf(rail.r, maxf(rail.g, rail.b)) * main._dash_material.get_shader_parameter("max_energy") <= main.ROAD_PEAK_MAX + 0.001, "대시 t=%f" % t)
+		main._beat_flash = 0.0
 		main._set_flash(0.0)
-		assert_true(is_equal_approx(main._rail_material.get_shader_parameter("energy"), SpeedPalette.at(t)["rail_energy"]), "평소 빛 세기")
+		assert_true(is_equal_approx(main._laser_material.get_shader_parameter("energy"), SpeedPalette.at(t)["laser_energy"]), "평소 빛 세기")
 	main.queue_free()
 
 
@@ -476,6 +507,128 @@ func test_재시작하면_색이_0_5초_동안_돌아감() -> void:
 	assert_true(absf(mid - 0.5) < 0.001, "0.25초 %f" % mid)
 	assert_eq(at.call(0.5), 0.0, "0.5초에 t=0")
 	assert_eq(main.speed, 12.0, "속도 12")
-	assert_true(_sky_top(main).is_equal_approx(Color("0b0a24")))
+	assert_true(_sky_top(main).is_equal_approx(Color("05040d")))
 	AudioManager.ladder = MusicLadder.new(0)
+	main.queue_free()
+
+
+## 옆 레인에 곧 주인공 위치를 지날 장애물을 놓는다
+func _passing(main: Node3D, id: int, kind: K, lane: int, ahead := 0.01) -> Dictionary:
+	var item := {"id": id, "lane": lane, "z": -ahead, "kind": kind, "beat": 0, "arrive": main.travel + ahead}
+	main.field.items.append(item)
+	main._spawn_node(item)
+	return item
+
+
+func _shatter_sounds(main: Node3D, frames: int) -> int:
+	var heard := [0]
+	var count := func(sound: StringName, _pitch: float) -> void:
+		if sound == &"shatter":
+			heard[0] += 1
+	AudioManager.played.connect(count)
+	for i in frames:
+		main.advance(STEP)
+	AudioManager.played.disconnect(count)
+	return heard[0]
+
+
+func test_지나간_장애물은_박에_조각으로_부서지고_판정이_끝나면_몸통이_사라짐() -> void:
+	AudioManager.unblock()
+	var main := _make_main()
+	while not main.prewarmed:  # 미리 준비용 조각이 사라질 때까지
+		await wait_frames()
+	main.field.items.clear()
+	main.clear_pieces()
+	var item := _passing(main, 7100, K.LOW, 2)
+	var free_before: int = main._shard_free.size()
+	assert_eq(_shatter_sounds(main, 1), 1, "한 번")
+	assert_true(item.has("broken"))
+	var made: int = free_before - main._shard_free.size()
+	assert_true(made >= Shatter.COUNT_MIN and made <= Shatter.COUNT_MAX, "조각 %d개" % made)
+	assert_true(item["z"] <= PlayerAction.HIT_Z, "아직 판정 범위")
+	assert_false(main._obstacles[7100].broken, "판정이 남아 있는 동안 몸통은 보임")
+	main._sync_pieces()
+	assert_eq(main._kind_meshes[K.LOW]["body"].visible_instance_count, 1, "그림")
+	assert_eq(_shatter_sounds(main, 3), 0, "한 장애물은 한 번만")
+	while item["z"] <= PlayerAction.HIT_Z:
+		main.advance(STEP)
+	main._sync_pieces()
+	assert_true(main._obstacles[7100].broken, "판정이 끝나면 숨김")
+	assert_eq(main._kind_meshes[K.LOW]["body"].visible_instance_count, 0, "그리지 않음")
+	for i in 30:
+		main.advance(STEP)
+	assert_eq(main._shard_live.size(), 0, "0.35초 안에 사라짐")
+	assert_eq(main._shard_free.size(), free_before, "풀로 돌아옴")
+	main.queue_free()
+
+
+func test_같은_박에_여러_개면_모두_부서지고_소리는_하나() -> void:
+	AudioManager.unblock()
+	var main := _make_main()
+	while not main.prewarmed:  # 미리 준비용 조각이 사라질 때까지
+		await wait_frames()
+	main.field.items.clear()
+	main.clear_pieces()
+	var a := _passing(main, 7200, K.BLOCK, 0)
+	var b := _passing(main, 7201, K.HIGH, 2)
+	var free_before: int = main._shard_free.size()
+	assert_eq(_shatter_sounds(main, 1), 1, "소리 하나")
+	assert_true(a.has("broken") and b.has("broken"), "둘 다")
+	assert_true(free_before - main._shard_free.size() >= Shatter.COUNT_MIN * 2, "조각도 둘 다")
+	main.queue_free()
+
+
+func test_충돌한_장애물은_부서지지_않음() -> void:
+	AudioManager.unblock()
+	var main := _make_main()
+	while not main.prewarmed:  # 미리 준비용 조각이 사라질 때까지
+		await wait_frames()
+	main.field.items.clear()
+	main.clear_pieces()
+	var item := _passing(main, 7300, K.BLOCK, main.lane)
+	var free_before: int = main._shard_free.size()
+	main.advance(STEP)
+	assert_true(main.dead, "부딪힘")
+	assert_false(item.has("broken"))
+	assert_eq(main._shard_free.size(), free_before, "조각 없음")
+	main.queue_free()
+
+
+## 판정은 z 0.7까지 그대로다. 부서진 직후 그 범위로 파고들면 원래대로 부딪히고, 몸통은 계속 보이며 그 조각만 사라진다
+func test_부서진_직후_판정_범위에서_부딪히면_몸통은_보이고_조각이_사라짐() -> void:
+	AudioManager.unblock()
+	var main := _make_main()
+	while not main.prewarmed:  # 미리 준비용 조각이 사라질 때까지
+		await wait_frames()
+	main.field.items.clear()
+	main.clear_pieces()
+	var side: int = (main.lane + 1) % 3
+	var item := _passing(main, 7400, K.BLOCK, side)
+	main.advance(STEP)
+	assert_true(item.has("broken") and not main.dead, "옆 레인이라 부서짐")
+	assert_true(item["z"] < PlayerAction.HIT_Z)
+	var free_before: int = main._shard_free.size()
+	main.runner.position.x = RunLogic.lane_x(side)
+	main.advance(STEP)
+	assert_true(main.dead, "v0.5.1과 같이 부딪힘")
+	assert_false(main._obstacles[7400].broken, "몸통이 보임")
+	assert_true(main._shard_free.size() > free_before, "그 조각을 지움")
+	assert_eq(main._shard_live.size(), 0)
+	main.queue_free()
+
+
+func test_조각은_새_노드를_만들지_않고_풀이_차도_안전함() -> void:
+	AudioManager.unblock()
+	var main := _make_main()
+	while not main.prewarmed:  # 미리 준비용 조각이 사라질 때까지
+		await wait_frames()
+	main.field.items.clear()
+	main.clear_pieces()
+	var nodes: int = main.get_child_count()
+	for i in 40:  # 풀보다 많이
+		_passing(main, 7500 + i, K.LOW, 2)
+	main.advance(STEP)
+	assert_eq(main._shard_free.size(), 0, "풀을 다 씀")
+	assert_eq(main._shard_live.size(), main.SHARD_POOL)
+	assert_eq(main.get_child_count(), nodes, "노드 그대로")
 	main.queue_free()

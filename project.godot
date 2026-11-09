@@ -6,11 +6,11 @@ config_version=5
 [application]
 
 config/name="스와이프 러너"
-config/description="발광하는 민트 젤리가 3레인을 달리며 유리 장애물을 스와이프로 피하는 3D 러너"
-config/version="0.5.1"
+config/description="말랑한 민트 젤리가 어두운 네온 무대의 3레인을 달리며 장애물을 스와이프로 피하는 3D 러너"
+config/version="0.6.0"
 run/main_scene="res://scenes/main.tscn"
 config/features=PackedStringArray("4.7", "GL Compatibility")
-boot_splash/bg_color=Color(0.027, 0.04, 0.14, 1)
+boot_splash/bg_color=Color(0.02, 0.016, 0.051, 1)
 boot_splash/show_image=false
 config/icon="res://icon.svg"
 
@@ -38,4 +38,4 @@ anti_aliasing/quality/msaa_3d=2
 
 renderer/rendering_method="gl_compatibility"
 renderer/rendering_method.mobile="gl_compatibility"
-environment/defaults/default_clear_color=Color(0.027, 0.04, 0.14, 1)
+environment/defaults/default_clear_color=Color(0.02, 0.016, 0.051, 1)

@@ -31,14 +31,14 @@ func test_빠르면_낮추지_않음() -> void:
 	assert_eq(guard.level, 0)
 
 
-func test_밀리면_2초마다_한_단계씩_낮추고_3단계에서_멈추며_올리지_않음() -> void:
+func test_밀리면_2초마다_한_단계씩_낮추고_마지막_단계에서_멈추며_올리지_않음() -> void:
 	var guard := QualityGuard.new()
 	assert_eq(_feed(guard, 0.025, 1.9), 0, "2초 전에는 판단하지 않음")
 	assert_eq(_feed(guard, 0.025, 0.2), 1, "2초가 차면 1단계")
 	assert_eq(_feed(guard, 0.025, 2.1), 1)
 	assert_eq(guard.level, 2)
 	_feed(guard, 0.025, 20.0)
-	assert_eq(guard.level, QualityGuard.LEVELS, "3단계에서 멈춤")
+	assert_eq(guard.level, QualityGuard.LEVELS, "마지막 단계에서 멈춤")
 	_feed(guard, FAST, 20.0)
 	assert_eq(guard.level, QualityGuard.LEVELS, "빨라져도 올리지 않음")
 
@@ -52,3 +52,11 @@ func test_한두_번_끊김이나_탭_전환은_낮추지_않음() -> void:
 	guard.push(5.0)
 	_feed(guard, FAST, 3.0)
 	assert_eq(guard.level, 0, "긴 멈춤은 렉이 아님")
+
+
+func test_빛_줄기가_먼저_줄고_그다음_레이저가_줄어듦() -> void:
+	assert_eq(QualityGuard.LEVELS, 5, "줄기, 레이저, 반사, MSAA, 빛 번짐")
+	assert_eq(QualityGuard.streaks(48.0, 0), 48)
+	assert_true(QualityGuard.streaks(48.0, 1) < 48, "1단계 줄기")
+	assert_eq(QualityGuard.lasers(6.0, 1), 6.0, "1단계 레이저 그대로")
+	assert_eq(QualityGuard.lasers(6.0, 2), QualityGuard.LASER_LOW, "2단계 레이저")
