@@ -8,7 +8,7 @@ const SFX := {
 	&"land": preload("res://assets/audio/sfx/land.wav"),
 	&"crash": preload("res://assets/audio/sfx/crash.wav"),
 }
-## MusicLadder.STEPS와 같은 순서
+## MusicLadder.STEPS와 같은 순서 (맨 위 곡 뒤의 단계는 MusicLadder.track으로 마지막 곡)
 const TRACKS: Array[AudioStreamOggVorbis] = [
 	preload("res://assets/audio/music/bgm_100_orig.ogg"),
 	preload("res://assets/audio/music/bgm_105_orig.ogg"),
@@ -126,7 +126,7 @@ func is_music_on() -> bool:
 ## shortcut: 오디오가 멈췄다 돌아오면(전화 등) 곡 경계가 반복 끝과 어긋날 수 있다. 박은 맞고 재시작하면 풀린다, 실기기에서 거슬리면 곡을 시계에 맞춰 다시 시작한다.
 func _plan_next_track() -> void:
 	var plan := ladder.plan(music_time, SCHEDULE_LEAD, SCHEDULE_MIN, _web == null or _next_track_ready())
-	if plan.is_empty():
+	if plan.is_empty() or not plan["switch"]:  # 160BPM 뒤 경계는 속도만 오르고 곡은 그대로 돈다
 		return
 	var at: float = plan["at"] - _clock.offset
 	if _web:
@@ -149,13 +149,13 @@ func _next_switch() -> void:
 ## 웹: 다음 경계에서 필요한 곡 구간을 미리 풀어 둔다
 func _want_next_track() -> void:
 	var edge := ladder.next_edge(music_time, SCHEDULE_MIN)
-	if not edge.is_empty():
+	if edge["switch"]:
 		_web.want(edge["step"], edge["from"])
 
 
 func _next_track_ready() -> bool:
 	var edge := ladder.next_edge(music_time, SCHEDULE_MIN)
-	return edge.is_empty() or _web.is_ready(edge["step"], edge["from"])
+	return not edge["switch"] or _web.is_ready(edge["step"], edge["from"])
 
 
 ## 지금 귀에 들리는 음악 위치 (판 시작 기준)

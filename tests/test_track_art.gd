@@ -333,7 +333,7 @@ func test_줄은_반_박_거리마다_하나이고_주인공_앞뒤를_덮으며
 		var t := 3.0
 		var now := ladder.beat_at(t)
 		assert_true(BeatRows.row_z(ladder, t, BeatRows.beat_of(0, now)) > 0.0, "주인공 뒤")
-		assert_true(BeatRows.row_z(ladder, t, BeatRows.beat_of(BeatRows.COUNT - 1, now)) < ObstacleField.SPAWN_Z + 10.0, "장애물이 나오는 안개 근처까지")
+		assert_true(BeatRows.row_z(ladder, t, BeatRows.beat_of(BeatRows.COUNT - 1, now)) < -ladder.fog_at(t), "장애물이 사라지는 안개 너머까지")
 		var gap := BeatRows.row_z(ladder, t, 5.0) - BeatRows.row_z(ladder, t, 6.0)
 		assert_true(is_equal_approx(gap, MusicLadder.beat_distance(step)), "한 박 거리 %f" % gap)
 
@@ -454,12 +454,12 @@ func test_자동_플레이어_시드_5개_3분_충돌_없음_사다리를_끝까
 			main.advance(STEP, t)
 			if main.runner._move_tween and main.runner._move_tween.is_valid():
 				main.runner._move_tween.custom_step(STEP)
-			var dir := AutoPlayer.decide(main.field.items, main.lane, main.player, main.speed, t - last_input)
+			var dir := AutoPlayer.decide(RunSim.visible_items(main.field.items, ladder, t), main.lane, main.player, main.speed, t - last_input)
 			if dir != SwipeDetector.Dir.NONE:
 				main.apply_swipe(dir)
 				last_input = t
 		assert_false(main.dead, "시드 %d: %.1f초에 충돌" % [seed_value, t])
-		assert_eq(ladder.segments.size(), MusicLadder.STEPS.size(), "시드 %d: 사다리를 끝까지 오름" % seed_value)
+		assert_true(ladder.segments.size() > MusicLadder.STEPS.size(), "시드 %d: 160을 넘어 오름" % seed_value)
 		main.queue_free()
 		await wait_frames()
 	AudioManager.ladder = MusicLadder.new(0)
@@ -478,7 +478,7 @@ func test_첫_입력_뒤_장애물은_음악의_사다리로_경계를_넘어_�
 	var ladder: MusicLadder = AudioManager.ladder
 	var edge := MusicLadder.span_time(0)
 	ladder.plan(edge - 6.5, AudioManager.SCHEDULE_LEAD, AudioManager.SCHEDULE_MIN, true)
-	main.field.step(ladder.distance_at(edge - 1.0))
+	main.field.step(ladder.distance_at(edge - 1.0), ladder.spawn_distance_at(edge - 1.0))
 	var crossing: Array = main.field.items.filter(func(item): return item["beat"] > 16.0)
 	assert_true(crossing.size() > 0, "경계를 넘는 장애물이 있음")
 	for item: Dictionary in crossing:
@@ -733,22 +733,6 @@ func test_벽_뒤_기둥도_연속으로_흐리고_다른_레인은_아님() -> 
 	main.queue_free()
 
 
-func test_재시작_솟아오르기는_벽이_하나로() -> void:
-	var main := _make_main()
-	await wait_frames()
-	main.clear_pieces()
-	main._leaving.clear()
-	_pair(main, [1, 2])
-	for piece in main._obstacles.values():
-		main._pop_in(piece)
-	main._sync_pieces()
-	var body: MultiMesh = main._kind_meshes[K.BLOCK]["body"]
-	assert_eq(body.visible_instance_count, 1, "솟는 동안에도 하나")
-	var wall: Variant = main._obstacles.values().filter(func(p): return not p.hidden)[0]
-	assert_true(wall.scale.y < 0.1, "바닥에서 시작")
-	main.queue_free()
-
-
 func test_시야각은_속도를_2마디_동안_따라_62도에서_68도() -> void:
 	var main := _make_main()
 	await wait_frames()
@@ -766,15 +750,37 @@ func test_시야각은_속도를_2마디_동안_따라_62도에서_68도() -> vo
 	main.queue_free()
 
 
-## 멀리서 툭 나타나지 않게 생성 자리에서는 안개 색이어야 한다
-func test_생성_자리에서_장애물은_완전히_안개_색이고_반응_시간은_2_5초_이상() -> void:
-	var camera_dist := Vector3(0.0, 3.3, 5.4).distance_to(Vector3(0.0, 0.0, ObstacleField.SPAWN_Z))
-	for path in ["res://shaders/block.gdshader", "res://shaders/pillar.gdshader"]:
-		var code := FileAccess.get_file_as_string(path)
-		var found := RegEx.create_from_string("far_gone = ([0-9.]+)").search(code)
-		assert_true(found.get_string(1).to_float() <= camera_dist, "%s 생성 거리에서 안개 색" % path)
-	var fastest: float = MusicLadder.STEPS[-1]["speed"]
-	assert_true(-ObstacleField.SPAWN_Z / fastest >= 2.57, "160BPM 반응 시간 %f" % (-ObstacleField.SPAWN_Z / fastest))
+## 멀리서 툭 나타나지 않게 생성 자리에서는 안개 색이고, 장애물·대시·난간·바닥이 같은 안개 거리를 쓴다
+func test_안개는_매_프레임_사다리의_시간_기준_거리이고_생성은_그_너머() -> void:
+	var main := _make_main()
+	await wait_frames()
+	var ladder := MusicLadder.new(MusicLadder.TOP + 20)
+	main._apply_fog(ladder, 3.0)
+	var far := ladder.fog_at(3.0)
+	assert_true(is_equal_approx(far, ladder.speed_at(3.0) * 0.75), "속도 × 보이는 시간 %f" % far)
+	assert_true(is_equal_approx(ladder.fog_at(3.0) - ladder.fog_clear_at(3.0), ladder.speed_at(3.0) * 0.15), "0.15초 동안 진해짐")
+	var materials: Array = [main._dash_material, main._rail_material]
+	for shape: Dictionary in main._kind_meshes.values():
+		materials.append(shape["block"])
+	for material: ShaderMaterial in materials:
+		assert_true(is_equal_approx(material.get_shader_parameter("fog_far"), far), material.shader.resource_path)
+		assert_true(is_equal_approx(material.get_shader_parameter("fog_near"), ladder.fog_clear_at(3.0)), material.shader.resource_path)
+	assert_true(is_equal_approx(main._floor_material.get_shader_parameter("haze_far"), far), "바닥도 같은 거리에서 안개 색")
+	assert_true(ladder.spawn_distance_at(3.0) > far, "생성은 안개 너머")
+	for path in ["res://shaders/block.gdshader", "res://shaders/pillar.gdshader", "res://shaders/dash.gdshader", "res://shaders/neon.gdshader"]:
+		assert_true(FileAccess.get_file_as_string(path).contains("smoothstep(fog_near, fog_far, -"), "%s: 주인공 기준 월드 거리" % path)
+	main.queue_free()
+
+
+func test_160_뒤에는_대시와_빛_줄기가_속도를_따라_길어지고_시야각은_68도() -> void:
+	var main := _make_main()
+	await wait_frames()
+	main._apply_tint(1.0)
+	main._apply_stretch(2.0)
+	assert_eq(main._dash_material.get_shader_parameter("dash_length"), main._dash_len * 2.0)
+	assert_eq(main._streak_material.get_shader_parameter("streak_length"), main._streak_len * 2.0)
+	assert_eq(main._camera.fov, 68.0)
+	main.queue_free()
 
 
 ## 속도 33에서도 프레임 사이에 판정을 뚫고 지나가지 않는다: 120Hz 프레임당 0.275, 60Hz 0.55, 판정 폭 1.4
@@ -786,7 +792,7 @@ func test_속도_33에서_장애물이_판정을_뚫지_않음() -> void:
 		assert_true(per_frame < 2.0 * PlayerAction.HIT_Z, "%dHz 프레임당 %f" % [hz, per_frame])
 		for kind in [K.BLOCK, K.LOW, K.HIGH]:
 			for offset in 16:  # 프레임이 판정 경계와 어떻게 어긋나든
-				var z := ObstacleField.SPAWN_Z + per_frame * offset / 16.0
+				var z := -40.0 + per_frame * offset / 16.0
 				var hit := false
 				while z < ObstacleField.REMOVE_Z and not hit:
 					hit = PlayerAction.hits(kind, 0.0, z, 0.0, false)

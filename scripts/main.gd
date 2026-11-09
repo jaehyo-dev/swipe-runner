@@ -20,14 +20,15 @@ const KINDS := {
 const MAX_PIECES := 96       # 종류마다 동시에 그릴 수 있는 장애물 수. z -85~+6에 들어오는 수보다 넉넉하다
 const FOLLOW_GAP := 22.0     # 같은 레인의 앞 블록이 이만큼 안이면 연속 블록으로 본다 (2박 + 조금)
 const FOLLOW_HAZE := 0.3     # 연속 블록의 뒤쪽 것이 안개 색으로 흐려지는 양
-const FOG_DENSITY := 0.025   # 생성 거리 85에 맞춘 값 (0.035 × 60 ÷ 85). 세상 전체의 안개. 장애물만 안개를 끄고 직접 섞는다 (block.gdshader)
+const FLOOR_HAZE_FROM := 0.4  # 바닥 안개 띠는 안개 거리의 이 비율에서 시작한다
+const FOG_DENSITY := 0.025   # 안개 거리 약 30~45에서 하늘 아래 먼 세상을 덮는 값. 세상 전체의 안개. 장애물만 안개를 끄고 직접 섞는다 (block.gdshader)
 const GLOW_INTENSITY := 1.3  # 얇은 관에서도 바깥으로 빛이 번지게
 const GLOW_WIDE := 0.6       # 넓게 퍼지는 번짐 층
 const GLOW_LOW := 0.5        # 프레임이 밀릴 때 낮춘 빛 번짐 세기
 
 const RESTART_DELAY := 0.5
 const OBSTACLE_FADE := 0.15  # 다시 시작할 때 앞 판 장애물이 작아져 사라지는 시간(초): 한 프레임에 툭 없어지지 않게
-const POP_TIME := 0.25       # 다시 시작할 때 새 장애물이 바닥에서 솟아오르는 시간(초)
+const POP_TIME := 0.25       # 다시 시작할 때 대시 격자가 '퐁' 나타나는 시간(초). 장애물은 안개에서 나온다
 const PREWARM_FRAMES := 3    # 가림막 뒤에서 이만큼 연달아 빠른 프레임이 나오면 준비 끝 (셰이더는 그래픽 쪽에서 늦게 끝날 수 있다)
 const PREWARM_FAST_MS := 50
 const PREWARM_MAX_FRAMES := 120  # 아주 느린 기기도 언젠가는 화면을 연다
@@ -89,6 +90,10 @@ var _env: Environment
 var _rail_base := 1.0    # 지금 진하기의 난간 빛 세기
 var _tint := -1.0        # 지금 화면의 색 진하기
 var _stage_glow := 0.0   # 지금의 단계 빛남 (1 → 0)
+var _fog := Vector2(-1.0, -1.0)  # 지금 안개 (진해지기 시작하는 거리, 사라지는 거리)
+var _stretch := 1.0      # 160BPM 속도보다 빠를 때 대시·빛 줄기 길이 배율
+var _dash_len := 1.2     # 지금 진하기의 대시·빛 줄기 길이 (배율 전)
+var _streak_len := 1.9
 var _tint_from := -1.0   # 재시작 순간의 진하기. 음수면 돌아가는 중이 아니다
 var _tint_clock := 0.0   # 재시작 순간의 음악 시간
 var _row_beats: Array[float] = []  # 칸마다 지금 담긴 박. 바뀐 칸만 다시 쓴다
@@ -135,6 +140,7 @@ func _ready() -> void:
 	_build_floor()
 	_build_obstacle_resources()
 	_apply_tint(AudioManager.ladder.tint_at(0.0))
+	_apply_fog(AudioManager.ladder, 0.0)
 	_place_rows()
 	runner = Runner.new()
 	runner.position = Vector3(RunLogic.lane_x(lane), 0.0, 0.0)
@@ -144,7 +150,6 @@ func _ready() -> void:
 	get_viewport().size_changed.connect(_fit_render_scale)
 	_fit_camera()
 	_fit_render_scale()
-	_place_ahead(false)
 	_prewarm()
 
 
@@ -213,7 +218,7 @@ func advance(delta: float, music_t := NAN) -> void:
 		_on_new_record()
 	for item in field.items:
 		var dx := runner.position.x - RunLogic.lane_x(item["lane"])
-		if not item.has("cleared") and PlayerAction.hits(item["kind"], dx, item["z"], player.height(), player.is_ducking()):
+		if not item.has("cleared") and PlayerAction.hits(item["kind"], dx, PlayerAction.swept_dz(item), player.height(), player.is_ducking()):
 			_game_over(item)
 			return
 
@@ -228,12 +233,14 @@ func _move_world() -> void:
 	_streak_material.set_shader_parameter("scroll", _scroll)
 	_place_rows()
 	_apply_tint(_tint_now())
+	_apply_fog(ladder, _music_t)
+	_apply_stretch(maxf(speed / MusicLadder.STEPS[MusicLadder.TOP]["speed"], 1.0))
 	var beat := ladder.beat_at(_music_t)
 	var beat_time := MusicLadder.beat_time(ladder.segment_at(_music_t)["step"])
 	_dash_material.set_shader_parameter("pulse", BeatRows.pulse(fposmod(beat, 1.0) * beat_time))
 	var age := ladder.stage_up_age(_music_t)
 	_set_stage_glow(1.0 - age / STAGE_GLOW_TIME if age >= 0.0 and age < STAGE_GLOW_TIME else 0.0)
-	_apply_step(field.step(travel))
+	_apply_step(field.step(travel, ladder.spawn_distance_at(_music_t)))
 
 
 ## 대시 줄을 지금 박 자리에 놓는다. 음악 시간에서 바로 계산하므로 템포가 바뀌어도 박 줄은 박에 주인공 옆에 닿는다.
@@ -268,6 +275,34 @@ func _tint_now() -> float:
 	return lerpf(_tint_from, target, smoothstep(0.0, 1.0, maxf(back, 0.0)))
 
 
+## 안개 거리(속도 × 보이는 시간)를 장애물·대시·난간·바닥에 똑같이 넣는다. 값이 그대로면 아무것도 하지 않는다.
+func _apply_fog(ladder: MusicLadder, t: float) -> void:
+	var fog := Vector2(ladder.fog_clear_at(t), ladder.fog_at(t))
+	if fog == _fog:
+		return
+	_fog = fog
+	var materials: Array[ShaderMaterial] = [_dash_material, _rail_material]
+	for shape: Dictionary in _kind_meshes.values():
+		materials.append(shape["block"])
+		materials.append(shape["reflect"])
+		if shape.has("pillar"):
+			materials.append(shape["pillar"])
+	for material in materials:
+		material.set_shader_parameter("fog_near", fog.x)
+		material.set_shader_parameter("fog_far", fog.y)
+	_floor_material.set_shader_parameter("haze_near", fog.y * FLOOR_HAZE_FROM)
+	_floor_material.set_shader_parameter("haze_far", fog.y)
+
+
+## 160BPM 뒤 속도가 계속 오르면 대시와 빛 줄기도 그만큼 길어진다 (시야각은 68°에서 멈춘다)
+func _apply_stretch(stretch: float) -> void:
+	if stretch == _stretch:
+		return
+	_stretch = stretch
+	_streak_material.set_shader_parameter("streak_length", _streak_len * stretch)
+	_dash_material.set_shader_parameter("dash_length", _dash_len * stretch)
+
+
 ## 진하기 t의 색을 재질 값으로만 옮긴다. 새 재질을 만들지 않아 셰이더를 다시 준비할 일이 없고, 값이 그대로면 아무것도 하지 않는다.
 func _apply_tint(t: float) -> void:
 	if t == _tint:
@@ -288,9 +323,12 @@ func _apply_tint(t: float) -> void:
 	_dash_material.set_shader_parameter("max_energy", ROAD_PEAK_MAX / maxf(rail.r, maxf(rail.g, rail.b)))
 	_set_stage_glow(_stage_glow)
 	_streaks.visible_instance_count = QualityGuard.streaks(c["streak_count"], _effect_level)
-	_streak_material.set_shader_parameter("streak_length", c["streak_length"])
+	_streak_len = c["streak_length"]
+	_dash_len = c["dash_length"]
+	_streak_material.set_shader_parameter("streak_length", _streak_len * _stretch)
 	_streak_material.set_shader_parameter("level", c["streak_alpha"])
-	_dash_material.set_shader_parameter("dash_length", c["dash_length"])
+	_dash_material.set_shader_parameter("dash_length", _dash_len * _stretch)
+	_rail_material.set_shader_parameter("fog_color", c["horizon"])
 	_camera.fov = lerpf(FOV_SLOW, FOV_FAST, t)
 	for kind: ObstacleField.Kind in KINDS:
 		var name_: String = KINDS[kind]
@@ -326,23 +364,6 @@ func _apply_step(result: Dictionary) -> void:
 		_pieces_dirty = true
 	for item in field.items:
 		_obstacles[item["id"]].position.z = item["z"]
-
-
-## 앞으로 도착할 장애물을 이미 길 위에 놓는다. pop: 다시 시작할 때처럼 바닥에서 솟아오르게 한다.
-func _place_ahead(pop: bool) -> void:
-	for item in field.step(travel)["spawned"]:
-		_spawn_node(item)
-		if pop:
-			_pop_in(_obstacles[item["id"]])
-
-
-## 높이 0에서 젤리처럼 '퐁': 바닥을 기준으로 늘어나 살짝 넘쳤다가 돌아온다. 판정은 field가 하므로 모양만 바뀐다.
-func _pop_in(piece: Piece) -> void:
-	piece.scale.y = 0.001  # 장애물 원점이 바닥이라 바닥을 기준으로 늘어난다
-	_animating += 1
-	var tween := create_tween()
-	tween.tween_property(piece, "scale:y", 1.0, POP_TIME).set_trans(Tween.TRANS_BACK).set_ease(Tween.EASE_OUT)
-	tween.tween_callback(func() -> void: _animation_done())
 
 
 func _animation_done() -> void:
@@ -433,6 +454,7 @@ func restart() -> void:
 	_obstacles.clear()
 	_new_field()
 	AudioManager.unblock()
+	_apply_fog(AudioManager.ladder, _music_t)
 	for piece: Piece in old_pieces:
 		_leaving.append(piece)
 		_animating += 1
@@ -442,7 +464,6 @@ func restart() -> void:
 		fade.chain().tween_callback(func() -> void:
 			_leaving.erase(piece)
 			_animation_done())
-	_place_ahead(true)
 	_dashes.position.z = 0.0  # 부딪힌 뒤 밀려 간 만큼 되돌린다
 	_place_rows()
 	_dash_material.set_shader_parameter("sparkle_on", 1.0)

@@ -171,6 +171,22 @@ static func hits(kind: ObstacleField.Kind, dx: float, dz: float, jump_height: fl
 			return true
 
 
+## 지난 프레임 z ~ 지금 z 구간에서 주인공(z = 0)에 가장 가까운 앞뒤 거리. 빠른 속도에서 한 프레임에 판정 폭을 건너뛰어도 잡힌다.
+## 판정 폭 안에 한 번이라도 들어온 프레임이 있으면 그 프레임 상태로 판정하므로 건너뛴 경우에만 0을 돌려준다 (착지 순간 같은 가짜 충돌 방지).
+## 한 프레임에 SWEEP_MAX보다 멀리 움직였으면 탭 전환 같은 시간 건너뛰기로 보고 지금 자리만 본다 (돌아오자마자 죽지 않게).
+## SWEEP_MAX는 REMOVE_Z + HIT_Z(6.7)보다 작아야 판정 전에 지워지는 일이 없다.
+const SWEEP_MAX := 6.0
+
+
+## shortcut: 건너뛴 프레임의 가로 위치·높이는 지금 프레임 값으로 본다. 속도 80, 30fps 한 프레임(2.7)이면 차이가 작다.
+static func swept_dz(item: Dictionary) -> float:
+	var z: float = item["z"]
+	var prev: float = item.get("prev_z", z)
+	if prev < -HIT_Z and z > HIT_Z and z - prev <= SWEEP_MAX:
+		return 0.0
+	return z
+
+
 ## 공중 아래 스와이프 순간 이미 넘고 있던 허들인가. 이런 허들은 내려오다 닿아도 부딪힌 것으로 치지 않는다.
 static func clears_on_drop(kind: ObstacleField.Kind, dx: float, dz: float, jump_height: float) -> bool:
 	return kind == ObstacleField.Kind.LOW and absf(dx) <= HIT_X and absf(dz) <= HIT_Z and jump_height >= ObstacleField.LOW_TOP

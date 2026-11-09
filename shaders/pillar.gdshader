@@ -10,8 +10,8 @@ uniform float top_gloss = 0.24;     // 윗면 반사 (block.gdshader와 같은 �
 uniform float corner_gloss = 0.3;   // 둥근 모서리의 은은한 반사
 uniform float haze_near = 6.0;      // 아래 네 값은 block.gdshader와 같게 유지한다
 uniform float haze_far = 16.0;
-uniform float far_full = 66.0;
-uniform float far_gone = 90.0;
+uniform float fog_near = 24.75;     // 주인공 앞 이 거리부터 안개 속에서 진해진다 (main.gd가 매 프레임: 보이는 시간 기준)
+uniform float fog_far = 27.0;       // 이 거리부터는 안개 색: 툭 나타나지 않게 (생성은 더 먼 곳)
 uniform float wall_stretch = 0.75;  // main.gd가 레인 폭의 절반을 넣는다
 
 varying float haze;
@@ -21,7 +21,7 @@ void vertex() {
 	VERTEX.x += sign(VERTEX.x) * INSTANCE_CUSTOM.g * wall_stretch;  // 2칸 벽: 양옆만 벌려 둥근 모서리와 테두리 굵기를 그대로 둔다
 	local_normal = NORMAL;
 	float dist = length((MODELVIEW_MATRIX * vec4(VERTEX, 1.0)).xyz);
-	haze = max(INSTANCE_CUSTOM.r * smoothstep(haze_near, haze_far, dist), smoothstep(far_full, far_gone, dist));
+	haze = max(INSTANCE_CUSTOM.r * smoothstep(haze_near, haze_far, dist), smoothstep(fog_near, fog_far, -(MODEL_MATRIX * vec4(VERTEX, 1.0)).z));
 }
 
 void fragment() {

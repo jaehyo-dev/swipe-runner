@@ -1,6 +1,6 @@
 class_name MusicLadder
 extends RefCounted
-## 음악 사다리: 4마디마다 5BPM씩 오르고, 음악 시간을 박·이동 거리·색 진하기로 바꾼다 (자동 테스트 대상).
+## 음악 사다리: 4마디마다 5BPM씩 오르고(160BPM까지, 그 뒤는 속도만 끝없이), 음악 시간을 박·이동 거리·색 진하기로 바꾼다 (자동 테스트 대상).
 ## 속도는 BPM과 따로 정한다(STEPS). 한 박 거리가 단계마다 달라서 이동 거리는 구간별로 쌓아 계산한다.
 ## 경계는 장애물이 나오기 전에 정해지므로(plan의 lead), 경계 전에 생긴 장애물도 정확히 자기 박에 도착한다.
 
@@ -26,6 +26,10 @@ const STEP_BEATS := BeatClock.BEATS_PER_BAR * STEP_BARS
 const TINT_BARS := 2    # 속도가 오른 뒤 색 진하기가 따라가는 시간
 const TINT_BPM_FROM := 100.0  # 진하기 t = (BPM - 100) ÷ 60
 const TINT_BPM_RANGE := 60.0
+const TOP := 12         # 맨 위 곡(160BPM)의 단계. 그 뒤 단계는 같은 곡에 속도만 오른다 (info)
+const DATA_PATH := "res://data/difficulty.json"
+
+static var _data := {}
 
 ## 오른 구간들 {start: 음악 시간, beat: 시작 박, step, distance: 시작 이동 거리}. 마지막 구간은 곡이 반복되는 동안 그대로 이어진다.
 var segments: Array[Dictionary] = []
@@ -35,13 +39,47 @@ func _init(start_step := 0) -> void:
 	segments.append({"start": 0.0, "beat": 0, "step": start_step, "distance": 0.0})
 
 
+## 난이도 값 (data/difficulty.json 한 곳)
+static func data() -> Dictionary:
+	if _data.is_empty():
+		_data = JSON.parse_string(FileAccess.get_file_as_string(DATA_PATH))
+	return _data
+
+
+## 단계의 {bpm, speed, stage, file}. 맨 위 곡 뒤의 단계는 끝없이 이어진다: BPM·곡은 그대로, 속도만 4마디마다 오른다.
+static func info(step: int) -> Dictionary:
+	if step <= TOP:
+		return STEPS[step]
+	var top: Dictionary = STEPS[TOP].duplicate()
+	top["speed"] = top["speed"] + (step - TOP) * data()["speed_after_top"]
+	return top
+
+
+## 단계가 쓰는 곡 번호 (AudioManager.TRACKS)
+static func track(step: int) -> int:
+	return mini(step, TOP)
+
+
+## 장애물이 안개에서 나타나 도착할 때까지의 시간 (초)
+static func visible_time(step: int) -> float:
+	var v: Dictionary = data()["visible"]
+	if step <= TOP:
+		return lerpf(v["start"], v["top"], float(step) / TOP)
+	return maxf(v["top"] - (step - TOP) * v["per_step"], v["min"])
+
+
+## 단계의 안개 거리 = 속도 × 보이는 시간
+static func step_fog(step: int) -> float:
+	return info(step)["speed"] * visible_time(step)
+
+
 ## ?bpm=115 같은 값의 단계. 사다리에 없는 값이면 -1
 static func step_of_bpm(bpm: int) -> int:
 	return STEPS.map(func(s): return s["bpm"]).find(bpm)
 
 
 static func beat_time(step: int) -> float:
-	return 60.0 / STEPS[step]["bpm"]
+	return 60.0 / info(step)["bpm"]
 
 
 static func lap_time(step: int) -> float:
@@ -54,18 +92,18 @@ static func span_time(step: int) -> float:
 
 
 static func beat_distance(step: int) -> float:
-	return STEPS[step]["speed"] * beat_time(step)
+	return info(step)["speed"] * beat_time(step)
 
 
 ## 단계의 색 진하기 목표
 static func step_tint(step: int) -> float:
-	return clampf((STEPS[step]["bpm"] - TINT_BPM_FROM) / TINT_BPM_RANGE, 0.0, 1.0)
+	return clampf((info(step)["bpm"] - TINT_BPM_FROM) / TINT_BPM_RANGE, 0.0, 1.0)
 
 
 ## 경계를 놓치지 않으면 이 박이 속할 단계 (패턴 난이도 예고용).
 ## shortcut: 곡 준비가 늦어 경계가 밀리면 패턴이 실제 템포보다 앞선다. 실제 템포가 느린 쪽이라 더 쉬워질 뿐이라 둔다.
 static func scheduled_step(start_step: int, beat: float) -> int:
-	return mini(start_step + maxi(floori(beat / STEP_BEATS), 0), STEPS.size() - 1)
+	return start_step + maxi(floori(beat / STEP_BEATS), 0)
 
 
 func segment_at(t: float) -> Dictionary:
@@ -90,7 +128,7 @@ func beat_at(t: float) -> float:
 
 func distance_at(t: float) -> float:
 	var seg := segment_at(t)
-	return seg["distance"] + (t - seg["start"]) * STEPS[seg["step"]]["speed"]
+	return seg["distance"] + (t - seg["start"]) * info(seg["step"])["speed"]
 
 
 ## 박(반 박 포함)에 닿을 때의 이동 거리. 정해진 구간까지만 안다: 그 뒤는 마지막 구간이 이어진다고 본다.
@@ -100,7 +138,27 @@ func distance_of_beat(beat: float) -> float:
 
 
 func speed_at(t: float) -> float:
-	return STEPS[segment_at(t)["step"]]["speed"]
+	return info(segment_at(t)["step"])["speed"]
+
+
+## 음악 시간 t의 안개 거리. 경계에서 튀지 않게 한 박 동안 새 값으로 이어 간다. 장애물 생성도 이 값을 쓴다 (spawn_distance_at).
+func fog_at(t: float) -> float:
+	var seg := segment_at(t)
+	var i := segments.find(seg)
+	var to := step_fog(seg["step"])
+	if i == 0:
+		return to
+	return lerpf(step_fog(segments[i - 1]["step"]), to, smoothstep(0.0, beat_time(seg["step"]), t - seg["start"]))
+
+
+## 안개 속에서 진해지기 시작하는 거리: 안개 거리보다 fade초 가까운 곳
+func fog_clear_at(t: float) -> float:
+	return fog_at(t) - speed_at(t) * data()["fade"]
+
+
+## 장애물을 만드는 거리: 안개 거리보다 조금 먼 곳 (안개에 완전히 가려 있다)
+func spawn_distance_at(t: float) -> float:
+	return fog_at(t) + speed_at(t) * data()["spawn_margin"]
 
 
 ## 박 번호의 음악 시간 (도착 시각 측정용)
@@ -112,7 +170,7 @@ func time_of_beat(beat: float) -> float:
 ## 편곡 단계가 오른 순간부터 흐른 시간. 단계가 오르지 않은 구간이면 -1
 func stage_up_age(t: float) -> float:
 	var i := segments.find(segment_at(t))
-	if i == 0 or STEPS[segments[i]["step"]]["stage"] == STEPS[segments[i - 1]["step"]]["stage"]:
+	if i == 0 or info(segments[i]["step"])["stage"] == info(segments[i - 1]["step"])["stage"]:
 		return -1.0
 	return t - segments[i]["start"]
 
@@ -133,25 +191,23 @@ func add_segment(start: float, beat: int, step: int) -> void:
 	segments.append({"start": start, "beat": beat, "step": step, "distance": distance_of_beat(beat)})
 
 
-## 아직 정하지 않은 다음 경계 {at, step, beat, from}. 사다리 끝이면 빈 값. from: 새 곡을 시작할 곡 안 위치(초).
+## 아직 정하지 않은 다음 경계 {at, step, beat, from, switch}. from: 새 곡을 시작할 곡 안 위치(초). switch: 곡이 바뀌는가 (맨 위 곡 뒤에는 속도만 오른다).
 ## min_lead: 이보다 가까운 경계는 늦었으니 4마디 더 돈다 (탭 전환·긴 멈춤).
 func next_edge(now: float, min_lead: float) -> Dictionary:
 	var last: Dictionary = segments[-1]
-	if last["step"] >= STEPS.size() - 1:
-		return {}
 	var span := span_time(last["step"])
 	var spans := maxi(ceili((now + min_lead - last["start"]) / span), 1)
 	var step: int = last["step"] + 1
 	var beat: int = last["beat"] + spans * STEP_BEATS
-	return {"at": last["start"] + spans * span, "step": step, "beat": beat, "from": posmod(beat, LAP_BEATS) * beat_time(step)}
+	return {"at": last["start"] + spans * span, "step": step, "beat": beat, "from": posmod(beat, LAP_BEATS) * beat_time(step), "switch": track(step) != track(last["step"])}
 
 
-## 다음 단계로 올릴 차례면 경계를 구간에 더하고 {at, step, from}을 돌려준다. 아니면 빈 값.
+## 다음 단계로 올릴 차례면 경계를 구간에 더하고 {at, step, from, switch}를 돌려준다. 아니면 빈 값.
 ## lead: 경계가 이만큼 안으로 들어와야 예약한다. 빠른 단계는 4마디가 lead보다 짧아 앞 구간이 시작하기 전에 다음 경계를 정하기도 한다.
-## next_ready: 다음 곡이 준비됐는가. 안 됐으면 지금 곡이 4마디 더 돌아 박이 어긋나지 않는다.
+## next_ready: 다음 곡이 준비됐는가. 안 됐으면 지금 곡이 4마디 더 돌아 박이 어긋나지 않는다. 곡이 안 바뀌는 경계는 기다리지 않는다.
 func plan(now: float, lead: float, min_lead: float, next_ready: bool) -> Dictionary:
 	var edge := next_edge(now, min_lead)
-	if edge.is_empty() or not next_ready or edge["at"] - now > lead:
+	if (edge["switch"] and not next_ready) or edge["at"] - now > lead:
 		return {}
 	add_segment(edge["at"], edge["beat"], edge["step"])
-	return {"at": edge["at"], "step": edge["step"], "from": edge["from"]}
+	return {"at": edge["at"], "step": edge["step"], "from": edge["from"], "switch": edge["switch"]}

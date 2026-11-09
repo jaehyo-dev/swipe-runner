@@ -9,8 +9,8 @@ uniform vec3 road_color : source_color = vec3(0.047, 0.039, 0.11);   // #0C0A1C
 uniform vec3 rail_color : source_color;
 uniform float rail_glow = 0.16;      // 가장자리에 비친 난간 빛
 uniform vec3 haze_color : source_color;  // 지평선 안개 색
-uniform float haze_near = 16.0;      // 이 거리부터 안개 띠가 시작한다
-uniform float haze_far = 90.0;
+uniform float haze_near = 10.0;      // 주인공 앞 이 거리부터 안개 띠가 시작한다 (main.gd: 안개 거리의 일부)
+uniform float haze_far = 27.0;       // 장애물이 사라지는 안개 거리와 같다: 안개 색 장애물이 바닥 위에 그림자처럼 보이지 않게
 
 varying vec3 wpos;
 
@@ -24,5 +24,5 @@ void fragment() {
 	float on_road = 1.0 - smoothstep(road_half + 0.1, road_half + 0.1 + edge_soft * 2.0, abs(x));
 	float d = max(road_half + 0.1 - abs(x), 0.0);
 	vec3 col = mix(base_color, road_color, on_road) + rail_color * rail_glow * exp(-d * d * 3.0) * on_road;
-	ALBEDO = mix(col, haze_color, smoothstep(haze_near, haze_far, length(wpos - CAMERA_POSITION_WORLD)));
+	ALBEDO = mix(col, haze_color, smoothstep(haze_near, haze_far, -wpos.z));
 }

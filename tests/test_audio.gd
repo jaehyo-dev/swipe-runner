@@ -243,7 +243,7 @@ func test_첫_입력_전에는_세상이_멈춰_있고_첫_입력이_음악을_�
 	_start_log()
 	var scroll: float = main._scroll
 	var waiting_z: Array = main.field.items.map(func(i): return i["z"])
-	assert_true(waiting_z.size() > 0, "장애물이 미리 놓여 있음")
+	# 첫 장애물(1마디 뒤, 거리 36)은 시작 안개 거리(27) 너머라 아직 없다. 있으면 멈춰 있어야 한다
 	main.advance(30.0)
 	assert_eq(main.travel, 0.0, "거리는 아직")
 	assert_eq(main.field.items.map(func(i): return i["z"]), waiting_z, "장애물은 멈춰 있음")

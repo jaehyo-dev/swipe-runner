@@ -15,8 +15,7 @@ const LOW_TOP := 0.45        # 허들 윗면 높이: 점프로 이보다 높이 
 const HIGH_BOTTOM := 0.62    # 막대 아랫면 높이: 슬라이드로 이보다 낮아져야 지나간다
 const HIGH_TOP := 1.32
 
-## 생성 위치 (z는 음수 = 앞쪽 멀리, 안개 속)
-const SPAWN_Z := -85.0
+## 생성 위치는 음악 시간마다 달라진다: 안개 거리보다 조금 먼 곳 (MusicLadder.spawn_distance_at, z는 음수 = 앞쪽 멀리)
 ## 이 z를 넘으면 지나간 것으로 보고 제거 (카메라 뒤)
 const REMOVE_Z := 6.0
 ## 시작·재시작 뒤 첫 장애물은 1마디 뒤 첫 박에 도착한다
@@ -46,25 +45,26 @@ static func forms_wall(a: Dictionary, b: Dictionary) -> bool:
 	return a["kind"] == Kind.BLOCK and b["kind"] == Kind.BLOCK and absi(a["lane"] - b["lane"]) == 1 and a["beat"] == b["beat"]
 
 
-## 이동 거리를 now로 옮긴다. 이번에 생긴 것과 지워진 것의 id를 돌려준다.
-## step(travel)은 앞으로 도착할 장애물 중 z -85보다 가까운 것을 지금 거리에 맞는 자리에 미리 놓는다 (시작·재시작).
-func step(now: float) -> Dictionary:
+## 이동 거리를 now로 옮기고 spawn(생성 거리)보다 가까워진 장애물을 만든다. 이번에 생긴 것과 지워진 것의 id를 돌려준다.
+## 시작·재시작 때는 앞으로 도착할 장애물 중 생성 거리 안의 것을 지금 거리에 맞는 자리에 미리 놓는다.
+func step(now: float, spawn: float) -> Dictionary:
 	var spawned: Array[Dictionary] = []
 	var removed: Array[int] = []
 	travel = now
 	var kept: Array[Dictionary] = []
 	for item in items:
+		item["prev_z"] = item["z"]  # 프레임 사이 구간 판정용 (PlayerAction.swept_dz)
 		item["z"] = now - item["arrive"]
 		if item["z"] > REMOVE_Z:
 			removed.append(item["id"])
 		else:
 			kept.append(item)
 	items = kept
-	while ladder.distance_of_beat(_coming["beat"]) - now <= -SPAWN_Z:
+	while ladder.distance_of_beat(_coming["beat"]) - now <= spawn:
 		var arrive := ladder.distance_of_beat(_coming["beat"])
 		var z := now - arrive
 		if z <= REMOVE_Z:  # 시간이 크게 건너뛰면(탭 전환 등) 이미 지나간 것은 만들지 않는다
-			var item := {"id": _next_id, "lane": _coming["lane"], "z": z, "kind": _coming["kind"], "beat": _coming["beat"], "arrive": arrive}
+			var item := {"id": _next_id, "lane": _coming["lane"], "z": z, "kind": _coming["kind"], "beat": _coming["beat"], "arrive": arrive, "shape": _coming["shape"]}
 			_next_id += 1
 			items.append(item)
 			spawned.append(item)

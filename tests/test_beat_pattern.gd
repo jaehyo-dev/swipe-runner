@@ -28,7 +28,7 @@ func _big_of(row: Array) -> bool:
 
 
 func _bpm_of(beat: float, start_step := 0) -> int:
-	return MusicLadder.STEPS[MusicLadder.scheduled_step(start_step, beat)]["bpm"]
+	return MusicLadder.info(MusicLadder.scheduled_step(start_step, beat))["bpm"]
 
 
 func _sorted_beats(rows: Dictionary) -> Array:
@@ -48,7 +48,8 @@ func test_처음_8마디부터_1박_간격이_섞이고_첫_장애물은_1마디
 	assert_true(ones >= SEEDS.size(), "1박 간격 %d" % ones)
 
 
-func test_겹줄은_기둥만이_아니라_섞여서_나오고_기둥_비율은_45퍼센트_이하() -> void:
+## v0.7.0: 겹줄·콤보·섞인 동작이 모두 기둥 벽을 바탕으로 해 기둥 비율 상한을 45%에서 70%로 올렸다
+func test_겹줄은_기둥만이_아니라_섞여서_나오고_기둥_비율은_70퍼센트_이하() -> void:
 	var pairs := {}
 	var blocks := 0
 	var total := 0
@@ -62,12 +63,12 @@ func test_겹줄은_기둥만이_아니라_섞여서_나오고_기둥_비율은_
 			total += kinds.size()
 	for want in [[Kind.BLOCK, Kind.LOW], [Kind.BLOCK, Kind.HIGH], [Kind.LOW, Kind.HIGH], [Kind.BLOCK, Kind.LOW, Kind.HIGH]]:
 		assert_true(pairs.has(str(want)), "조합 %s" % str(want))
-	assert_true(float(blocks) / total <= 0.45, "기둥 비율 %f" % (float(blocks) / total))
+	assert_true(float(blocks) / total <= 0.7, "기둥 비율 %f" % (float(blocks) / total))
 
 
-func test_지그재그는_반_박이_입력_간격_이상인_BPM만이고_빠르면_3연속_콤보() -> void:
-	assert_true(BeatPattern.can_zigzag(100) and BeatPattern.can_zigzag(105))
-	assert_false(BeatPattern.can_zigzag(110))
+func test_지그재그는_반_박이_입력_간격_0_22초_이상인_BPM만이고_빠르면_1박_콤보() -> void:
+	assert_true(BeatPattern.can_zigzag(100) and BeatPattern.can_zigzag(135))
+	assert_false(BeatPattern.can_zigzag(140))
 	var zigzags := {}
 	var combos := {}
 	for s in range(1, 61):
@@ -91,7 +92,7 @@ func test_지그재그는_반_박이_입력_간격_이상인_BPM만이고_빠르
 							combos[_bpm_of(beats[i], start)] = true
 	assert_true(zigzags.has(100) or zigzags.has(105), "지그재그가 나옴")
 	var fast_combos := combos.keys().filter(func(bpm): return not BeatPattern.can_zigzag(bpm))
-	assert_true(fast_combos.size() >= 6, "여러 BPM에서 3연속 콤보: %s" % str(fast_combos))
+	assert_true(fast_combos.size() >= 4, "여러 BPM에서 3연속 이상 콤보: %s" % str(fast_combos))
 
 
 func _open_lane(row: Array) -> int:
@@ -121,14 +122,63 @@ func test_반_박_간격은_입력이_필요_없는_가운데_벽과_지그재�
 				assert_true(middle_before, "시드 %d 박 %f: 반 박 앞 줄은 가운데 벽" % [s, beats[i]])
 
 
-func test_160BPM_뒤에는_밀도만_오르고_상한이_있음() -> void:
-	var pattern := BeatPattern.new(1, 4)
-	var top: int = (MusicLadder.STEPS.size() - 1) * MusicLadder.STEP_BEATS
-	assert_eq(pattern.density(top - 1.0), 0, "160 전")
-	assert_eq(pattern.density(top), 0, "도착")
-	assert_eq(pattern.density(top + MusicLadder.STEP_BEATS), 1, "4마디 뒤")
-	assert_eq(pattern.density(top + 1000.0 * MusicLadder.STEP_BEATS), BeatPattern.DENSITY_MAX, "상한")
-	assert_eq(MusicLadder.scheduled_step(0, top + 1000.0), MusicLadder.STEPS.size() - 1, "BPM은 그대로")
+## 압박 단계는 음악 처음부터 센다 (?bpm으로 시작한 판도 0부터)
+func test_압박_단계는_8마디마다_1씩_상한_없이_오름() -> void:
+	assert_eq(BeatPattern.pressure(0.0), 0)
+	assert_eq(BeatPattern.pressure(31.9), 0)
+	assert_eq(BeatPattern.pressure(32.0), 1, "8마디")
+	assert_eq(BeatPattern.pressure(32.0 * 100), 100, "상한 없음")
+	var top: int = MusicLadder.TOP * MusicLadder.STEP_BEATS
+	assert_eq(_bpm_of(top + 1000.0), 160, "160 뒤 BPM은 그대로")
+
+
+func test_콤보는_2줄에서_4줄까지_길어지고_확률은_상한에서_멈춤() -> void:
+	var every: int = MusicLadder.data()["combo_every"]
+	assert_eq(BeatPattern.combo_length(0), 2)
+	assert_eq(BeatPattern.combo_length(every), 3)
+	assert_eq(BeatPattern.combo_length(every * 2), 4)
+	assert_eq(BeatPattern.combo_length(1000), 4)
+	for name: String in MusicLadder.data()["pattern"]:
+		var r: Array = MusicLadder.data()["pattern"][name]
+		assert_eq(BeatPattern.rate(name, 2, 100000), r[2], name + " 상한")
+		assert_true(BeatPattern.rate(name, 0, 3) >= BeatPattern.rate(name, 0, 0), name + " 오름")
+
+
+func test_숨_고르기_마디는_8마디에_한_마디_기둥_하나씩_2박_간격이고_다른_패턴이_넘어오지_않음() -> void:
+	var breathers := 0
+	for bar in 64:
+		breathers += 1 if BeatPattern.is_breather(bar * 4.0) else 0
+	assert_eq(breathers, 8)
+	for s in range(1, 21):
+		var rows := _rows(s, 500.0)
+		for beat: float in rows:
+			if BeatPattern.is_breather(beat):
+				assert_eq(rows[beat][0]["shape"], "숨 고르기", "시드 %d 박 %f: 앞 마디의 여러 줄 패턴이 넘어오지 않음" % [s, beat])
+				assert_eq(rows[beat].size(), 1, "기둥 하나")
+				assert_false(rows.has(beat + 1.0) and BeatPattern.is_breather(beat + 1.0), "시드 %d 박 %f: 1박 뒤 줄 없음" % [s, beat])
+	assert_eq(BeatPattern.beats_to_breather(0.0), 28.0, "7번째 마디(0부터)")
+	assert_eq(BeatPattern.beats_to_breather(27.5), 0.5)
+	assert_true(BeatPattern.beats_to_breather(29.0) < 0.0, "숨 고르기 마디 안")
+
+
+func test_섞인_동작_콤보와_겹줄과_긴_콤보가_나옴() -> void:
+	var shapes := {}
+	var long_combo := false
+	for s in range(1, 21):
+		var rows := _rows(s, 800.0)
+		for beat: float in rows:
+			shapes[rows[beat][0]["shape"]] = true
+			if rows[beat][0]["shape"] == "1박 콤보" and rows.has(beat + 3.0) and rows[beat + 3.0][0]["shape"] == "1박 콤보" and rows.has(beat + 1.0) and rows.has(beat + 2.0):
+				long_combo = true
+	for want in ["섞인 동작", "겹줄", "1박 콤보", "반 박 이동", "줄 읽기", "숨 고르기"]:
+		assert_true(shapes.has(want), want)
+	assert_true(long_combo, "4줄 콤보")
+
+
+func test_줄_읽기는_열린_줄이_보이는_시간_안에_들어올_때만() -> void:
+	assert_true(BeatPattern.can_read(2, 0))
+	assert_false(BeatPattern.can_read(4, MusicLadder.TOP), "160에서 깊은 줄 읽기는 안 보임")
+	assert_false(BeatPattern.can_read(2, MusicLadder.TOP + 12), "보이는 시간 최소에서는 얕은 것도 없음")
 
 
 ## 공정성 규칙: 모든 시드, 끝까지
@@ -151,56 +201,67 @@ func test_열린_레인이_항상_있고_점프_슬라이드_줄끼리는_2박_�
 					last_big = beat
 
 
-## 사람 입력 간격(0.28초)만 쓰는 완벽한 자동 플레이어가 부딪히지 않으면 풀 수 없는 패턴이 없다는 증거다.
-func test_완벽한_자동_플레이어가_160BPM에서_시드_5개_4분_충돌_없음() -> void:
-	for s in [11, 143, 2024, 7777, 90001]:
-		var result := RunSim.run(s, "perfect", 240.0, MusicLadder.STEPS.size() - 1)
-		assert_true(result["hit"].is_empty(), "시드 %d: %.1f초에 충돌" % [s, result["time"]])
-		assert_true(result["min_gap"] >= 0.28 - 0.001, "입력 간격 %f" % result["min_gap"])
+## 보이는 줄만 보고 사람 입력 간격(0.22초)만 쓰는 완벽한 자동 플레이어가 부딪히지 않으면 풀 수 없는 패턴이 없다는 증거다.
+## 처음부터 10분이면 속도 117, 압박 단계 40 안팎까지 간다. 시드 5개는 tools/difficulty_report.gd가 돌린다.
+func test_완벽한_자동_플레이어가_처음부터_10분_충돌_없음() -> void:
+	for s in [11, 2024]:
+		var result := RunSim.run(s, "perfect", 600.0)
+		assert_true(result["hit"].is_empty(), "시드 %d: %.1f초에 충돌 %s" % [s, result["time"], str(result["hit"])])
+		assert_true(result["min_gap"] >= BeatPattern.MIN_INPUT_GAP - 0.001, "입력 간격 %f" % result["min_gap"])
+		assert_true(MusicLadder.info(result["step"])["speed"] > 100.0, "속도 상한 없음")
 
 
 func test_완벽한_자동_플레이어가_처음부터_끝까지_올라감() -> void:
 	for s in [11, 143, 2024, 7777, 90001]:
 		var result := RunSim.run(s, "perfect", 240.0)
 		assert_true(result["hit"].is_empty(), "시드 %d: %.1f초에 충돌" % [s, result["time"]])
-		assert_eq(result["ladder"].segments[-1]["step"], MusicLadder.STEPS.size() - 1, "160까지 오름")
+		assert_true(result["ladder"].segments[-1]["step"] > MusicLadder.TOP, "160 넘어 오름")
 
 
 func test_모든_시작_BPM과_더_많은_시드에서_풀림() -> void:
 	for s in range(1, 7):
 		for start in MusicLadder.STEPS.size():
 			var result := RunSim.run(s, "perfect", 70.0, start)
-			assert_true(result["hit"].is_empty(), "시드 %d 시작 %d: %.1f초 %s" % [s, MusicLadder.STEPS[start]["bpm"], result["time"], str(result["hit"])])
+			assert_true(result["hit"].is_empty(), "시드 %d 시작 %d: %.1f초 %s" % [s, MusicLadder.info(start)["bpm"], result["time"], str(result["hit"])])
 
 
-func _median(model: Dictionary) -> float:
-	var times := []
+func _runs(model: Dictionary) -> Array:
+	var runs := []
 	for s in range(1, 51):
-		times.append(RunSim.run(s, HumanPlayer.new(s, model), 600.0)["time"])
+		runs.append(RunSim.run(s, HumanPlayer.new(s, model), 400.0))
+	return runs
+
+
+func _times(runs: Array) -> Array:
+	var times: Array = runs.map(func(r): return r["time"])
 	times.sort()
-	return times[24]
+	return times
 
 
-func test_보통_모델은_중앙값_30에서_50초() -> void:
-	var median := _median(HumanPlayer.NORMAL)
-	assert_true(median >= 30.0 and median <= 50.0, "중앙값 %f" % median)
+## 사망이 한 패턴 종류에 절반 넘게 몰리지 않는다
+func _assert_mixed(runs: Array) -> void:
+	var by_shape := {}
+	for r: Dictionary in runs:
+		if not r["hit"].is_empty():
+			by_shape[r["hit"]["shape"]] = by_shape.get(r["hit"]["shape"], 0) + 1
+	assert_true(by_shape.size() >= 4, "사망 패턴 %s" % str(by_shape))
+	assert_true(by_shape.values().max() <= 25, "쏠림 %s" % str(by_shape))
 
 
-func test_잘하는_모델은_중앙값_70에서_110초() -> void:
-	var median := _median(HumanPlayer.GOOD)
-	assert_true(median >= 70.0 and median <= 110.0, "중앙값 %f" % median)
+func test_보통_모델은_중앙값_25에서_40초() -> void:
+	var runs := _runs(HumanPlayer.NORMAL)
+	var median: float = _times(runs)[24]
+	assert_true(median >= 25.0 and median <= 40.0, "중앙값 %f" % median)
+	_assert_mixed(runs)
 
 
-func test_잘하는_모델은_95퍼센트가_240초_이하이고_사망이_한_BPM에_40퍼센트_넘게_몰리지_않음() -> void:
-	var times := []
-	var by_step := {}
-	for s in range(1, 51):
-		var r: Dictionary = RunSim.run(s, HumanPlayer.new(s, HumanPlayer.GOOD), 300.0)
-		times.append(r["time"])
-		by_step[r["step"]] = by_step.get(r["step"], 0) + 1
-	times.sort()
-	assert_true(times[47] <= 240.0, "95%% %f" % times[47])
-	assert_true(by_step.values().max() <= 20, "가장 많이 몰린 사망 %d판" % by_step.values().max())
+func test_잘하는_모델은_중앙값_50에서_80초_95퍼센트_150초_최대_240초() -> void:
+	var runs := _runs(HumanPlayer.GOOD)
+	var times := _times(runs)
+	assert_true(times[24] >= 50.0 and times[24] <= 80.0, "중앙값 %f" % times[24])
+	assert_true(times[47] <= 150.0, "95%% %f" % times[47])
+	assert_true(times[49] <= 240.0, "최대 %f" % times[49])
+	_assert_mixed(runs)
 
 
 func test_늦어서_길이_없어도_열린_레인을_돌려줌() -> void:

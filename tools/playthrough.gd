@@ -220,10 +220,11 @@ func _process(delta: float) -> void:
 		_seek_lane()
 	else:
 		var dir: int
+		var seen := RunSim.visible_items(main.field.items, AudioManager.ladder, AudioManager.music_time)  # 안개 속 줄은 모른다
 		if _human:
-			dir = _human.decide(AudioManager.music_time, main.field.items, main.lane, main.player, main.speed)
+			dir = _human.decide(AudioManager.music_time, seen, main.lane, main.player, main.speed)
 		else:
-			dir = AutoPlayer.decide(main.field.items, main.lane, main.player, main.speed, t - _last_input)
+			dir = AutoPlayer.decide(seen, main.lane, main.player, main.speed, t - _last_input)
 		if dir != Dir.NONE:
 			_last_input = t
 			_swipe(dir)
@@ -265,7 +266,7 @@ func _record_arrivals() -> void:
 			var wall_err: float = crossed - (_wall_zero + beat_t)
 			_wall_err.append(wall_err)
 			var step: int = ladder.segment_at(beat_t)["step"]
-			var bpm: int = MusicLadder.STEPS[step]["bpm"]
+			var bpm: int = MusicLadder.info(step)["bpm"]
 			if not _by_bpm.has(bpm):
 				_by_bpm[bpm] = {"frame": [], "wall": []}
 			_by_bpm[bpm]["frame"].append(frame_err)

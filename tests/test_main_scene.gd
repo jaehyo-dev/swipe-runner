@@ -116,8 +116,7 @@ func test_시간이_가면_거리가_늘고_장애물_노드가_생기고_지나
 	while not main.prewarmed:  # 미리 준비용 장애물이 사라질 때까지
 		await wait_frames()
 	await wait_frames()
-	assert_eq(main._obstacles.size(), main.field.items.size(), "미리 놓인 장애물이 처음부터 화면에 있음")
-	assert_true(main._obstacles.size() > 0)
+	assert_eq(main.field.items.size(), 0, "첫 장애물(1마디 뒤)은 아직 안개 너머")
 	main.advance(12.0)
 	await wait_frames()  # 지워진 노드(queue_free)가 정리될 때까지
 	assert_eq(main.travel, RunLogic.SPEED * 12.0)
@@ -218,7 +217,8 @@ func _place(main: Node3D, item: Dictionary, z: float) -> void:
 
 ## 장애물을 하나 바로 놓는다 (패턴의 첫 장애물은 몇 초 뒤에나 온다)
 func _add_obstacle(main: Node3D) -> Dictionary:
-	var item := {"id": 9000 + main._obstacles.size(), "lane": 1, "z": ObstacleField.SPAWN_Z, "kind": ObstacleField.Kind.BLOCK, "beat": 0, "arrive": main.travel - ObstacleField.SPAWN_Z}
+	var z: float = -main.field.ladder.spawn_distance_at(0.0)
+	var item := {"id": 9000 + main._obstacles.size(), "lane": 1, "z": z, "kind": ObstacleField.Kind.BLOCK, "beat": 0, "arrive": main.travel - z, "shape": ""}
 	main.field.items.append(item)
 	main._spawn_node(item)
 	return item
@@ -303,7 +303,7 @@ func test_다시_시작은_장면을_유지하고_상태만_초기화() -> void:
 	assert_eq(main.lane, 0, "레인 그대로")
 	assert_eq(main.find_child("DistanceLabel", true, false).text, "0")
 	assert_false(main.find_child("RestartLabel", true, false).visible)
-	assert_true(main.field.items.size() > 0, "앞으로 올 장애물이 바로 길 위에 있음")
+	assert_eq(main.field.items.size(), 0, "앞 판은 지우고, 새 장애물은 안개에서 나온다")
 	assert_eq(main._obstacles.size(), main.field.items.size())
 	assert_eq(main._scroll, floor_scroll, "길 무늬가 튀지 않음")
 	# 입력을 바로 받고 세상도 바로 움직인다
@@ -419,7 +419,7 @@ func test_고정_시드면_다시_시작해도_같은_배치() -> void:
 
 func _arrivals(main: Node3D) -> Array:
 	var result := []
-	for item in main.field.step(RunLogic.SPEED * 30.0)["spawned"]:
+	for item in main.field.step(RunLogic.SPEED * 30.0, main.field.ladder.spawn_distance_at(0.0))["spawned"]:
 		result.append([posmod(item["beat"], 64), item["lane"], item["kind"]])
 	return result
 
@@ -442,43 +442,14 @@ func test_다시_시작하면_앞_판을_지우고_1마디_뒤_첫_박에_도착
 	var old_ids: Array = main.field.items.map(func(i): return main._obstacles[i["id"]])
 	main.dead = true
 	main.restart()
+	while main.field.items.is_empty():
+		main.advance(STEP)
 	var first: Dictionary = main.field.items[0]
 	assert_eq(first["beat"], float(BeatClock.BEATS_PER_BAR), "1마디 뒤 첫 박")
 	for item in main.field.items:
 		assert_true(absf(item["z"] + AudioManager.ladder.distance_of_beat(item["beat"]) - main.travel) < 0.001, "박에서 거꾸로 계산한 자리")
-		assert_true(item["z"] >= ObstacleField.SPAWN_Z, "z -85보다 가까운 것만")
+		assert_true(-item["z"] <= AudioManager.ladder.spawn_distance_at(main._music_t), "생성 거리보다 가까운 것만")
 		assert_false(old_ids.has(main._obstacles[item["id"]]), "새 노드")
-	main.queue_free()
-
-
-func test_다시_시작한_장애물은_바닥에서_퐁_솟아_살짝_넘쳤다가_돌아옴() -> void:
-	var main := _make_main()
-	await wait_frames()
-	_run(main, 3.0)
-	main.dead = true
-	main.restart()
-	var item: Dictionary = main.field.items[0]
-	var node = main._obstacles[item["id"]]
-	assert_true(node.scale.y < 0.01 and node.position.y < 0.01, "높이 0에서 시작")
-	var peak := 0.0
-	var started_at := Time.get_ticks_msec()
-	while Time.get_ticks_msec() - started_at < 400:
-		await wait_frames()
-		peak = maxf(peak, node.scale.y)
-		assert_eq(node.position.y, 0.0, "바닥을 기준으로 늘어남")
-	assert_true(peak > 1.02, "살짝 넘침 %f" % peak)
-	assert_true(peak < 1.2, "많이 넘치지 않음 %f" % peak)
-	assert_eq(node.scale.y, 1.0, "제 크기로 돌아옴")
-	main.queue_free()
-
-
-func test_첫_판_대기_화면의_장애물은_솟아오르지_않고_제_크기() -> void:
-	var main: Node3D = load("res://scenes/main.tscn").instantiate()
-	main.seed_value = 1234
-	add_child(main)
-	assert_true(main.field.items.size() > 0)
-	for item in main.field.items:
-		assert_eq(main._obstacles[item["id"]].scale.y, 1.0)
 	main.queue_free()
 
 

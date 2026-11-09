@@ -31,17 +31,78 @@ func _climb(ladder: MusicLadder, until: float) -> void:
 		ladder.plan(t, LEAD, MIN_LEAD, true)
 
 
-func test_4마디가_끝나면_다음_BPM으로_160에서_멈춤() -> void:
+func test_4마디가_끝나면_다음_BPM으로_160_뒤에는_속도만_계속_오름() -> void:
 	var ladder := MusicLadder.new()
 	_climb(ladder, 200.0)
-	assert_eq(ladder.segments.size(), MusicLadder.STEPS.size())
+	assert_true(ladder.segments.size() > MusicLadder.STEPS.size() + 10, "160 뒤에도 구간이 이어짐 %d" % ladder.segments.size())
 	var at := 0.0
-	for i in MusicLadder.STEPS.size():
+	for i in ladder.segments.size():
 		assert_true(absf(ladder.segments[i]["start"] - at) < 0.000001, "구간 %d 시작" % i)
 		assert_eq(ladder.segments[i]["beat"], i * 16)
 		assert_eq(ladder.segments[i]["step"], i)
 		at += MusicLadder.span_time(i)
-	assert_true(absf(ladder.segments[-1]["start"] - 92.07) < 0.1, "160BPM 도착 %f초" % ladder.segments[-1]["start"])
+	assert_true(absf(ladder.segments[MusicLadder.TOP]["start"] - 92.07) < 0.1, "160BPM 도착 %f초" % ladder.segments[MusicLadder.TOP]["start"])
+	assert_true(absf(MusicLadder.span_time(MusicLadder.TOP + 5) - 6.0) < 0.000001, "160 뒤 4마디는 6초")
+
+
+func test_160_뒤_단계는_BPM과_곡은_그대로_속도만_4마디마다_1씩_상한_없음() -> void:
+	for k in [1, 2, 10, 47, 500]:
+		var info := MusicLadder.info(MusicLadder.TOP + k)
+		assert_eq(info["bpm"], 160)
+		assert_eq(info["stage"], 2)
+		assert_eq(info["speed"], 33.0 + k)
+		assert_eq(MusicLadder.track(MusicLadder.TOP + k), MusicLadder.TOP, "마지막 곡")
+	assert_eq(MusicLadder.new(MusicLadder.TOP + 3).speed_at(1.0), 36.0)
+	assert_eq(MusicLadder.step_tint(MusicLadder.TOP + 30), 1.0, "색 진하기는 1에서 멈춤")
+
+
+func test_재시작하면_속도_15부터() -> void:
+	assert_eq(MusicLadder.new().speed_at(0.0), 15.0)
+
+
+func test_10분_동안_곡이_바뀌는_경계는_12번뿐() -> void:
+	var ladder := MusicLadder.new()
+	var t := 0.0
+	var switches := 0
+	var plans := 0
+	while t < 600.0:
+		t += 1.0 / 30.0
+		var plan := ladder.plan(t, LEAD, MIN_LEAD, true)
+		if not plan.is_empty():
+			plans += 1
+			switches += 1 if plan["switch"] else 0
+	assert_eq(switches, 12)
+	assert_true(plans > 90, "속도 경계 %d" % plans)
+
+
+func test_보이는_시간은_1_8초에서_160_도착_1_1초_그_뒤_4마디마다_0_03초_최소_0_75초() -> void:
+	assert_true(is_equal_approx(MusicLadder.visible_time(0), 1.8))
+	assert_true(is_equal_approx(MusicLadder.visible_time(6), 1.45))
+	assert_true(is_equal_approx(MusicLadder.visible_time(MusicLadder.TOP), 1.1))
+	assert_true(is_equal_approx(MusicLadder.visible_time(MusicLadder.TOP + 1), 1.07))
+	assert_true(is_equal_approx(MusicLadder.visible_time(MusicLadder.TOP + 10), 0.8))
+	assert_eq(MusicLadder.visible_time(MusicLadder.TOP + 12), 0.75)
+	assert_eq(MusicLadder.visible_time(MusicLadder.TOP + 400), 0.75)
+	for step in 80:
+		assert_true(MusicLadder.visible_time(step + 1) <= MusicLadder.visible_time(step), "줄기만 함 %d" % step)
+
+
+func test_안개_거리는_속도_곱하기_보이는_시간이고_경계에서_끊기지_않음() -> void:
+	var ladder := MusicLadder.new()
+	_climb(ladder, 400.0)
+	assert_true(is_equal_approx(ladder.fog_at(1.0), 15.0 * 1.8))
+	var prev := ladder.fog_at(0.0)
+	var t := 0.0
+	var dt := 1.0 / 60.0
+	while t < 399.0:
+		t += dt
+		var fog := ladder.fog_at(t)
+		assert_true(absf(fog - prev) < 0.25, "%f초 안개 %f → %f" % [t, prev, fog])
+		prev = fog
+		var seg := ladder.segment_at(t)
+		if t - seg["start"] > MusicLadder.beat_time(seg["step"]):
+			assert_true(is_equal_approx(fog, ladder.speed_at(t) * MusicLadder.visible_time(seg["step"])), "한 박 뒤에는 새 값")
+		assert_true(ladder.fog_clear_at(t) < fog and ladder.spawn_distance_at(t) > fog, "진해지는 곳 < 안개 < 생성")
 
 
 func test_새_곡은_같은_마디_위치에서_시작() -> void:
@@ -53,7 +114,8 @@ func test_새_곡은_같은_마디_위치에서_시작() -> void:
 		var plan := ladder.plan(t, LEAD, MIN_LEAD, true)
 		if not plan.is_empty():
 			froms.append(plan["from"] / MusicLadder.span_time(plan["step"]))
-	assert_eq(froms.size(), MusicLadder.STEPS.size() - 1)
+			assert_eq(plan["switch"], plan["step"] <= MusicLadder.TOP, "160까지만 곡이 바뀜")
+	froms.resize(MusicLadder.STEPS.size() - 1)  # 그 뒤 경계는 곡이 그대로라 위치를 쓰지 않는다
 	for i in froms.size():
 		assert_true(absf(froms[i] - (i + 1) % 4) < 0.000001, "경계 %d: 곡 안 %f구간" % [i, froms[i]])
 
@@ -67,7 +129,7 @@ func test_이동_거리는_구간마다_속도_곱하기_시간을_더한_값과
 			var seg: Dictionary = ladder.segments[i]
 			var end: float = ladder.segments[i + 1]["start"] if i + 1 < ladder.segments.size() else INF
 			if t > seg["start"]:
-				sum += MusicLadder.STEPS[seg["step"]]["speed"] * (minf(t, end) - seg["start"])
+				sum += MusicLadder.info(seg["step"])["speed"] * (minf(t, end) - seg["start"])
 		assert_true(absf(ladder.distance_at(t) - sum) < 0.0001, "시각 %f: %f, %f" % [t, ladder.distance_at(t), sum])
 
 
@@ -100,21 +162,22 @@ func test_경계를_넘는_장애물도_박에_도착() -> void:
 		while t < edge - 1.0:
 			t += 1.0 / 60.0
 			ladder.plan(t, LEAD, MIN_LEAD, true)
-			field.step(ladder.distance_at(t))
+			field.step(ladder.distance_at(t), ladder.spawn_distance_at(t))
 		for item in field.items:
 			if ladder.time_of_beat(item["beat"]) > edge:
 				crossing.append(item)
 		assert_true(crossing.size() > 0, "넘는 장애물 %d개" % crossing.size())
 		for item in crossing:
 			var at := ladder.time_of_beat(item["beat"])
-			field.step(ladder.distance_at(at))
+			field.step(ladder.distance_at(at), ladder.spawn_distance_at(at))
 			assert_true(absf(item["z"]) < 0.000001, "BPM %d 박 %f z %f" % [MusicLadder.STEPS[start]["bpm"], item["beat"], item["z"]])
 
 
-## 경계는 그 뒤 박의 장애물이 z -85에 나오기 전에 정해져야 도착 거리가 맞는다
+## 경계는 그 뒤 박의 장애물이 생성 거리에 나오기 전에 정해져야 도착 거리가 맞는다
 func test_예약은_장애물이_나오는_거리보다_먼저() -> void:
-	var slowest := 15.0
-	assert_true(MIN_LEAD > -ObstacleField.SPAWN_Z / slowest, "가장 느린 속도에서 z -85까지 걸리는 시간보다 먼저")
+	var data := MusicLadder.data()
+	for step in 80:
+		assert_true(MIN_LEAD > MusicLadder.visible_time(step) + data["fade"] + data["spawn_margin"], "단계 %d: 생성 거리까지 걸리는 시간보다 먼저" % step)
 	assert_eq(AudioManager.SCHEDULE_LEAD, LEAD)
 	assert_eq(AudioManager.SCHEDULE_MIN, MIN_LEAD)
 
@@ -146,16 +209,20 @@ func test_경계를_놓치면_같은_곡이_4마디_더_돌아도_박이_맞음(
 func test_빠른_단계도_경계를_놓치지_않고_모두_4마디씩() -> void:
 	var ladder := MusicLadder.new(8)
 	_climb(ladder, 60.0)
-	assert_eq(ladder.segments[-1]["step"], 12)
+	assert_true(ladder.segments[-1]["step"] >= 12)
 	for i in range(1, ladder.segments.size()):
 		assert_eq(ladder.segments[i]["beat"] - ladder.segments[i - 1]["beat"], 16, "구간 %d" % i)
 
 
-func test_다음_경계를_미리_알_수_있고_맨_위에서는_없음() -> void:
+func test_다음_경계를_미리_알_수_있고_맨_위에서는_곡을_바꾸지_않음() -> void:
 	var edge := MusicLadder.new().next_edge(0.0, MIN_LEAD)
 	assert_eq(edge["step"], 1)
 	assert_eq(edge["beat"], 16)
-	assert_true(MusicLadder.new(12).next_edge(0.0, MIN_LEAD).is_empty())
+	assert_true(edge["switch"])
+	var top := MusicLadder.new(12).next_edge(0.0, MIN_LEAD)
+	assert_eq(top["step"], 13)
+	assert_false(top["switch"])
+	assert_false(MusicLadder.new(12).plan(MusicLadder.span_time(12) - 6.5, LEAD, MIN_LEAD, false).is_empty(), "곡 준비를 기다리지 않음")
 
 
 func test_편곡_단계가_오른_구간에서만_경과_시간을_돌려줌() -> void:

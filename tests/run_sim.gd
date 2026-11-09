@@ -20,19 +20,20 @@ static func run(seed_value: int, player: Variant, seconds: float, start_step := 
 	while t < seconds:
 		t += DT
 		ladder.plan(t, AudioManager.SCHEDULE_LEAD, AudioManager.SCHEDULE_MIN, true)
-		field.step(ladder.distance_at(t))
+		field.step(ladder.distance_at(t), ladder.spawn_distance_at(t))
 		action.step(DT)
 		move_t = minf(move_t + DT, Runner.MOVE_TIME)
 		x = lerpf(from_x, RunLogic.lane_x(lane), (1.0 - cos(PI * move_t / Runner.MOVE_TIME)) * 0.5)
 		for item in field.items:
-			if PlayerAction.hits(item["kind"], x - RunLogic.lane_x(item["lane"]), item["z"], action.height(), action.is_ducking()):
+			if PlayerAction.hits(item["kind"], x - RunLogic.lane_x(item["lane"]), PlayerAction.swept_dz(item), action.height(), action.is_ducking()):
 				return {"time": t, "hit": item, "step": ladder.segment_at(t)["step"], "min_gap": min_gap, "ladder": ladder}
 		var speed := ladder.speed_at(t)
+		var seen := visible_items(field.items, ladder, t)
 		var dir: int
 		if player is HumanPlayer:
-			dir = player.decide(t, field.items, lane, action, speed)
+			dir = player.decide(t, seen, lane, action, speed)
 		else:
-			dir = AutoPlayer.decide(field.items, lane, action, speed, t - last_input)
+			dir = AutoPlayer.decide(seen, lane, action, speed, t - last_input)
 		if dir == SwipeDetector.Dir.NONE:
 			continue
 		min_gap = minf(min_gap, t - last_input)
@@ -49,3 +50,9 @@ static func run(seed_value: int, player: Variant, seconds: float, start_step := 
 			SwipeDetector.Dir.DOWN:
 				action.slide()
 	return {"time": t, "hit": {}, "step": ladder.segment_at(t)["step"], "min_gap": min_gap, "ladder": ladder}
+
+
+## 플레이어가 알아볼 수 있는 장애물: 안개에서 반쯤 진해진 것까지 (나타나는 0.15초의 가운데)
+static func visible_items(items: Array, ladder: MusicLadder, t: float) -> Array:
+	var seen_from := (ladder.fog_at(t) + ladder.fog_clear_at(t)) * 0.5
+	return items.filter(func(item: Dictionary) -> bool: return -item["z"] <= seen_from)

@@ -1,13 +1,13 @@
 class_name AutoPlayer
 extends RefCounted
 ## 패턴을 끝까지 피해 가는 완벽한 자동 플레이어 (공정성 테스트와 review/ 기록에 쓴다). 웹 빌드에는 들어가지 않는다.
-## 앞으로 올 줄들을 보고 레인 경로를 찾는다. 사람이 낼 수 있는 입력 간격(MIN_GAP)만 쓰므로 부딪히지 않으면 풀 수 있다는 증거다.
+## 안개에서 보이는 줄들만 보고(RunSim) 레인 경로를 찾는다. 사람이 낼 수 있는 입력 간격(MIN_GAP)만 쓰므로 부딪히지 않으면 풀 수 있다는 증거다.
 
 const LANE_LOOK := 0.26   # 기둥 도착 이만큼 전(초)에 옆으로
 const BIG_LANE_LOOK := 0.44  # 점프·슬라이드할 레인으로는 동작 입력 간격만큼 먼저 옮겨 둔다
 const JUMP_LOOK := 0.25
 const SLIDE_LOOK := 0.28
-const MIN_GAP := 0.28     # 사람 기준 입력 간격
+const MIN_GAP := BeatPattern.MIN_INPUT_GAP  # 사람 기준 입력 간격
 const PLAN_ROWS := 6      # 내다보는 줄 수
 const ACTION_LEAD := 0.3  # 옆으로 옮긴 뒤 뛰거나 미끄러지려면 줄 도착까지 입력 간격 + 이만큼이 있어야 한다 (늦으면 몸이 덜 떠서 부딪힌다)
 

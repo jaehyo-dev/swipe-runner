@@ -12,6 +12,8 @@ uniform float falloff = 0.8;     // 바닥에서 멀어질수록 빨리 흐려�
 uniform float reflect_on = 1.0;  // 0이면 반사 끄기 (프레임이 밀릴 때). 바닥 흔적은 남는다
 uniform float far_cut = -30.0;   // 이 z보다 먼 반사는 그리지 않는다
 uniform float far_full = -26.0;  // 여기서부터 온전히 보인다
+uniform float fog_near = 24.75;  // 장애물 본체와 같은 안개 (main.gd): 바닥 흔적도 안개 거리 너머에서는 안 보인다
+uniform float fog_far = 27.0;
 uniform float wall_stretch = 0.75;  // 2칸 벽이 양옆으로 벌어지는 양 (main.gd)
 uniform float wall_shadow = 0.88;   // 2칸 벽의 접지 그림자가 넓어지는 비율 (main.gd)
 
@@ -19,7 +21,7 @@ varying float below;
 varying float shown;
 
 void vertex() {
-	shown = max(COLOR.b, reflect_on * smoothstep(far_cut, far_full, MODEL_MATRIX[3].z));
+	shown = max(COLOR.b, reflect_on * smoothstep(far_cut, far_full, MODEL_MATRIX[3].z)) * (1.0 - smoothstep(fog_near, fog_far, -MODEL_MATRIX[3].z));
 	below = max(-VERTEX.y, 0.0);
 	float off = VERTEX.x - MODEL_MATRIX[3].x;  // 그림자 타원은 가운데 점이 있어 벌리지 않고 넓힌다
 	VERTEX.x += INSTANCE_CUSTOM.g * (COLOR.b > 0.5 ? off * wall_shadow : sign(off) * wall_stretch * length(MODEL_MATRIX[0].xyz));
