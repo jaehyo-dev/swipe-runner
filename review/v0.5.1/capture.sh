@@ -5,7 +5,7 @@ set -euo pipefail
 tmp=$1; seed=$2; out=review/v0.5.1; old=$tmp/old_v0.5.0; root=$PWD
 mkdir -p "$tmp/art" "$tmp/cmp_new" "$tmp/cmp_old" "$old"
 size() { printf '[display]\nwindow/size/window_width_override=720\nwindow/size/window_height_override=1280\n' > "$1/override.cfg"; }
-trap 'rm -f "$root/override.cfg" "$root/compare_shots.gd" "$root/compare_shots.tscn"' EXIT
+trap 'rm -f "$root/override.cfg" "$root/compare_shots.gd" "$root/compare_shots.tscn" "$root/compare_shots.gd.uid"' EXIT
 git archive v0.5.0 | tar -x -C "$old"
 godot --headless --path "$old" --import >/dev/null 2>&1
 printf '[gd_scene load_steps=2 format=3]\n\n[ext_resource type="Script" path="res://compare_shots.gd" id="1"]\n\n[node name="C" type="Node"]\nscript = ExtResource("1")\n' > "$tmp/compare_shots.tscn"
