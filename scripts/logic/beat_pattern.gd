@@ -7,7 +7,7 @@ extends RefCounted
 ##   특별 줄: 반 박이 입력 간격(0.28초) 이상인 BPM은 반 박 레인 이동 2연속(지그재그), 그보다 빠르면 1박 간격 3연속 콤보
 ## 맨 위 단계(160BPM)에 도착한 뒤에는 4마디마다 밀도만 오른다 (상한 있음).
 ## 공정성: _path는 "이 순서를 풀 수 있는 레인"의 증거다. 줄마다 이 레인에서 한 칸 안에 지나갈 곳을 둔다. 턱·막대가 있는 줄끼리는 2박 이상 벌린다.
-## 비율은 사람 모델 두 종류로 맞췄다 (review/v0.5.1/difficulty.md).
+## 비율은 사람 모델 두 종류로 맞췄다 (review/v0.6.3/difficulty.md).
 
 const Kind := ObstacleField.Kind
 ## 편곡 단계(0 원본, 1 A, 2 B)별 비율
@@ -20,7 +20,7 @@ const DOUBLE: Array[float] = [0.1, 0.15, 0.1]     # 기둥 줄 중 기둥 2개
 ## 얕은 것(열린 줄이 3~4번째)은 두 줄 앞만 보는 사람에게, 깊은 것(5번째)은 네 줄 앞까지 보는 사람에게 어렵다.
 const READ_SHALLOW: Array[float] = [0.0, 0.012, 0.03]
 const READ_DEEP_FROM_BPM := 130
-const READ_DEEP := 0.011
+const READ_DEEP := 0.017
 const DENSITY_READ_DEEP := 0.01
 const SPECIAL := 0.05       # 특별 줄이 나올 확률 (BPM에 상관없이 같다)
 const SPECIAL_FROM := 12.0  # 이 박 전에는 특별 줄을 내지 않는다: 첫 3마디는 읽을 시간을 준다

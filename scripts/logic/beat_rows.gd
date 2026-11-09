@@ -3,19 +3,20 @@ extends RefCounted
 ## 레인 경계 빛 대시 줄의 자리와 박 밝기 (자동 테스트 대상). 장애물과 같은 "이동 거리"를 쓰므로 템포가 바뀌어도 줄은 박에 주인공 옆에 닿는다.
 ## 줄 z = 이동 거리 - 그 박의 이동 거리. 템포가 오르면 줄 간격이 달라지므로 간격을 고정하지 않고 매 프레임 계산한다.
 
-const COUNT := 12   # 박 거리마다 한 줄: 첫 줄은 카메라 뒤, 끝 줄은 안개 속 (dash.gdshader의 사라지는 거리)
-const BEHIND := 1   # 지금 박보다 이만큼 앞선 박부터 놓는다
+const COUNT := 24   # 반 박 거리마다 한 줄: 첫 줄은 카메라 뒤, 끝 줄은 안개 속 (dash.gdshader의 사라지는 거리)
+const BEHIND := 2   # 지금 줄보다 이만큼 앞선 줄부터 놓는다
+const ROW_BEATS := 0.5  # 줄 간격(박). 속도 33에서 한 박 거리는 12.4라 박마다 한 줄이면 듬성하다
 const PULSE_TIME := 0.15  # 박에 밝아졌다 돌아오는 시간(초)
 
 
 ## 자리 index(0~COUNT-1)의 박
 static func beat_of(index: int, now_beat: float) -> float:
-	return floorf(now_beat) - BEHIND + index
+	return (floorf(now_beat / ROW_BEATS) - BEHIND + index) * ROW_BEATS
 
 
 ## 박 beat의 줄을 담는 칸. 줄은 고리처럼 돌려 쓰므로 박이 지나도 앞으로 올 줄의 값은 그대로다.
 static func slot_of(beat: float) -> int:
-	return posmod(roundi(beat), COUNT)
+	return posmod(roundi(beat / ROW_BEATS), COUNT)
 
 
 ## 음악 시간 t에 박 beat 줄의 z

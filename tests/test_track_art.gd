@@ -210,7 +210,7 @@ func test_기둥은_먼_것부터_그림() -> void:
 		await wait_frames()
 	main.clear_pieces()
 	for z in [-10.0, -30.0, -20.0, -40.0]:  # 일부러 뒤섞어 넣는다
-		main._spawn_node({"id": 8200 + int(-z), "lane": 1, "z": z, "kind": K.BLOCK})
+		main._spawn_node({"id": 8200 + int(-z), "lane": 1, "beat": z, "z": z, "kind": K.BLOCK})
 	var zs: Array = main._pieces_far_first().map(func(p) -> float: return p.position.z)
 	assert_eq(zs, [-40.0, -30.0, -20.0, -10.0])
 	main.queue_free()
@@ -220,10 +220,10 @@ func test_연속_블록의_뒤쪽만_흐림() -> void:
 	var main := _make_main()
 	await wait_frames()
 	main.clear_pieces()
-	main._spawn_node({"id": 8001, "lane": 0, "z": -10.0, "kind": K.BLOCK})
-	main._spawn_node({"id": 8002, "lane": 0, "z": -18.0, "kind": K.BLOCK})
-	main._spawn_node({"id": 8003, "lane": 2, "z": -18.0, "kind": K.BLOCK})
-	main._spawn_node({"id": 8004, "lane": 0, "z": -26.0, "kind": K.LOW})
+	main._spawn_node({"id": 8001, "lane": 0, "beat": 1.0, "z": -10.0, "kind": K.BLOCK})
+	main._spawn_node({"id": 8002, "lane": 0, "beat": 2.0, "z": -18.0, "kind": K.BLOCK})
+	main._spawn_node({"id": 8003, "lane": 2, "beat": 2.0, "z": -18.0, "kind": K.BLOCK})
+	main._spawn_node({"id": 8004, "lane": 0, "beat": 3.0, "z": -26.0, "kind": K.LOW})
 	assert_eq(main._obstacles[8001].haze, 0.0, "앞 기둥")
 	assert_true(main._obstacles[8002].haze > 0.0, "같은 레인 뒤 기둥")
 	assert_eq(main._obstacles[8003].haze, 0.0, "다른 레인")
@@ -239,7 +239,7 @@ func test_장애물은_종류별_MultiMesh_하나이고_바뀔_때만_다시_씀
 		await wait_frames()
 	main.clear_pieces()
 	for i in 5:
-		main._spawn_node({"id": 8100 + i, "lane": i % 3, "z": -10.0 - i * 5.0, "kind": K.BLOCK})
+		main._spawn_node({"id": 8100 + i, "lane": i % 3, "beat": float(i), "z": -10.0 - i * 5.0, "kind": K.BLOCK})
 	main._sync_pieces()
 	assert_eq(main._kind_meshes[K.BLOCK]["body"].visible_instance_count, 5)
 	assert_eq(main._kind_meshes[K.BLOCK]["mirror"].visible_instance_count, 5)
@@ -266,7 +266,7 @@ func test_대시는_새로_들어온_줄만_다시_씀() -> void:
 	var changed := 0
 	for i in BeatRows.COUNT:
 		changed += 1 if main._row_beats[i] != before[i] else 0
-	assert_eq(changed, 1, "한 박에 한 칸")
+	assert_eq(changed, 2, "한 박에 두 칸")
 	main.queue_free()
 
 
@@ -278,7 +278,7 @@ func test_프레임이_밀리면_줄기_반사_MSAA_빛_번짐_순서로_낮춤(
 	main._tint = -1.0
 	main._apply_tint(1.0)
 	var streaks: int = main._streaks.visible_instance_count
-	assert_eq(streaks, 48, "t=1 빛 줄기")
+	assert_eq(streaks, 64, "t=1 빛 줄기")
 	main.apply_quality(1)
 	assert_true(main._streaks.visible_instance_count < streaks, "1단계 줄기")
 	assert_true(main.runner._mirror.visible, "반사는 그대로")
@@ -324,10 +324,10 @@ func test_대시_줄은_템포가_바뀌어도_박에_주인공_자리에_닿음
 		assert_true(absf(BeatRows.row_z(ladder, t, beat)) < 0.000001, "박 %d" % beat)
 
 
-func test_줄은_박_거리마다_하나이고_주인공_앞뒤를_덮으며_간격이_구간_속도를_따름() -> void:
+func test_줄은_반_박_거리마다_하나이고_주인공_앞뒤를_덮으며_간격이_구간_속도를_따름() -> void:
 	assert_eq(BeatRows.beat_of(0, 10.3), 9.0)
-	assert_eq(BeatRows.beat_of(1, 10.3), 10.0)
-	assert_eq(BeatRows.beat_of(4, 10.9), 13.0)
+	assert_eq(BeatRows.beat_of(1, 10.3), 9.5)
+	assert_eq(BeatRows.beat_of(4, 10.9), 11.5)
 	for step in MusicLadder.STEPS.size():
 		var ladder := MusicLadder.new(step)
 		var t := 3.0
@@ -518,7 +518,7 @@ func test_색은_속도를_따라_진해지고_재질을_새로_만들지_않음
 	assert_eq(main._kind_meshes[K.BLOCK]["block"], block, "같은 재질")
 	assert_eq(_sky_band(main), 0.13, "t=1 안개 띠 넓게")
 	assert_true(block.get_shader_parameter("body_color").is_equal_approx(Color("1268b8")), "t=1 기둥 몸통")
-	assert_eq(main._streaks.visible_instance_count, 48, "t=1 빛 줄기")
+	assert_eq(main._streaks.visible_instance_count, 64, "t=1 빛 줄기")
 	AudioManager.ladder = MusicLadder.new(0)
 	main.queue_free()
 
@@ -565,7 +565,7 @@ func test_재시작하면_색이_0_5초_동안_돌아감() -> void:
 	var mid: float = at.call(0.25)
 	assert_true(absf(mid - 0.5) < 0.001, "0.25초 %f" % mid)
 	assert_eq(at.call(0.5), 0.0, "0.5초에 t=0")
-	assert_eq(main.speed, 12.0, "속도 12")
+	assert_eq(main.speed, 15.0, "속도 15")
 	assert_true(_sky_top(main).is_equal_approx(Color("05040d")))
 	AudioManager.ladder = MusicLadder.new(0)
 	main.queue_free()
@@ -652,3 +652,143 @@ func _collect(dir: String, into: Array[String]) -> void:
 		into.append(dir.path_join(file))
 	for sub in DirAccess.get_directories_at(dir):
 		_collect(dir.path_join(sub), into)
+
+
+## 2칸 벽 (v0.6.3): 같은 줄 이웃 레인의 기둥 둘은 그림 하나, 판정은 둘
+func test_이웃_레인_기둥만_벽이_됨() -> void:
+	var at := func(lane: int, kind: int, beat := 8.0) -> Dictionary: return {"lane": lane, "kind": kind, "beat": beat}
+	assert_true(ObstacleField.forms_wall(at.call(0, K.BLOCK), at.call(1, K.BLOCK)), "왼쪽 + 가운데")
+	assert_true(ObstacleField.forms_wall(at.call(2, K.BLOCK), at.call(1, K.BLOCK)), "가운데 + 오른쪽")
+	assert_false(ObstacleField.forms_wall(at.call(0, K.BLOCK), at.call(2, K.BLOCK)), "양끝")
+	assert_false(ObstacleField.forms_wall(at.call(0, K.BLOCK), at.call(1, K.LOW)), "기둥 + 턱")
+	assert_false(ObstacleField.forms_wall(at.call(0, K.BLOCK), at.call(1, K.HIGH)), "기둥 + 막대")
+	assert_false(ObstacleField.forms_wall(at.call(0, K.BLOCK), at.call(1, K.BLOCK, 8.5)), "다른 줄")
+
+
+func _pair(main: Node, lanes: Array, beat := 1.0, z := -20.0) -> void:
+	for lane: int in lanes:
+		main._spawn_node({"id": 8300 + int(beat) * 10 + lane, "lane": lane, "beat": beat, "z": z, "kind": K.BLOCK})
+	main._pieces_dirty = true
+	main._sync_pieces()
+
+
+func test_벽은_한_칸으로_그리고_몸통과_반사에_같은_값을_씀() -> void:
+	var main := _make_main()
+	await wait_frames()
+	main.clear_pieces()
+	main._leaving.clear()
+	_pair(main, [0, 1])
+	var body: MultiMesh = main._kind_meshes[K.BLOCK]["body"]
+	var mirror: MultiMesh = main._kind_meshes[K.BLOCK]["mirror"]
+	assert_eq(body.visible_instance_count, 1, "벽 하나")
+	assert_eq(mirror.visible_instance_count, 1, "반사와 접지 그림자도 하나")
+	var wall: Variant = main._obstacles.values().filter(func(p): return not p.hidden)[0]  # 헤드리스는 MultiMesh 값을 돌려주지 않아 조각 상태를 본다
+	assert_true(is_equal_approx(wall.position.x, -0.75), "두 레인 가운데")
+	assert_eq(wall.wide, 1.0, "벽 표시")
+	var half := ObstacleField.BLOCK_SIZE * 0.5 + RunLogic.LANE_WIDTH * 0.5
+	assert_true(is_equal_approx(-0.75 - half, RunLogic.lane_x(0) - ObstacleField.BLOCK_SIZE * 0.5), "바깥 왼쪽이 기둥과 같음")
+	main.clear_pieces()
+	_pair(main, [0, 2])
+	assert_eq(body.visible_instance_count, 2, "양끝은 따로")
+	for piece in main._obstacles.values():
+		assert_eq(piece.wide, 0.0, "양끝은 벽이 아님")
+	main.queue_free()
+
+
+func test_벽_판정은_레인마다_따로이고_값이_그대로() -> void:
+	assert_eq(ObstacleField.BLOCK_SIZE, 1.1)
+	assert_eq(RunLogic.LANE_WIDTH, 1.5)
+	var main := _make_main()
+	await wait_frames()
+	main.clear_pieces()
+	main.field.items.clear()
+	for lane: int in [0, 1]:
+		var item := {"id": 8400 + lane, "lane": lane, "beat": 1.0, "z": -5.0, "kind": K.BLOCK, "arrive": main.travel + 5.0}
+		main.field.items.append(item)
+		main._spawn_node(item)
+	assert_eq(main.field.items.size(), 2, "판정 항목은 둘")
+	assert_eq(main._obstacles.size(), 2, "항목마다 조각이 있어 z가 따라간다")
+	main.queue_free()
+
+
+## 벌리는 셰이더는 x 부호로 양옆을 가른다: 가운데에 꼭짓점이 있으면 이음매가 생긴다
+func test_기둥_메시_가운데에_꼭짓점이_없음() -> void:
+	var meshes := ArtMeshes.obstacle(K.BLOCK)
+	for surface in meshes["body"].get_surface_count():
+		for p: Vector3 in meshes["body"].surface_get_arrays(surface)[Mesh.ARRAY_VERTEX]:
+			assert_true(absf(p.x) > 0.1, "x %f" % p.x)
+			if absf(p.x) <= 0.1:
+				return
+
+
+func test_벽_뒤_기둥도_연속으로_흐리고_다른_레인은_아님() -> void:
+	var main := _make_main()
+	await wait_frames()
+	main.clear_pieces()
+	_pair(main, [0, 1], 1.0, -10.0)
+	main._spawn_node({"id": 8501, "lane": 1, "beat": 2.0, "z": -18.0, "kind": K.BLOCK})
+	main._spawn_node({"id": 8502, "lane": 2, "beat": 2.0, "z": -18.0, "kind": K.BLOCK})
+	assert_true(main._obstacles[8501].haze > 0.0, "벽이 덮은 레인")
+	assert_eq(main._obstacles[8502].haze, 0.0, "벽이 안 덮은 레인")
+	main.queue_free()
+
+
+func test_재시작_솟아오르기는_벽이_하나로() -> void:
+	var main := _make_main()
+	await wait_frames()
+	main.clear_pieces()
+	main._leaving.clear()
+	_pair(main, [1, 2])
+	for piece in main._obstacles.values():
+		main._pop_in(piece)
+	main._sync_pieces()
+	var body: MultiMesh = main._kind_meshes[K.BLOCK]["body"]
+	assert_eq(body.visible_instance_count, 1, "솟는 동안에도 하나")
+	var wall: Variant = main._obstacles.values().filter(func(p): return not p.hidden)[0]
+	assert_true(wall.scale.y < 0.1, "바닥에서 시작")
+	main.queue_free()
+
+
+func test_시야각은_속도를_2마디_동안_따라_62도에서_68도() -> void:
+	var main := _make_main()
+	await wait_frames()
+	main._apply_tint(0.0)
+	assert_eq(main._camera.fov, 62.0)
+	main._apply_tint(1.0)
+	assert_eq(main._camera.fov, 68.0)
+	var ladder := MusicLadder.new()
+	ladder.add_segment(MusicLadder.span_time(0), 16, 1)
+	var edge := MusicLadder.span_time(0)
+	var two_bars := MusicLadder.beat_time(1) * 8.0
+	assert_eq(ladder.tint_at(edge), MusicLadder.step_tint(0), "경계 순간에는 튀지 않음")
+	assert_true(ladder.tint_at(edge + two_bars * 0.5) > MusicLadder.step_tint(0) and ladder.tint_at(edge + two_bars * 0.5) < MusicLadder.step_tint(1), "서서히")
+	assert_eq(ladder.tint_at(edge + two_bars), MusicLadder.step_tint(1), "2마디에 도착")
+	main.queue_free()
+
+
+## 멀리서 툭 나타나지 않게 생성 자리에서는 안개 색이어야 한다
+func test_생성_자리에서_장애물은_완전히_안개_색이고_반응_시간은_2_5초_이상() -> void:
+	var camera_dist := Vector3(0.0, 3.3, 5.4).distance_to(Vector3(0.0, 0.0, ObstacleField.SPAWN_Z))
+	for path in ["res://shaders/block.gdshader", "res://shaders/pillar.gdshader"]:
+		var code := FileAccess.get_file_as_string(path)
+		var found := RegEx.create_from_string("far_gone = ([0-9.]+)").search(code)
+		assert_true(found.get_string(1).to_float() <= camera_dist, "%s 생성 거리에서 안개 색" % path)
+	var fastest: float = MusicLadder.STEPS[-1]["speed"]
+	assert_true(-ObstacleField.SPAWN_Z / fastest >= 2.57, "160BPM 반응 시간 %f" % (-ObstacleField.SPAWN_Z / fastest))
+
+
+## 속도 33에서도 프레임 사이에 판정을 뚫고 지나가지 않는다: 120Hz 프레임당 0.275, 60Hz 0.55, 판정 폭 1.4
+func test_속도_33에서_장애물이_판정을_뚫지_않음() -> void:
+	var speed: float = MusicLadder.STEPS[-1]["speed"]
+	assert_eq(speed, 33.0)
+	for hz: float in [120.0, 60.0, 30.0]:
+		var per_frame := speed / hz
+		assert_true(per_frame < 2.0 * PlayerAction.HIT_Z, "%dHz 프레임당 %f" % [hz, per_frame])
+		for kind in [K.BLOCK, K.LOW, K.HIGH]:
+			for offset in 16:  # 프레임이 판정 경계와 어떻게 어긋나든
+				var z := ObstacleField.SPAWN_Z + per_frame * offset / 16.0
+				var hit := false
+				while z < ObstacleField.REMOVE_Z and not hit:
+					hit = PlayerAction.hits(kind, 0.0, z, 0.0, false)
+					z += per_frame
+				assert_true(hit, "%dHz 종류 %d 어긋남 %d" % [hz, kind, offset])

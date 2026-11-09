@@ -181,14 +181,26 @@ func _median(model: Dictionary) -> float:
 	return times[24]
 
 
-func test_보통_모델은_중앙값_35에서_60초() -> void:
+func test_보통_모델은_중앙값_30에서_50초() -> void:
 	var median := _median(HumanPlayer.NORMAL)
-	assert_true(median >= 35.0 and median <= 60.0, "중앙값 %f" % median)
+	assert_true(median >= 30.0 and median <= 50.0, "중앙값 %f" % median)
 
 
-func test_잘하는_모델은_중앙값_90에서_150초() -> void:
+func test_잘하는_모델은_중앙값_70에서_110초() -> void:
 	var median := _median(HumanPlayer.GOOD)
-	assert_true(median >= 90.0 and median <= 150.0, "중앙값 %f" % median)
+	assert_true(median >= 70.0 and median <= 110.0, "중앙값 %f" % median)
+
+
+func test_잘하는_모델은_95퍼센트가_240초_이하이고_사망이_한_BPM에_40퍼센트_넘게_몰리지_않음() -> void:
+	var times := []
+	var by_step := {}
+	for s in range(1, 51):
+		var r: Dictionary = RunSim.run(s, HumanPlayer.new(s, HumanPlayer.GOOD), 300.0)
+		times.append(r["time"])
+		by_step[r["step"]] = by_step.get(r["step"], 0) + 1
+	times.sort()
+	assert_true(times[47] <= 240.0, "95%% %f" % times[47])
+	assert_true(by_step.values().max() <= 20, "가장 많이 몰린 사망 %d판" % by_step.values().max())
 
 
 func test_늦어서_길이_없어도_열린_레인을_돌려줌() -> void:

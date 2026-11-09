@@ -6,19 +6,19 @@ extends RefCounted
 
 ## 곡 파일은 tools/make_ladder_music.py가 만든다. stage: 0 원본, 1 A Drive, 2 B Drive+
 const STEPS: Array[Dictionary] = [
-	{"bpm": 100, "speed": 12.0, "stage": 0, "file": "bgm_100_orig"},
-	{"bpm": 105, "speed": 13.0, "stage": 0, "file": "bgm_105_orig"},
-	{"bpm": 110, "speed": 14.0, "stage": 1, "file": "bgm_110_a"},
-	{"bpm": 115, "speed": 15.0, "stage": 1, "file": "bgm_115_a"},
-	{"bpm": 120, "speed": 16.0, "stage": 2, "file": "bgm_120_b"},
-	{"bpm": 125, "speed": 17.0, "stage": 2, "file": "bgm_125_b"},
-	{"bpm": 130, "speed": 18.0, "stage": 2, "file": "bgm_130_b"},
-	{"bpm": 135, "speed": 19.0, "stage": 2, "file": "bgm_135_b"},
-	{"bpm": 140, "speed": 20.0, "stage": 2, "file": "bgm_140_b"},
-	{"bpm": 145, "speed": 21.0, "stage": 2, "file": "bgm_145_b"},
-	{"bpm": 150, "speed": 22.0, "stage": 2, "file": "bgm_150_b"},
-	{"bpm": 155, "speed": 23.0, "stage": 2, "file": "bgm_155_b"},
-	{"bpm": 160, "speed": 24.0, "stage": 2, "file": "bgm_160_b"},
+	{"bpm": 100, "speed": 15.0, "stage": 0, "file": "bgm_100_orig"},
+	{"bpm": 105, "speed": 16.5, "stage": 0, "file": "bgm_105_orig"},
+	{"bpm": 110, "speed": 18.0, "stage": 1, "file": "bgm_110_a"},
+	{"bpm": 115, "speed": 19.5, "stage": 1, "file": "bgm_115_a"},
+	{"bpm": 120, "speed": 21.0, "stage": 2, "file": "bgm_120_b"},
+	{"bpm": 125, "speed": 22.5, "stage": 2, "file": "bgm_125_b"},
+	{"bpm": 130, "speed": 24.0, "stage": 2, "file": "bgm_130_b"},
+	{"bpm": 135, "speed": 25.5, "stage": 2, "file": "bgm_135_b"},
+	{"bpm": 140, "speed": 27.0, "stage": 2, "file": "bgm_140_b"},
+	{"bpm": 145, "speed": 28.5, "stage": 2, "file": "bgm_145_b"},
+	{"bpm": 150, "speed": 30.0, "stage": 2, "file": "bgm_150_b"},
+	{"bpm": 155, "speed": 31.5, "stage": 2, "file": "bgm_155_b"},
+	{"bpm": 160, "speed": 33.0, "stage": 2, "file": "bgm_160_b"},
 ]
 const LAP_BEATS := BeatClock.BEATS_PER_BAR * BeatClock.LOOP_BARS  # 곡 파일 한 바퀴 (16마디)
 const STEP_BARS := 4    # 이만큼마다 템포가 오른다

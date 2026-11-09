@@ -7,8 +7,8 @@ const MIN_LEAD := 6.2
 
 func test_표대로_BPM과_속도와_편곡_단계() -> void:
 	var want := []
-	for i in 13:  # 100~160BPM, 5BPM마다 속도 +1 (12에서 24까지), 100~105 원본, 110~115 A, 120부터 B
-		want.append([100 + 5 * i, 12.0 + i, 0 if i < 2 else (1 if i < 4 else 2)])
+	for i in 13:  # 100~160BPM, 5BPM마다 속도 +1.5 (15에서 33까지), 100~105 원본, 110~115 A, 120부터 B
+		want.append([100 + 5 * i, 15.0 + 1.5 * i, 0 if i < 2 else (1 if i < 4 else 2)])
 	assert_eq(MusicLadder.STEPS.size(), want.size())
 	for i in want.size():
 		var ladder := MusicLadder.new(i)
@@ -83,9 +83,9 @@ func test_속도는_경계_순간에만_바뀌고_거리는_끊기지_않음() -
 	var ladder := MusicLadder.new()
 	_climb(ladder, 20.0)
 	var edge: float = ladder.segments[1]["start"]
-	assert_eq(ladder.speed_at(edge - 0.001), 12.0)
-	assert_eq(ladder.speed_at(5.0), 12.0, "구간 중간은 그대로")
-	assert_eq(ladder.speed_at(edge), 13.0)
+	assert_eq(ladder.speed_at(edge - 0.001), 15.0)
+	assert_eq(ladder.speed_at(5.0), 15.0, "구간 중간은 그대로")
+	assert_eq(ladder.speed_at(edge), 16.5)
 	assert_true(absf(ladder.distance_at(edge) - ladder.distance_at(edge - 0.0001)) < 0.01)
 
 
@@ -111,10 +111,10 @@ func test_경계를_넘는_장애물도_박에_도착() -> void:
 			assert_true(absf(item["z"]) < 0.000001, "BPM %d 박 %f z %f" % [MusicLadder.STEPS[start]["bpm"], item["beat"], item["z"]])
 
 
-## 경계는 그 뒤 박의 장애물이 z -60에 나오기 전에 정해져야 도착 거리가 맞는다
+## 경계는 그 뒤 박의 장애물이 z -85에 나오기 전에 정해져야 도착 거리가 맞는다
 func test_예약은_장애물이_나오는_거리보다_먼저() -> void:
-	var slowest := 12.0
-	assert_true(MIN_LEAD > -ObstacleField.SPAWN_Z / slowest, "가장 느린 속도에서 z -60까지 걸리는 시간보다 먼저")
+	var slowest := 15.0
+	assert_true(MIN_LEAD > -ObstacleField.SPAWN_Z / slowest, "가장 느린 속도에서 z -85까지 걸리는 시간보다 먼저")
 	assert_eq(AudioManager.SCHEDULE_LEAD, LEAD)
 	assert_eq(AudioManager.SCHEDULE_MIN, MIN_LEAD)
 
@@ -139,7 +139,7 @@ func test_경계를_놓치면_같은_곡이_4마디_더_돌아도_박이_맞음(
 	assert_true(absf(plan["from"] - 32.0 * 60.0 / 105.0) < 0.000001, "다음 곡의 8마디째")
 	assert_eq(ladder.segments[-1]["beat"], 32)
 	assert_true(absf(ladder.beat_at(edge * 2.0) - 32.0) < 0.000001)
-	assert_true(absf(ladder.distance_at(edge * 2.0) - 32 * 7.2) < 0.000001, "놓친 구간은 옛 속도로 쌓임")
+	assert_true(absf(ladder.distance_at(edge * 2.0) - 32 * MusicLadder.beat_distance(0)) < 0.000001, "놓친 구간은 옛 속도로 쌓임")
 
 
 ## 빠른 단계는 4마디(155BPM 6.19초)가 예약 거리보다 짧다. 앞 구간이 시작하기 전에도 다음 경계를 정해야 4마디를 놓치지 않는다

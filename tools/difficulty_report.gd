@@ -35,7 +35,7 @@ func _model(title: String, model: Dictionary) -> void:
 	times.sort()
 	var bar := func(q: float) -> float: return times[int(q * (times.size() - 1))]
 	print("\n## %s\n" % title)
-	print("| 시드 | 25%% | 중앙값 | 75%% | 95%% | 최소 | 최대 |\n|---|---|---|---|---|---|---|")
+	print("| 시드 | 25% | 중앙값 | 75% | 95% | 최소 | 최대 |\n|---|---|---|---|---|---|---|")
 	print("| %d | %.1f초 | %.1f초 | %.1f초 | %.1f초 | %.1f초 | %.1f초 |" % [SEEDS, bar.call(0.25), bar.call(0.5), bar.call(0.75), bar.call(0.95), times[0], times[-1]])
 	var by_bpm := {}
 	var by_kind := {"BLOCK": 0, "LOW": 0, "HIGH": 0}

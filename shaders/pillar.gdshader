@@ -10,13 +10,15 @@ uniform float top_gloss = 0.24;     // 윗면 반사 (block.gdshader와 같은 �
 uniform float corner_gloss = 0.3;   // 둥근 모서리의 은은한 반사
 uniform float haze_near = 6.0;      // 아래 네 값은 block.gdshader와 같게 유지한다
 uniform float haze_far = 16.0;
-uniform float far_full = 51.0;
-uniform float far_gone = 65.0;
+uniform float far_full = 66.0;
+uniform float far_gone = 90.0;
+uniform float wall_stretch = 0.75;  // main.gd가 레인 폭의 절반을 넣는다
 
 varying float haze;
 varying vec3 local_normal;
 
 void vertex() {
+	VERTEX.x += sign(VERTEX.x) * INSTANCE_CUSTOM.g * wall_stretch;  // 2칸 벽: 양옆만 벌려 둥근 모서리와 테두리 굵기를 그대로 둔다
 	local_normal = NORMAL;
 	float dist = length((MODELVIEW_MATRIX * vec4(VERTEX, 1.0)).xyz);
 	haze = max(INSTANCE_CUSTOM.r * smoothstep(haze_near, haze_far, dist), smoothstep(far_full, far_gone, dist));

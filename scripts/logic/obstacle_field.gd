@@ -16,7 +16,7 @@ const HIGH_BOTTOM := 0.62    # 막대 아랫면 높이: 슬라이드로 이보�
 const HIGH_TOP := 1.32
 
 ## 생성 위치 (z는 음수 = 앞쪽 멀리, 안개 속)
-const SPAWN_Z := -60.0
+const SPAWN_Z := -85.0
 ## 이 z를 넘으면 지나간 것으로 보고 제거 (카메라 뒤)
 const REMOVE_Z := 6.0
 ## 시작·재시작 뒤 첫 장애물은 1마디 뒤 첫 박에 도착한다
@@ -41,8 +41,13 @@ func _init(seed_value: int = 0, run_ladder := MusicLadder.new()) -> void:
 	_coming = _pattern.next()
 
 
+## 같은 줄에서 이웃한 두 레인의 기둥이면 그림은 넓은 벽 하나다. 판정은 레인마다 그대로 따로다.
+static func forms_wall(a: Dictionary, b: Dictionary) -> bool:
+	return a["kind"] == Kind.BLOCK and b["kind"] == Kind.BLOCK and absi(a["lane"] - b["lane"]) == 1 and a["beat"] == b["beat"]
+
+
 ## 이동 거리를 now로 옮긴다. 이번에 생긴 것과 지워진 것의 id를 돌려준다.
-## step(travel)은 앞으로 도착할 장애물 중 z -60보다 가까운 것을 지금 거리에 맞는 자리에 미리 놓는다 (시작·재시작).
+## step(travel)은 앞으로 도착할 장애물 중 z -85보다 가까운 것을 지금 거리에 맞는 자리에 미리 놓는다 (시작·재시작).
 func step(now: float) -> Dictionary:
 	var spawned: Array[Dictionary] = []
 	var removed: Array[int] = []

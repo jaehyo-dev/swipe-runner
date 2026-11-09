@@ -17,10 +17,10 @@ const KINDS := {
 	ObstacleField.Kind.LOW: "low",
 	ObstacleField.Kind.HIGH: "high",
 }
-const MAX_PIECES := 96       # 종류마다 동시에 그릴 수 있는 장애물 수. z -60~+6에 들어오는 수보다 넉넉하다
+const MAX_PIECES := 96       # 종류마다 동시에 그릴 수 있는 장애물 수. z -85~+6에 들어오는 수보다 넉넉하다
 const FOLLOW_GAP := 22.0     # 같은 레인의 앞 블록이 이만큼 안이면 연속 블록으로 본다 (2박 + 조금)
 const FOLLOW_HAZE := 0.3     # 연속 블록의 뒤쪽 것이 안개 색으로 흐려지는 양
-const FOG_DENSITY := 0.035   # 세상 전체의 안개. 장애물만 안개를 끄고 직접 섞는다 (block.gdshader)
+const FOG_DENSITY := 0.025   # 생성 거리 85에 맞춘 값 (0.035 × 60 ÷ 85). 세상 전체의 안개. 장애물만 안개를 끄고 직접 섞는다 (block.gdshader)
 const GLOW_INTENSITY := 1.3  # 얇은 관에서도 바깥으로 빛이 번지게
 const GLOW_WIDE := 0.6       # 넓게 퍼지는 번짐 층
 const GLOW_LOW := 0.5        # 프레임이 밀릴 때 낮춘 빛 번짐 세기
@@ -39,11 +39,13 @@ const SKY_RADIUS := 1500.0
 const RAIL_X := 2.38            # 난간 관 위치: 슬라이드로 퍼진 몸(1.5 + 0.775)이 닿지 않는 바깥
 const RAIL_Y := 0.1
 const RAIL_RADIUS := 0.1
-const DASH_SIZE := Vector3(0.07, 0.02, 1.2)  # 레인 경계 빛 대시
-const STREAK_MAX := 48          # 빛 줄기 풀 (data/speed_palette.json의 t = 1 값)
+const DASH_SIZE := Vector3(0.07, 0.02, 1.0)  # 레인 경계 빛 대시. 길이는 속도에 맞춰 셰이더가 늘린다 (dash_length)
+const STREAK_MAX := 64          # 빛 줄기 풀 (data/speed_palette.json의 t = 1 값)
 const STREAK_SEED := 606        # 줄기 자리를 고정하는 시드
 const STREAK_X := Vector2(2.9, 8.0)  # 길 바깥 좌우 거리
 const STREAK_Y := Vector2(0.4, 7.0)
+const FOV_SLOW := 62.0       # 시야각: 색 진하기와 함께 속도가 오른 뒤 2마디 동안 넓어진다
+const FOV_FAST := 68.0
 const POP_SCALE := 1.22      # 새 기록 순간 거리 숫자가 커지는 배율 (말랑)
 const POP_UP := 0.08
 const POP_DOWN := 0.32
@@ -112,6 +114,9 @@ class Piece:
 	var position: Vector3
 	var scale := Vector3.ONE
 	var haze := 0.0
+	var item: Dictionary       # 이 장애물의 판정 항목
+	var wide := 0.0            # 1이면 이웃 레인까지 덮는 2칸 벽
+	var hidden := false        # 2칸 벽의 짝: 판정 항목만 있고 그림은 벽 하나가 맡는다
 
 
 ## 시드를 고정했으면(주소의 ?seed, 테스트) 판마다 같은 배치, 아니면 판마다 새 배치
@@ -285,6 +290,8 @@ func _apply_tint(t: float) -> void:
 	_streaks.visible_instance_count = QualityGuard.streaks(c["streak_count"], _effect_level)
 	_streak_material.set_shader_parameter("streak_length", c["streak_length"])
 	_streak_material.set_shader_parameter("level", c["streak_alpha"])
+	_dash_material.set_shader_parameter("dash_length", c["dash_length"])
+	_camera.fov = lerpf(FOV_SLOW, FOV_FAST, t)
 	for kind: ObstacleField.Kind in KINDS:
 		var name_: String = KINDS[kind]
 		var shape: Dictionary = _kind_meshes[kind]
@@ -353,6 +360,8 @@ func _sync_pieces() -> void:
 	for kind in _kind_meshes:
 		used[kind] = 0
 	for piece: Piece in _pieces_far_first():
+		if piece.hidden:
+			continue
 		var slot: int = used[piece.kind]
 		if slot >= MAX_PIECES:
 			continue
@@ -360,8 +369,10 @@ func _sync_pieces() -> void:
 		var at := Transform3D(Basis.from_scale(piece.scale), Vector3(piece.position.x, piece.position.y, piece.position.z - _scroll))
 		var shape: Dictionary = _kind_meshes[piece.kind]
 		shape["body"].set_instance_transform(slot, at)
-		shape["body"].set_instance_custom_data(slot, Color(piece.haze, 0.0, 0.0, 0.0))
+		var custom := Color(piece.haze, piece.wide, 0.0, 0.0)
+		shape["body"].set_instance_custom_data(slot, custom)
 		shape["mirror"].set_instance_transform(slot, at)
+		shape["mirror"].set_instance_custom_data(slot, custom)
 	for kind in _kind_meshes:
 		_kind_meshes[kind]["body"].visible_instance_count = used[kind]
 		_kind_meshes[kind]["mirror"].visible_instance_count = used[kind]
@@ -537,9 +548,25 @@ func _spawn_node(item: Dictionary) -> void:
 	var piece := Piece.new()
 	piece.kind = item["kind"]
 	piece.position = Vector3(RunLogic.lane_x(item["lane"]), 0.0, item["z"])
-	piece.haze = _haze_of(piece)
+	piece.item = item
+	var twin := _wall_twin(item)
+	if twin:
+		piece.hidden = true
+		twin.wide = 1.0
+		twin.position.x = (twin.position.x + piece.position.x) * 0.5
+		twin.haze = _haze_of(twin)
+	else:
+		piece.haze = _haze_of(piece)
 	_obstacles[item["id"]] = piece
 	_pieces_dirty = true
+
+
+## 같은 줄 이웃 레인에 이미 놓인 기둥. 같은 줄은 같은 프레임에 차례로 생기므로 앞서 놓인 것을 넓힌다.
+func _wall_twin(item: Dictionary) -> Piece:
+	for other: Piece in _obstacles.values():
+		if not other.hidden and ObstacleField.forms_wall(other.item, item):
+			return other
+	return null
 
 
 ## 같은 레인에 바로 앞서 오는 옆 블록이 있으면 뒤쪽 것을 조금 흐리게 한다: 연속 블록이 한 덩어리로 보이지 않게 하는 깊이 단서
@@ -548,7 +575,8 @@ func _haze_of(piece: Piece) -> float:
 		return 0.0
 	for other: Piece in _obstacles.values():
 		var gap := other.position.z - piece.position.z
-		if other.kind == piece.kind and is_equal_approx(other.position.x, piece.position.x) and gap > 0.0 and gap < FOLLOW_GAP:
+		var overlap := absf(other.position.x - piece.position.x) < RunLogic.LANE_WIDTH * 0.5 * (other.wide + piece.wide) + 0.1  # 벽과 기둥이 겹치는 레인도 연속으로 본다
+		if other.kind == piece.kind and overlap and gap > 0.0 and gap < FOLLOW_GAP:
 			return FOLLOW_HAZE
 	return 0.0
 
@@ -726,18 +754,22 @@ func _build_obstacle_resources() -> void:
 	add_child(_pieces_root)
 	for kind: ObstacleField.Kind in KINDS:
 		var meshes := ArtMeshes.obstacle(kind)
-		var body := _new_pieces_mesh(meshes["body"], true)
-		var mirror := _new_pieces_mesh(meshes["mirror"], false)
+		var body := _new_pieces_mesh(meshes["body"])
+		var mirror := _new_pieces_mesh(meshes["mirror"])
 		var block := ShaderMaterial.new()
 		block.shader = BLOCK_SHADER
 		var reflect := ShaderMaterial.new()
 		reflect.shader = MIRROR_SHADER
 		reflect.render_priority = -1  # 젤리 발밑 그림자보다 먼저 그린다
+		block.set_shader_parameter("wall_stretch", RunLogic.LANE_WIDTH * 0.5)
+		reflect.set_shader_parameter("wall_stretch", RunLogic.LANE_WIDTH * 0.5)
+		reflect.set_shader_parameter("wall_shadow", RunLogic.LANE_WIDTH * 0.5 / ArtMeshes.SHADOW_HALF.x)
 		var body_override: Material = block
 		_kind_meshes[kind] = {"body": body, "mirror": mirror, "block": block, "reflect": reflect}
 		if kind == ObstacleField.Kind.BLOCK:  # 표면마다 재질이 달라 덮어쓰기 재질을 쓰지 않는다
 			var pillar := ShaderMaterial.new()
 			pillar.shader = PILLAR_SHADER
+			pillar.set_shader_parameter("wall_stretch", RunLogic.LANE_WIDTH * 0.5)
 			pillar.render_priority = 1  # 젤리보다 뒤에: 젤리 뒤의 기둥은 깊이에 막히고, 젤리 앞의 기둥은 그 위에 비친다
 			meshes["body"].surface_set_material(0, pillar)
 			meshes["body"].surface_set_material(1, block)
@@ -751,10 +783,10 @@ func _build_obstacle_resources() -> void:
 			_pieces_root.add_child(node)
 
 
-func _new_pieces_mesh(mesh: Mesh, custom: bool) -> MultiMesh:
+func _new_pieces_mesh(mesh: Mesh) -> MultiMesh:
 	var many := MultiMesh.new()
 	many.transform_format = MultiMesh.TRANSFORM_3D
-	many.use_custom_data = custom
+	many.use_custom_data = true
 	many.use_colors = true  # 끄면 꼭짓점 색(COLOR)의 RGB가 0으로 읽혀 반사가 검게 나온다
 	many.mesh = mesh
 	many.instance_count = MAX_PIECES

@@ -14,14 +14,16 @@ uniform float min_pixels = 0.75;    // 관 반지름의 화면 최소 크기(픽
 uniform float mark_min_pixels = 1.0; // 기호는 더 굵게: 멀리서도 읽혀야 한다
 uniform float haze_near = 6.0;      // 연속 블록의 뒤쪽 것이 흐려지기 시작하는 카메라 거리
 uniform float haze_far = 16.0;
-uniform float far_full = 51.0;      // z -45까지는 또렷하게
-uniform float far_gone = 65.0;      // 생성 지점 z -60에서는 안개 색: 툭 나타나지 않게
+uniform float far_full = 66.0;      // z -60까지는 또렷하게
+uniform float far_gone = 90.0;      // 생성 지점 z -85에서는 안개 색: 툭 나타나지 않게
+uniform float wall_stretch = 0.75;  // main.gd가 레인 폭의 절반을 넣는다
 
 varying float part;
 varying float haze;
 varying vec3 local_normal;
 
 void vertex() {
+	VERTEX.x += sign(VERTEX.x) * INSTANCE_CUSTOM.g * wall_stretch;  // 2칸 벽: 양옆만 벌려 둥근 모서리와 테두리 굵기를 그대로 둔다
 	part = UV.y;
 	local_normal = NORMAL;
 	float dist = length((MODELVIEW_MATRIX * vec4(VERTEX, 1.0)).xyz);

@@ -122,7 +122,7 @@ func test_시간이_가면_거리가_늘고_장애물_노드가_생기고_지나
 	await wait_frames()  # 지워진 노드(queue_free)가 정리될 때까지
 	assert_eq(main.travel, RunLogic.SPEED * 12.0)
 	var label: Label = main.find_child("DistanceLabel", true, false)
-	assert_eq(label.text, "144")
+	assert_eq(label.text, "180")
 	assert_eq(main._obstacles.size(), main.field.items.size(), "화면의 장애물 수 = 살아 있는 장애물 수")
 	main.queue_free()
 
@@ -446,7 +446,7 @@ func test_다시_시작하면_앞_판을_지우고_1마디_뒤_첫_박에_도착
 	assert_eq(first["beat"], float(BeatClock.BEATS_PER_BAR), "1마디 뒤 첫 박")
 	for item in main.field.items:
 		assert_true(absf(item["z"] + AudioManager.ladder.distance_of_beat(item["beat"]) - main.travel) < 0.001, "박에서 거꾸로 계산한 자리")
-		assert_true(item["z"] >= ObstacleField.SPAWN_Z, "z -60보다 가까운 것만")
+		assert_true(item["z"] >= ObstacleField.SPAWN_Z, "z -85보다 가까운 것만")
 		assert_false(old_ids.has(main._obstacles[item["id"]]), "새 노드")
 	main.queue_free()
 
@@ -592,8 +592,8 @@ func test_공중_아래_스와이프_중에는_앞에_온_막대를_지나감() 
 	_run(main, 0.3)
 	main.apply_swipe(Dir.DOWN)
 	# 스와이프 뒤 막대가 바로 판정 범위로 들어와도 착지와 슬라이드를 거쳐 지나간다
-	var item := _put_in_front(main, ObstacleField.Kind.HIGH, -0.75)
-	while item["z"] < PlayerAction.HIT_Z + 0.2:
+	var item := _put_in_front(main, ObstacleField.Kind.HIGH, -0.0625 * RunLogic.SPEED)
+	while item["z"] < 0.075 * RunLogic.SPEED:  # 막대가 판정을 벗어난 뒤
 		main.advance(STEP)
 		main.runner._process(STEP)
 		assert_false(main.dead, "z=%f 에서 부딪힘" % item["z"])

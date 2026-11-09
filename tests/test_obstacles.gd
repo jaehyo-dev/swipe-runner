@@ -26,7 +26,7 @@ func test_미리_놓기는_도착_박에서_거꾸로_계산하고_z_60보다_�
 		assert_true(absf(item["z"] + RunLogic.SPEED * (item["beat"] * 0.6 - 1.0)) < 0.001, "z %f" % item["z"])
 		assert_true(item["z"] >= ObstacleField.SPAWN_Z and item["z"] < 0.0, "z %f" % item["z"])
 	assert_eq(field.step(field.travel)["spawned"].size(), 0, "두 번 놓지 않음")
-	# 그 뒤부터는 기존 방식: 다음 것이 z -60에서 생긴다
+	# 그 뒤부터는 기존 방식: 다음 것이 z -85에서 생긴다
 	var next: Array = []
 	while next.is_empty():
 		next = field.step(field.travel + RunLogic.SPEED * 0.01)["spawned"]

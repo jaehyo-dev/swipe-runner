@@ -21,21 +21,21 @@ func _ready() -> void:
 	var i := 0
 	for z in [-10.0, -25.0, -45.0]:
 		for kind in ObstacleField.Kind.values():
-			_main._spawn_node({"id": 5000 + i, "lane": kind, "z": z, "kind": kind})
+			_main._spawn_node({"id": 5000 + i, "lane": kind, "beat": z, "z": z, "kind": kind})
 			i += 1
 		await _shot("%s/sheet_z%d.png" % [out, int(-z)])
 		_main.clear_pieces()
 	if _main.has_method("_apply_tint"):  # 옛 버전을 찍을 때는 건너뛴다
 		for n in 3:
 			for kind in ObstacleField.Kind.values():
-				_main._spawn_node({"id": 7000 + n * 100 + kind, "lane": kind, "z": -7.0 - 9.0 * kind, "kind": kind})
+				_main._spawn_node({"id": 7000 + n * 100 + kind, "lane": kind, "beat": float(n * 100 + kind), "z": -7.0 - 9.0 * kind, "kind": kind})
 			_main._apply_tint(n * 0.5)
 			await _shot("%s/tint_%d.png" % [out, n * 50])
 			_main.clear_pieces()
 		_main._apply_tint(0.0)
 	# 가까운 세 종류와 주인공 반사 (바로 앞 레인에 막대, 점프)
 	for kind in ObstacleField.Kind.values():
-		_main._spawn_node({"id": 6000 + kind, "lane": kind, "z": -4.0, "kind": kind})
+		_main._spawn_node({"id": 6000 + kind, "lane": kind, "beat": float(kind), "z": -4.0, "kind": kind})
 	await _shot("%s/near.png" % out)
 	_main.player.jump()
 	for f in 18:
