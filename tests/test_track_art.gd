@@ -165,7 +165,7 @@ func test_박마다_1_15배까지_부풀고_0_15초에_돌아옴() -> void:
 	assert_true(absf(peak - 1.15) < 0.001, "최대 %f" % peak)
 
 
-func test_물방울_노드는_이동_거리를_따르고_멈추면_부풂과_반짝임이_꺼짐() -> void:
+func test_물방울은_박에_부풀고_멈추면_부풂과_반짝임이_꺼짐() -> void:
 	var main := _make_main()
 	await wait_frames()
 	main.field.items.clear()

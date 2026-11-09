@@ -3,8 +3,6 @@ extends RefCounted
 ## 속도에 따른 색 진하기 (ART_BIBLE.md 11장, 자동 테스트 대상). 값은 data/speed_palette.json 한 곳에만 있다.
 
 const PATH := "res://data/speed_palette.json"
-## 숫자 값 (섞을 때 색이 아니라 수로 다룬다)
-const NUMBERS := ["rail_energy"]
 
 static var _sets := {}
 
@@ -17,7 +15,7 @@ static func at(t: float) -> Dictionary:
 	var to: Dictionary = _sets["t1"]
 	var mixed := {}
 	for key: String in from:
-		if key in NUMBERS:
+		if from[key] is float:
 			mixed[key] = lerpf(from[key], to[key], t)
 		else:
 			mixed[key] = _color(from[key]).lerp(_color(to[key]), t)
