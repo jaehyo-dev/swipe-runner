@@ -8,7 +8,8 @@ const BIG_LANE_LOOK := 0.44  # 점프·슬라이드할 레인으로는 동작 �
 const JUMP_LOOK := 0.25
 const SLIDE_LOOK := 0.28
 const MIN_GAP := 0.28     # 사람 기준 입력 간격
-const PLAN_ROWS := 4      # 내다보는 줄 수
+const PLAN_ROWS := 6      # 내다보는 줄 수
+const ACTION_LEAD := 0.3  # 옆으로 옮긴 뒤 뛰거나 미끄러지려면 줄 도착까지 입력 간격 + 이만큼이 있어야 한다 (늦으면 몸이 덜 떠서 부딪힌다)
 
 
 ## 지금 내야 할 입력 (SwipeDetector.Dir). since_input: 지난 입력 뒤 흐른 시간
@@ -22,7 +23,9 @@ static func decide(items: Array, lane: int, player: PlayerAction, speed: float, 
 	var target: int = best_path(rows.slice(0, PLAN_ROWS), lane)[0]
 	var kinds: Dictionary = row["lanes"]
 	if target != lane:
-		if row["eta"] < (BIG_LANE_LOOK if kinds.has(target) else LANE_LOOK) + (absi(target - lane) - 1) * MIN_GAP:
+		# 두 칸을 건널 때는 넉넉히 먼저 출발한다 (템포 경계에서 속도가 바뀌면 남은 시간 계산이 한 번 튄다)
+		var far := (MIN_GAP + 0.1) if absi(target - lane) > 1 else 0.0
+		if row["eta"] < (BIG_LANE_LOOK if kinds.has(target) else LANE_LOOK) + far:
 			return move_dir(lane, target)
 		return SwipeDetector.Dir.NONE
 	return big_input(kinds.get(lane, ObstacleField.Kind.BLOCK), row["eta"], player, JUMP_LOOK, SLIDE_LOOK)
@@ -88,6 +91,9 @@ static func _search(rows: Array, i: int, lane: int, cost: float, path: Array[int
 		reach = 0
 	for next in RunLogic.LANE_COUNT:
 		if absi(next - lane) > reach or kinds.get(next, -1) == ObstacleField.Kind.BLOCK:
+			continue
+		var time_left: float = row["eta"] if i == 0 else row["eta"] - prev_eta
+		if next != lane and kinds.has(next) and time_left < MIN_GAP * absi(next - lane) + ACTION_LEAD:
 			continue
 		path.append(next)
 		_search(rows, i + 1, next, cost + absi(next - lane) + (0.5 if kinds.has(next) else 0.0), path, best, row["eta"])

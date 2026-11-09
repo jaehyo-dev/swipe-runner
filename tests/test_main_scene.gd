@@ -116,16 +116,14 @@ func test_시간이_가면_거리가_늘고_장애물_노드가_생기고_지나
 	while not main.prewarmed:  # 미리 준비용 장애물이 사라질 때까지
 		await wait_frames()
 	await wait_frames()
-	var cubes_now := main.get_children().filter(func(c): return c is MeshInstance3D and c.get_child_count() == 2)
-	assert_eq(cubes_now.size(), main.field.items.size(), "미리 놓인 장애물이 처음부터 노드로 있음")
-	assert_true(cubes_now.size() > 0)
+	assert_eq(main._obstacles.size(), main.field.items.size(), "미리 놓인 장애물이 처음부터 화면에 있음")
+	assert_true(main._obstacles.size() > 0)
 	main.advance(12.0)
 	await wait_frames()  # 지워진 노드(queue_free)가 정리될 때까지
 	assert_eq(main.travel, RunLogic.SPEED * 12.0)
 	var label: Label = main.find_child("DistanceLabel", true, false)
-	assert_eq(label.text, "120")
-	var cubes := main.get_children().filter(func(c): return c is MeshInstance3D and c.get_child_count() == 2)
-	assert_eq(cubes.size(), main.field.items.size(), "노드 수 = 살아 있는 장애물 수")
+	assert_eq(label.text, "144")
+	assert_eq(main._obstacles.size(), main.field.items.size(), "화면의 장애물 수 = 살아 있는 장애물 수")
 	main.queue_free()
 
 
@@ -134,16 +132,15 @@ func test_장애물_종류별_색조가_정해진_색으로_나옴() -> void:
 	await wait_frames()
 	var K := ObstacleField.Kind
 	# 기획 색(ART_BIBLE.md 4·11번, t = 0): 기둥 아이스 블루, 턱 노랑, 막대 진분홍
-	var expected := {K.BLOCK: Color("bfe6ff"), K.LOW: Color("ffd25a"), K.HIGH: Color("ff5fd2")}
+	var expected := {K.BLOCK: Color("bfdcff"), K.LOW: Color("ffd25a"), K.HIGH: Color("ff5fd2")}
 	# 주인공 가장자리 최대 밝기 = 테두리 빛(jelly.gdshader 기본값 rim_color #C8FFFA × rim_energy 2.1)
 	var hero_peak := Color("c8fffa") * 2.1
 	# 난간·물방울이 빛날 때의 가장 밝은 값
 	var road_peak: float = main.ROAD_PEAK_MAX
 	for kind in expected:
-		main._spawn_node({"id": 900 + kind, "lane": 1, "z": -10.0, "kind": kind})
-		var cube: MeshInstance3D = main._obstacles[900 + kind]
-		var edge: Color = cube.get_child(0).material_override.get_shader_parameter("color")
-		assert_true(cube.material_override.get_shader_parameter("tint").is_equal_approx(expected[kind]), "유리 면 색 (종류 %d)" % kind)
+		var material: ShaderMaterial = main._kind_meshes[kind]["glass"]
+		var edge: Color = material.get_shader_parameter("edge_color")
+		assert_true(material.get_shader_parameter("tint").is_equal_approx(expected[kind]), "유리 면 색 (종류 %d)" % kind)
 		# 선은 같은 색조: 가장 센 채널이 유리 색과 같고, HDR(1 초과)로 빛남
 		var glass: Color = expected[kind]
 		assert_eq(_strongest(edge), _strongest(glass), "선 색조가 유리와 같음 (종류 %d)" % kind)
@@ -460,7 +457,7 @@ func test_다시_시작한_장애물은_바닥에서_퐁_솟아_살짝_넘쳤다
 	main.dead = true
 	main.restart()
 	var item: Dictionary = main.field.items[0]
-	var node: Node3D = main._obstacles[item["id"]]
+	var node = main._obstacles[item["id"]]
 	assert_true(node.scale.y < 0.01 and node.position.y < 0.01, "높이 0에서 시작")
 	var peak := 0.0
 	var started_at := Time.get_ticks_msec()
@@ -509,12 +506,9 @@ func test_첫_화면_전에_세_종류와_물방울과_글자를_가림막_뒤�
 	main._input(key)
 	assert_false(main.started, "가림막 뒤 입력으로는 시작하지 않음")
 	assert_eq(main.lane, 1, "동작도 하지 않음")
-	var drawn := {}
-	for node in main.find_children("*", "MeshInstance3D", true, false):
-		drawn[node.material_override] = true
+	main._sync_pieces()
 	for kind in main._kind_meshes:
-		assert_true(drawn.has(main._kind_meshes[kind]["glass"]), "유리 %d" % kind)
-		assert_true(drawn.has(main._kind_meshes[kind]["edge"]), "모서리 %d" % kind)
+		assert_true(main._kind_meshes[kind]["body"].visible_instance_count > 0, "장애물 %d을 그림" % kind)
 	var cover: ColorRect = main.find_children("*", "ColorRect", true, false)[0]
 	assert_true(cover.get_parent().layer > 1, "화면 맨 위 가림막")
 	assert_eq(main.find_children("*", "Label", true, false).size(), 7, "숫자·안내·최고 글자도 그림")
@@ -654,9 +648,7 @@ func _best_label(main: Node3D) -> Label:
 func _run_past(main: Node3D, distance: float) -> void:
 	while main.travel <= distance:
 		main.field.items.clear()  # 부딪히지 않고 거리만 늘린다
-		for id in main._obstacles:
-			main._obstacles[id].queue_free()
-		main._obstacles.clear()
+		main.clear_pieces()
 		main.advance(STEP)
 
 

@@ -44,15 +44,15 @@ func _gray(c: Color) -> Color:
 
 
 func test_표의_값이_데이터_파일_양끝과_같음() -> void:
-	var want0 := {"sky_top": "0b0a24", "horizon": "3a2470", "floor": "241a4a", "rail": "8ff7ff", "block": "bfe6ff", "low": "ffd25a", "high": "ff5fd2"}
-	var want1 := {"sky_top": "06021a", "horizon": "5b1f9e", "floor": "2a1260", "rail": "4fe8f5", "block": "7cc8ff", "low": "ffb800", "high": "ff1fb8"}
+	var want0 := {"sky_top": "0b0a24", "horizon": "3a2470", "floor": "241a4a", "rail": "8fa8ff", "block": "bfdcff", "low": "ffd25a", "high": "ff5fd2"}
+	var want1 := {"sky_top": "0a0030", "horizon": "8a1fd6", "floor": "3a0f6e", "rail": "7b5cff", "block": "4fa0ff", "low": "ffa000", "high": "ff0fa0"}
 	var at0 := SpeedPalette.at(0.0)
 	var at1 := SpeedPalette.at(1.0)
 	for key in want0:
 		assert_eq(at0[key].to_html(false), want0[key], key)
 		assert_eq(at1[key].to_html(false), want1[key], key)
 	assert_eq(at0["rail_energy"], 1.0)
-	assert_eq(at1["rail_energy"], 1.35)
+	assert_eq(at1["rail_energy"], 1.6)
 
 
 func test_사이_값은_선형으로_섞임() -> void:
@@ -79,8 +79,22 @@ func test_같은_색_계열이고_채도와_깊이만_오름() -> void:
 	var at0 := SpeedPalette.at(0.0)
 	var at1 := SpeedPalette.at(1.0)
 	for key in ["block", "low", "high", "rail"]:
-		assert_true(_hue_gap(at0[key], at1[key]) < 10.0, "%s 색상 유지 %f도" % [key, _hue_gap(at0[key], at1[key])])
+		var limit := 30.0 if key == "rail" else 10.0  # 난간은 보라빛 파랑 안에서 움직인다 (사용자 표)
+		assert_true(_hue_gap(at0[key], at1[key]) < limit, "%s 색상 유지 %f도" % [key, _hue_gap(at0[key], at1[key])])
 		assert_true(at1[key].s > at0[key].s, "%s 채도가 오름" % key)
+
+
+## 민트는 주인공 전용 (ART_BIBLE.md 색 규칙). 테두리는 HDR 값과, 화면에서 잘린 값 둘 다 본다
+func test_주인공과_다른_모든_요소의_색상_차이는_30도_이상() -> void:
+	for t in TS:
+		var c := SpeedPalette.at(t)
+		for key: String in c:
+			if key == "rail_energy":
+				continue
+			for color: Color in [c[key], _screen(c[key])]:
+				assert_true(_hue_gap(HERO, color) >= 30.0, "t=%f %s: %f도" % [t, key, _hue_gap(HERO, color)])
+	for fixed in ["8c80ff", "060817"]:  # 빛 결, 바닥 바탕: 셰이더에 고정된 색
+		assert_true(_hue_gap(HERO, Color(fixed)) >= 30.0, fixed)
 
 
 func test_장애물_테두리와_바닥_대비는_3대1_이상() -> void:

@@ -15,6 +15,11 @@ static func beat_of(index: int, now_beat: float) -> float:
 	return floorf(now_beat) - BEHIND + index * 0.5
 
 
+## 박 beat(반 박 포함)의 줄을 담는 칸. 줄은 고리처럼 돌려 쓰므로 박이 지나도 앞으로 올 줄의 값은 그대로다.
+static func slot_of(beat: float) -> int:
+	return posmod(roundi(beat * 2.0), COUNT)
+
+
 static func is_beat_row(index: int) -> bool:
 	return posmod(index, 2) == 0
 

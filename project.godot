@@ -7,7 +7,7 @@ config_version=5
 
 config/name="스와이프 러너"
 config/description="발광하는 민트 젤리가 3레인을 달리며 유리 장애물을 스와이프로 피하는 3D 러너"
-config/version="0.5.0"
+config/version="0.5.1"
 run/main_scene="res://scenes/main.tscn"
 config/features=PackedStringArray("4.7", "GL Compatibility")
 boot_splash/bg_color=Color(0.027, 0.04, 0.14, 1)

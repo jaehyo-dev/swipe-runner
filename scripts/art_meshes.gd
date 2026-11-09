@@ -1,10 +1,12 @@
 class_name ArtMeshes
 extends RefCounted
 ## 장애물·난간 메시를 코드로 만든다 (텍스처 없음). 모양 기준은 ART_BIBLE.md 6·10장.
+## 장애물 몸통과 앞면 테두리는 한 메시·한 재질이라 종류마다 MultiMesh 하나로 그린다 (glass.gdshader). 뒤쪽 테두리는 만들지 않는다.
 ## 모든 장애물은 바닥(y=0)을 원점으로 삼고, 크기는 ObstacleField 판정 값에서 그대로 가져온다 (보이는 모양 = 판정 범위).
 ## 선은 가는 관(tube)이라 메시 하나에 모이고, 관 반지름을 UV.x에 담아 neon.gdshader가 멀리서 최소 굵기를 지키게 한다.
 
 const TUBE_SIDES := 6
+const ELLIPSE_SIDES := 20
 const EDGE_RADIUS := 0.024
 const GRAIN_RADIUS := 0.014
 const ARROW_RADIUS := 0.03
@@ -14,7 +16,10 @@ const HIGH_CORNER := 0.17
 const GRAIN_LEVEL := 0.55        # 세로 결 밝기 (모서리 = 1)
 const MIRROR_GLASS_ALPHA := 0.15 # 반사 불투명도: 15~25% 안에서 면은 낮게, 선은 높게
 const MIRROR_EDGE_ALPHA := 0.25
-const BAND_ALPHA := 0.62         # 막대 아래 바닥 빛 띠: 기둥 없이 떠 있는 높이를 말해 준다
+const POOL_ALPHA := 0.3          # 막대 아래 빛 웅덩이 가운데 불투명도 (35% 이하): 기둥 없이 떠 있는 높이를 말해 준다
+const POOL_HALF := Vector2(0.58, 0.46)    # 웅덩이 반지름 (x, z): 막대 폭의 절반 0.65보다 살짝 좁게
+const SHADOW_ALPHA := 0.6        # 기둥 접지 그림자 가운데 불투명도: 어디에 서 있는지 읽히게
+const SHADOW_HALF := Vector2(0.85, 0.95)  # 그림자 반지름 (x, z): 기둥 밑면(0.55, 0.64)보다 조금 크게
 
 var _v := PackedVector3Array()
 var _n := PackedVector3Array()
@@ -22,7 +27,9 @@ var _c := PackedColorArray()
 var _uv := PackedVector2Array()
 
 
-## 종류별 {glass, edges, mirror} 메시. 반사의 색은 재질 값이고(mirror.gdshader) 메시에는 면·선 구분과 불투명도만 담는다.
+## 종류별 {body, mirror} 메시. 색은 재질 값이다.
+## body: 몸통 + 앞면 테두리. UV.x > 0이면 테두리 관 (glass.gdshader), COLOR.r은 테두리 밝기.
+## mirror: 바닥 반사 + 바닥 흔적. COLOR.r 면(0)·선(1), COLOR.g 그림자, COLOR.b 1이면 멀어도 그리는 바닥 흔적, COLOR.a 불투명도 (mirror.gdshader)
 static func obstacle(kind: ObstacleField.Kind) -> Dictionary:
 	var glass := ArtMeshes.new()
 	var lines := ArtMeshes.new()
@@ -42,8 +49,11 @@ static func obstacle(kind: ObstacleField.Kind) -> Dictionary:
 	mirror._add_mirrored(glass, 0.0, MIRROR_GLASS_ALPHA)
 	mirror._add_mirrored(lines, 1.0, MIRROR_EDGE_ALPHA)
 	if kind == ObstacleField.Kind.HIGH:
-		mirror._floor_band(0.0, BAND_ALPHA)
-	return {"glass": glass.commit(), "edges": lines.commit(), "mirror": mirror.commit()}
+		mirror._floor_ellipse(POOL_HALF, Color(0.0, 0.0, 1.0, POOL_ALPHA))
+	elif kind == ObstacleField.Kind.BLOCK:
+		mirror._floor_ellipse(SHADOW_HALF, Color(0.0, 1.0, 1.0, SHADOW_ALPHA))
+	glass._add_all(lines)
+	return {"body": glass.commit(), "mirror": mirror.commit()}
 
 
 ## 양옆 난간 한 벌: 굵은 네온 관 + 안쪽의 가는 보조선. 길이 방향으로 나눠 멀리까지 원근과 안개가 자연스럽다.
@@ -103,13 +113,15 @@ func _pillar_faces() -> void:
 		_flat_tri(d, c, top)
 
 
+## 카메라 쪽(z > 0)에 있는 꼭짓점과 모서리만 그린다: 0(오른쪽)~3(왼쪽). 꼭짓점 0과 3은 옆 윤곽이다.
 func _pillar_lines() -> void:
 	var top := Vector3(0.0, ObstacleField.BLOCK_HEIGHT, 0.0)
-	for i in 6:
+	for i in 4:
 		_tube(_hex(i, 0.0), _hex(i, PILLAR_ROOF_START), EDGE_RADIUS)
-		_tube(_hex(i, 0.0), _hex(i + 1, 0.0), EDGE_RADIUS)
-		_tube(_hex(i, PILLAR_ROOF_START), _hex(i + 1, PILLAR_ROOF_START), EDGE_RADIUS)
 		_tube(_hex(i, PILLAR_ROOF_START), top, EDGE_RADIUS)
+		if i < 3:
+			_tube(_hex(i, 0.0), _hex(i + 1, 0.0), EDGE_RADIUS)
+			_tube(_hex(i, PILLAR_ROOF_START), _hex(i + 1, PILLAR_ROOF_START), EDGE_RADIUS)
 	# 앞면 세로 결 3줄 (길이가 달라 얼음 금처럼 보인다)
 	var z := ObstacleField.BLOCK_SIZE * 0.5 + 0.004
 	for grain: Vector3 in [Vector3(-0.15, 0.25, 1.1), Vector3(0.0, 0.7, 1.62), Vector3(0.14, 0.18, 0.85)]:
@@ -117,8 +129,7 @@ func _pillar_lines() -> void:
 
 
 func _low_lines(size: Vector3) -> void:
-	for z in [size.z * 0.5, -size.z * 0.5]:
-		_outline(size, 0.0, LOW_CORNER, z, true)
+	_outline(size, 0.0, LOW_CORNER, size.z * 0.5, true)
 	# 앞면의 위쪽 화살 ^ 3개
 	var y := size.y * 0.5
 	var z := size.z * 0.5 + 0.006
@@ -127,8 +138,7 @@ func _low_lines(size: Vector3) -> void:
 
 
 func _high_lines(size: Vector3) -> void:
-	for z in [size.z * 0.5, -size.z * 0.5]:
-		_outline(size, ObstacleField.HIGH_BOTTOM, HIGH_CORNER, z, false)
+	_outline(size, ObstacleField.HIGH_BOTTOM, HIGH_CORNER, size.z * 0.5, false)
 	# 앞면의 아래 화살 v 2개
 	var y := ObstacleField.HIGH_BOTTOM + size.y * 0.5
 	var z := size.z * 0.5 + 0.006
@@ -215,12 +225,24 @@ func _add_mirrored(from: ArtMeshes, pick: float, alpha: float) -> void:
 		_vertex(Vector3(p.x, -p.y, p.z), from._n[i], Color(pick, 0.0, 0.0, alpha * from._c[i].r))
 
 
-## 막대 바로 아래 바닥의 빛 띠: 가운데가 진하고 가장자리로 짧게 사라져 또렷하다. 레인 안에만 있다.
-func _floor_band(pick: float, alpha: float) -> void:
-	var xs: Array[float] = [-0.73, -0.6, 0.6, 0.73]
-	var zs: Array[float] = [-0.45, -0.25, 0.25, 0.45]
-	for i in 3:
-		for j in 3:
-			for uv: Vector2i in [Vector2i(i, j), Vector2i(i + 1, j), Vector2i(i + 1, j + 1), Vector2i(i, j), Vector2i(i + 1, j + 1), Vector2i(i, j + 1)]:
-				var inside: bool = uv.x in [1, 2] and uv.y in [1, 2]
-				_vertex(Vector3(xs[uv.x], 0.0, zs[uv.y]), Vector3.UP, Color(pick, 0.0, 0.0, alpha if inside else 0.0))
+## 다른 메시의 꼭짓점을 그대로 뒤에 붙인다 (몸통 먼저, 테두리는 그 위에)
+func _add_all(from: ArtMeshes) -> void:
+	_v.append_array(from._v)
+	_n.append_array(from._n)
+	_c.append_array(from._c)
+	_uv.append_array(from._uv)
+
+
+## 바닥에 놓인 타원: 가운데가 진하고 가장자리에서 0이 되어 경계가 보이지 않는다. c.a: 가운데 불투명도
+func _floor_ellipse(half: Vector2, c: Color) -> void:
+	var rings: Array[float] = [0.0, 0.3, 0.55, 0.8, 1.0]
+	var fade := func(r: float) -> Color: return Color(c.r, c.g, c.b, c.a * (1.0 - smoothstep(0.0, 1.0, r)))
+	var at := func(r: float, a: float) -> Vector3: return Vector3(cos(a) * half.x * r, 0.0, sin(a) * half.y * r)
+	for k in ELLIPSE_SIDES:
+		var a0 := TAU * k / ELLIPSE_SIDES
+		var a1 := TAU * (k + 1) / ELLIPSE_SIDES
+		for i in rings.size() - 1:
+			var r0 := rings[i]
+			var r1 := rings[i + 1]
+			for pair: Array in [[r0, a0], [r1, a1], [r1, a0], [r0, a0], [r0, a1], [r1, a1]]:
+				_vertex(at.call(pair[0], pair[1]), Vector3.UP, fade.call(pair[0]))

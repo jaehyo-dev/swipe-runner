@@ -88,7 +88,7 @@ func test_곡을_표본_단위로_읽으면_첫_표본부터_소리가_있고_�
 
 
 ## 곡을 8마디째부터 열어도 앞에서부터 읽은 것과 표본이 같아야 곡 갈아타기에 박이 어긋나지 않는다
-func test_곡을_8마디_위치에서_열면_처음부터_읽은_표본과_같음() -> void:
+func test_곡을_4마디_위치에서_열면_처음부터_읽은_표본과_같음() -> void:
 	var rate := AudioServer.get_mix_rate()
 	for i in [0, 3, 6]:
 		var from := MusicLadder.span_time(i)
@@ -101,7 +101,7 @@ func test_곡을_8마디_위치에서_열면_처음부터_읽은_표본과_같�
 		var worst := 0.0
 		for k in 64:
 			worst = maxf(worst, (got[k] - want[k]).length())
-		assert_true(worst < 0.02, "곡 %d 차이 %f" % [i, worst])
+		assert_true(worst < 0.05, "곡 %d 차이 %f" % [i, worst])  # 경계가 표본 사이에 떨어지면 반 표본까지 어긋난 값이 나온다
 
 
 func test_효과음은_6개_이상_겹쳐_남() -> void:
@@ -366,3 +366,19 @@ func test_데스크톱은_경계_표본에서_다음_곡으로_틈_없이_바뀜
 	assert_eq(AudioManager._switch_frame, -1)
 	assert_true(AudioManager._pushed > roundi(40.0 * rate) + 100, "경계 뒤로도 이어서 넣음")
 	AudioManager.music.stop()
+
+
+## 150BPM 이상은 앞 전환이 일어나기 전에 다음 경계가 정해진다. 하나만 저장하면 단계를 건너뛴다
+func test_데스크톱_곡_전환은_앞_전환이_끝날_때까지_기다림() -> void:
+	AudioManager._switch_frame = 1000
+	AudioManager._switch_step = 11
+	AudioManager._waiting_switches.append({"frame": 2000, "step": 12, "from": 0.0})
+	AudioManager._next_switch()
+	assert_eq(AudioManager._switch_step, 11, "앞 전환이 그대로")
+	AudioManager._switch_frame = -1
+	AudioManager._pushed = 0
+	AudioManager._next_switch()
+	assert_eq(AudioManager._switch_step, 12, "다음 전환")
+	assert_eq(AudioManager._switch_frame, 2000)
+	assert_true(AudioManager._waiting_switches.is_empty())
+	AudioManager._switch_frame = -1

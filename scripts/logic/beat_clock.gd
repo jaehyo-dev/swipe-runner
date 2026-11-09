@@ -12,8 +12,14 @@ const START_STALL_TIME := 1.0
 ## 멈춘 뒤 재생 위치가 멈춘 자리보다 이만큼 늘지 않으면 읽기 오차로 보고 오디오가 돌아온 것으로 치지 않는다
 const READ_NOISE := 0.005
 
+## 재생 위치는 오디오 블록 단위로 계단처럼 오른다. 그대로 쓰면 프레임마다 세상이 가는 거리가 들쭉날쭉하므로(120Hz에서 특히) 화면에는 프레임 시간으로 잇고 차이만 조금씩 메운 값을 쓴다.
+const SMOOTH_TIME := 0.1   # 차이를 메우는 시간 상수(초)
+const SNAP := 0.03         # 이보다 벌어지면 메우지 않고 바로 맞춘다 (긴 프레임, 첫 소리)
+
 ## 판 처음부터 흐른 음악 시간
 var time := 0.0
+## 화면에 쓰는 부드러운 음악 시간. 되돌아가지 않는다
+var smooth := 0.0
 ## 오디오가 멈췄다 돌아온 뒤 재생 위치에 더하는 값 (박의 배수). 다음 곡 예약 때 재생 위치로 되돌리는 데 쓴다.
 var offset := 0.0
 
@@ -43,3 +49,15 @@ func update(raw: float, delta: float, beat := 0.6) -> float:
 			_free_run = true
 			time += delta
 	return time
+
+
+## update 뒤에 부른다. 프레임 시간 delta로 잇고 time과의 차이를 조금씩 메운 시간을 돌려준다.
+func smoothed(delta: float) -> float:
+	var ahead := smooth + delta
+	var gap := time - ahead
+	if not _heard or gap > SNAP:
+		smooth = maxf(smooth, time)
+	elif gap >= -SNAP:
+		smooth = maxf(smooth, ahead + gap * (1.0 - exp(-delta / SMOOTH_TIME)))
+	# gap < -SNAP: 재생 위치가 뒤처졌다. 시간은 되돌리지 않고 따라올 때까지 기다린다
+	return smooth

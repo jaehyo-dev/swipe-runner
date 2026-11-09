@@ -10,12 +10,18 @@ const DROPLET_SHADER := preload("res://shaders/droplet.gdshader")
 const SKY_SHADER := preload("res://shaders/sky.gdshader")
 const FONT := preload("res://assets/fonts/Poppins-ExtraLight.ttf")
 ## 장애물 종류별 팔레트 이름 (색은 data/speed_palette.json). 파랑 = 옆으로, 노랑 = 위로, 분홍 = 아래로.
-## near: 유리 면 한 장의 불투명도. 앞뒤 두 면이 겹쳐 보이므로 화면에서는 1 - (1 - near)^2 = 약 60~65%다.
 const KINDS := {
-	ObstacleField.Kind.BLOCK: {"name": "block", "near": 0.37},
-	ObstacleField.Kind.LOW: {"name": "low", "near": 0.41},
-	ObstacleField.Kind.HIGH: {"name": "high", "near": 0.37},
+	ObstacleField.Kind.BLOCK: "block",
+	ObstacleField.Kind.LOW: "low",
+	ObstacleField.Kind.HIGH: "high",
 }
+## 그리는 순서: 반사(-1) → 주인공(0) → 장애물 깊이 → 장애물 색. 주인공이 먼저 깊이를 쓰므로 뒤에 있는 장애물은 주인공을 덮지 않는다.
+const DEPTH_PRIORITY := 1
+const COLOR_PRIORITY := 2
+const MAX_PIECES := 96       # 종류마다 동시에 그릴 수 있는 장애물 수. z -60~+6에 들어오는 수보다 넉넉하다
+const FOLLOW_GAP := 22.0     # 같은 레인의 앞 기둥이 이만큼 안이면 연속 기둥으로 본다 (2박 + 조금)
+const FOLLOW_HAZE := 0.3     # 연속 기둥의 뒤쪽 것이 안개 색으로 흐려지는 양
+const GLOW_LOW := 0.5        # 프레임이 밀릴 때 낮춘 빛 번짐 세기
 
 const RESTART_DELAY := 0.5
 const OBSTACLE_FADE := 0.15  # 다시 시작할 때 앞 판 장애물이 작아져 사라지는 시간(초): 한 프레임에 툭 없어지지 않게
@@ -63,12 +69,16 @@ var started := false
 var prewarmed := false
 
 var _swipe := SwipeDetector.new()
-var _obstacles := {}  # id -> 장애물 노드
+var _obstacles := {}  # id -> Piece
+var _leaving: Array[Piece] = []  # 재시작 때 작아지며 사라지는 앞 판 장애물
+var _pieces_dirty := true        # 장애물이 생기거나 없어지거나 크기가 변해 MultiMesh를 다시 써야 한다
+var _animating := 0              # 크기가 변하는 중인 트윈 수
+var _pieces_root: Node3D         # 장애물 MultiMesh의 부모. 세상과 함께 움직여 장애물마다 값을 바꾸지 않는다
 var _floor_material: ShaderMaterial
 var _rail_material: ShaderMaterial
 var _droplets: MultiMeshInstance3D
 var _droplet_material: ShaderMaterial
-var _kind_meshes := {}  # Kind -> {mesh, edges, mirror: ArrayMesh, glass, edge, reflect: ShaderMaterial}
+var _kind_meshes := {}  # Kind -> {body, mirror: MultiMesh, depth, glass, reflect: ShaderMaterial}
 var _sky_material: ShaderMaterial
 var _env: Environment
 var _rail_energy := 1.0  # 지금 진하기의 난간 빛 세기
@@ -77,7 +87,11 @@ var _tint := -1.0        # 지금 화면의 색 진하기
 var _flash := 0.0        # 지금의 단계 빛남 (1 → 0)
 var _tint_from := -1.0   # 재시작 순간의 진하기. 음수면 돌아가는 중이 아니다
 var _tint_clock := 0.0   # 재시작 순간의 음악 시간
-var _row_transforms: Array[Transform3D] = []  # 물방울 한 줄의 크기·가로 자리 (z만 매 프레임 바뀐다)
+var _row_beats: Array[float] = []  # 칸마다 지금 담긴 박. 바뀐 칸만 다시 쓴다
+var _row_segments := 0            # 물방울 줄을 쓸 때의 사다리 구간 수. 구간이 늘면 앞으로 올 줄의 자리가 바뀐다
+var _row_ladder: MusicLadder
+var _quality := QualityGuard.new()
+var _last_frame_usec := 0
 var _dead_time := 0.0
 var _restart_label: Label
 var _camera: Camera3D
@@ -86,6 +100,15 @@ var _best_label: Label
 var _pop: Tween
 var _scroll := 0.0
 var _music_t := 0.0  # 박자 기준 시간
+
+
+## 장애물 하나의 화면 상태. 노드 대신 MultiMesh 한 칸에 옮겨 그린다.
+class Piece:
+	extends RefCounted
+	var kind: int
+	var position: Vector3
+	var scale := Vector3.ONE
+	var haze := 0.0
 
 
 ## 시드를 고정했으면(주소의 ?seed, 테스트) 판마다 같은 배치, 아니면 판마다 새 배치
@@ -110,13 +133,43 @@ func _ready() -> void:
 	add_child(runner)
 	_build_ui()
 	get_viewport().size_changed.connect(_fit_camera)
+	get_viewport().size_changed.connect(_fit_render_scale)
 	_fit_camera()
+	_fit_render_scale()
 	_place_ahead(false)
 	_prewarm()
 
 
 func _process(delta: float) -> void:
 	advance(delta, AudioManager.music_time)
+	_sync_pieces()
+	if OS.has_feature("web") and prewarmed:
+		_watch_frames()
+
+
+## 실제 프레임 간격을 재서 밀리면 효과를 한 단계 낮춘다 (엔진 delta는 고르게 다듬어져 밀림이 덜 보인다)
+func _watch_frames() -> void:
+	var now := Time.get_ticks_usec()
+	if _last_frame_usec > 0 and _quality.push((now - _last_frame_usec) / 1000000.0):
+		apply_quality(_quality.level)
+		print("QUALITY %d %.1f" % [_quality.level, now / 1000000.0])  # 측정 기록용: 언제 낮췄는지
+	_last_frame_usec = now
+
+
+## 효과 단계: 1 반사 끄기, 2 MSAA 2x, 3 빛 번짐 낮추기. 이 단계까지 전부 적용한다.
+func apply_quality(level: int) -> void:
+	for kind in _kind_meshes:
+		_kind_meshes[kind]["reflect"].set_shader_parameter("reflect_on", 0.0 if level >= 1 else 1.0)
+	runner.set_reflection(level < 1)
+	if level >= 2:
+		get_viewport().msaa_3d = Viewport.MSAA_2X
+	if level >= 3:
+		_env.glow_intensity = GLOW_LOW
+
+
+## 3D만 낮은 해상도로 그리고 늘린다. 글자는 원래 해상도 그대로다.
+func _fit_render_scale() -> void:
+	get_viewport().scaling_3d_scale = QualityGuard.render_scale(DisplayServer.window_get_size())
 
 
 ## 첫 입력: 음악 0초와 함께 세상이 출발한다. 미리 놓인 장애물을 음악 시간에 맞춘다 (출력 지연만큼의 차이).
@@ -171,15 +224,25 @@ func _move_world() -> void:
 
 
 ## 물방울 줄을 지금 박 자리에 놓는다. 음악 시간에서 바로 계산하므로 템포가 바뀌어도 박 줄은 박에 주인공 옆에 닿는다.
+## 줄은 이동 거리 좌표로 고정해 두고 부모만 움직인다. 값을 쓰는 칸은 새로 들어온 박과, 구간이 늘어 자리가 바뀐 줄뿐이다.
 func _place_rows() -> void:
 	var ladder := AudioManager.ladder
+	_droplets.position.z = ladder.distance_at(_music_t)
 	var now_beat := ladder.beat_at(_music_t)
+	var rewrite := ladder != _row_ladder or ladder.segments.size() != _row_segments
+	_row_ladder = ladder
+	_row_segments = ladder.segments.size()
 	for i in BeatRows.COUNT:
-		var z := BeatRows.row_z(ladder, _music_t, BeatRows.beat_of(i, now_beat))
+		var beat := BeatRows.beat_of(i, now_beat)
+		var slot := BeatRows.slot_of(beat)
+		if not rewrite and _row_beats[slot] == beat:
+			continue
+		_row_beats[slot] = beat
+		var size := 1.0 if BeatRows.is_beat_row(slot) else BeatRows.SMALL_SCALE
+		var basis := Basis.from_scale(Vector3(size, size, size * DROPLET_LENGTH))
 		for side in 2:
-			var slot := i * 2 + side
-			_row_transforms[slot].origin.z = z
-			_droplets.multimesh.set_instance_transform(slot, _row_transforms[slot])
+			var origin := Vector3((side - 0.5) * RunLogic.LANE_WIDTH, DROPLET_HEIGHT * 0.5, -ladder.distance_of_beat(beat))
+			_droplets.multimesh.set_instance_transform(slot * 2 + side, Transform3D(basis, origin))
 
 
 ## 지금의 색 진하기: 사다리 값. 재시작 뒤 0.5초는 그 순간의 진하기에서 부드럽게 돌아간다.
@@ -214,11 +277,12 @@ func _apply_tint(t: float) -> void:
 	_droplet_material.set_shader_parameter("base_energy", _rail_energy)
 	_droplet_material.set_shader_parameter("max_energy", _road_max)
 	for kind: ObstacleField.Kind in KINDS:
-		var name_: String = KINDS[kind]["name"]
+		var name_: String = KINDS[kind]
 		var shape: Dictionary = _kind_meshes[kind]
 		var edge: Color = c[name_ + "_edge"]
 		shape["glass"].set_shader_parameter("tint", c[name_])
-		shape["edge"].set_shader_parameter("color", edge)
+		shape["glass"].set_shader_parameter("edge_color", edge)
+		shape["glass"].set_shader_parameter("fog_color", c["horizon"])
 		shape["reflect"].set_shader_parameter("glass_color", c[name_])
 		shape["reflect"].set_shader_parameter("edge_color", Color(minf(edge.r, 1.0), minf(edge.g, 1.0), minf(edge.b, 1.0)))  # 화면 범위로 줄인 선 색
 
@@ -235,8 +299,8 @@ func _apply_step(result: Dictionary) -> void:
 	for item in result["spawned"]:
 		_spawn_node(item)
 	for id in result["removed"]:
-		_obstacles[id].queue_free()
 		_obstacles.erase(id)
+		_pieces_dirty = true
 	for item in field.items:
 		_obstacles[item["id"]].position.z = item["z"]
 
@@ -250,9 +314,41 @@ func _place_ahead(pop: bool) -> void:
 
 
 ## 높이 0에서 젤리처럼 '퐁': 바닥을 기준으로 늘어나 살짝 넘쳤다가 돌아온다. 판정은 field가 하므로 모양만 바뀐다.
-func _pop_in(node: Node3D) -> void:
-	node.scale.y = 0.001  # 장애물 원점이 바닥이라 바닥을 기준으로 늘어난다
-	node.create_tween().tween_property(node, "scale:y", 1.0, POP_TIME).set_trans(Tween.TRANS_BACK).set_ease(Tween.EASE_OUT)
+func _pop_in(piece: Piece) -> void:
+	piece.scale.y = 0.001  # 장애물 원점이 바닥이라 바닥을 기준으로 늘어난다
+	_animating += 1
+	var tween := create_tween()
+	tween.tween_property(piece, "scale:y", 1.0, POP_TIME).set_trans(Tween.TRANS_BACK).set_ease(Tween.EASE_OUT)
+	tween.tween_callback(func() -> void: _animation_done())
+
+
+func _animation_done() -> void:
+	_animating -= 1
+	_pieces_dirty = true  # 마지막 크기까지 옮긴다
+
+
+## 바뀐 프레임에만 MultiMesh 값을 쓴다. 보통 프레임은 부모 위치만 움직인다.
+func _sync_pieces() -> void:
+	_pieces_root.position.z = _scroll
+	if not _pieces_dirty and _animating == 0:
+		return
+	_pieces_dirty = false
+	var used := {}
+	for kind in _kind_meshes:
+		used[kind] = 0
+	for piece: Piece in _obstacles.values() + _leaving:
+		var slot: int = used[piece.kind]
+		if slot >= MAX_PIECES:
+			continue
+		used[piece.kind] = slot + 1
+		var at := Transform3D(Basis.from_scale(piece.scale), Vector3(piece.position.x, piece.position.y, piece.position.z - _scroll))
+		var shape: Dictionary = _kind_meshes[piece.kind]
+		shape["body"].set_instance_transform(slot, at)
+		shape["body"].set_instance_custom_data(slot, Color(piece.haze, 0.0, 0.0, 0.0))
+		shape["mirror"].set_instance_transform(slot, at)
+	for kind in _kind_meshes:
+		_kind_meshes[kind]["body"].visible_instance_count = used[kind]
+		_kind_meshes[kind]["mirror"].visible_instance_count = used[kind]
 
 
 ## 부딪힌 뒤: 세상이 아주 잠깐 느려졌다 멈추고, 주인공은 충돌 모션을 이어 간다.
@@ -299,15 +395,19 @@ func restart() -> void:
 	travel = AudioManager.ladder.distance_at(_music_t)  # 출력 지연만큼 음수에서 출발: 다음 프레임에 길이 뒤로 튀지 않게
 	player = PlayerAction.new()
 	_swipe = SwipeDetector.new()
-	var old_nodes := _obstacles.values()
+	var old_pieces := _obstacles.values()
 	_obstacles.clear()
 	_new_field()
 	AudioManager.unblock()
-	for node: Node3D in old_nodes:
-		var fade := node.create_tween().set_parallel()
-		fade.tween_property(node, "scale", Vector3.ONE * 0.01, OBSTACLE_FADE)
-		fade.tween_property(node, "position:z", node.position.z + speed * OBSTACLE_FADE, OBSTACLE_FADE)
-		fade.chain().tween_callback(node.queue_free)
+	for piece: Piece in old_pieces:
+		_leaving.append(piece)
+		_animating += 1
+		var fade := create_tween().set_parallel()
+		fade.tween_property(piece, "scale", Vector3.ONE * 0.01, OBSTACLE_FADE)
+		fade.tween_property(piece, "position:z", piece.position.z + speed * OBSTACLE_FADE, OBSTACLE_FADE)
+		fade.chain().tween_callback(func() -> void:
+			_leaving.erase(piece)
+			_animation_done())
 	_place_ahead(true)
 	_droplets.position.z = 0.0  # 부딪힌 뒤 밀려 간 만큼 되돌린다
 	_place_rows()
@@ -411,23 +511,29 @@ func _change_lane(direction: int) -> void:
 
 
 func _spawn_node(item: Dictionary) -> void:
-	var cube := _make_obstacle(item["kind"], item["lane"], item["z"])
-	add_child(cube)
-	_obstacles[item["id"]] = cube
+	var piece := Piece.new()
+	piece.kind = item["kind"]
+	piece.position = Vector3(RunLogic.lane_x(item["lane"]), 0.0, item["z"])
+	piece.haze = _haze_of(piece)
+	_obstacles[item["id"]] = piece
+	_pieces_dirty = true
 
 
-func _make_obstacle(kind: ObstacleField.Kind, at_lane: int, z: float) -> MeshInstance3D:
-	var shape: Dictionary = _kind_meshes[kind]
-	var body := MeshInstance3D.new()
-	body.mesh = shape["mesh"]
-	body.material_override = shape["glass"]
-	body.position = Vector3(RunLogic.lane_x(at_lane), 0.0, z)
-	for part: Array in [[shape["edges"], shape["edge"]], [shape["mirror"], shape["reflect"]]]:
-		var child := MeshInstance3D.new()
-		child.mesh = part[0]
-		child.material_override = part[1]
-		body.add_child(child)
-	return body
+## 같은 레인에 바로 앞서 오는 기둥이 있으면 뒤쪽 것을 조금 흐리게 한다: 연속 기둥이 한 덩어리로 보이지 않게 하는 깊이 단서
+func _haze_of(piece: Piece) -> float:
+	if piece.kind != ObstacleField.Kind.BLOCK:
+		return 0.0
+	for other: Piece in _obstacles.values():
+		var gap := other.position.z - piece.position.z
+		if other.kind == piece.kind and is_equal_approx(other.position.x, piece.position.x) and gap > 0.0 and gap < FOLLOW_GAP:
+			return FOLLOW_HAZE
+	return 0.0
+
+
+## 장애물을 모두 지운다 (화면 확인 도구, 테스트)
+func clear_pieces() -> void:
+	_obstacles.clear()
+	_pieces_dirty = true
 
 
 ## 웹은 재질이 처음 그려질 때 셰이더를 만들어 그 프레임이 막힌다. 첫 화면 전에 가림막 뒤에서 모두 한 번씩 그려 둔다.
@@ -435,8 +541,14 @@ func _make_obstacle(kind: ObstacleField.Kind, at_lane: int, z: float) -> MeshIns
 func _prewarm() -> void:
 	var world := Node3D.new()
 	add_child(world)
-	for kind in _kind_meshes:
-		world.add_child(_make_obstacle(kind, kind, -6.0))
+	var samples: Array[Piece] = []
+	for kind in _kind_meshes:  # 모든 종류의 재질을 한 번씩 그린다
+		var sample := Piece.new()
+		sample.kind = kind
+		sample.position = Vector3(RunLogic.lane_x(kind), 0.0, -6.0)
+		samples.append(sample)
+		_leaving.append(sample)
+	_pieces_dirty = true
 	var drop: MeshInstance3D = runner.make_prewarm_drop()
 	drop.position = Vector3(0.0, 1.0, -3.0)
 	world.add_child(drop)
@@ -463,6 +575,9 @@ func _prewarm() -> void:
 			break
 	world.queue_free()
 	cover.queue_free()
+	for sample in samples:
+		_leaving.erase(sample)
+	_pieces_dirty = true
 	prewarmed = true
 	if OS.has_feature("web"):
 		JavaScriptBridge.eval("window.gameReady = performance.now()")  # 첫 화면이 드러난 시각: 프레임 측정의 시작점
@@ -552,11 +667,7 @@ func _build_droplets() -> void:
 	many.transform_format = MultiMesh.TRANSFORM_3D
 	many.mesh = drop
 	many.instance_count = BeatRows.COUNT * 2
-	for i in BeatRows.COUNT:
-		var size := 1.0 if BeatRows.is_beat_row(i) else BeatRows.SMALL_SCALE
-		var basis := Basis.from_scale(Vector3(size, size, size * DROPLET_LENGTH))
-		for side in 2:
-			_row_transforms.append(Transform3D(basis, Vector3((side - 0.5) * RunLogic.LANE_WIDTH, DROPLET_HEIGHT * 0.5, 0.0)))
+	_row_beats.resize(BeatRows.COUNT)
 	_droplets = MultiMeshInstance3D.new()
 	_droplets.name = "Droplets"
 	_droplets.multimesh = many
@@ -564,18 +675,45 @@ func _build_droplets() -> void:
 	add_child(_droplets)
 
 
+## 종류마다 MultiMesh: 몸통 깊이, 몸통 색, 반사 세 번만 그린다. 장애물이 늘어도 그리는 횟수는 같다.
 func _build_obstacle_resources() -> void:
+	_pieces_root = Node3D.new()
+	_pieces_root.name = "Pieces"
+	add_child(_pieces_root)
 	for kind: ObstacleField.Kind in KINDS:
 		var meshes := ArtMeshes.obstacle(kind)
+		var body := _new_pieces_mesh(meshes["body"], true)
+		var mirror := _new_pieces_mesh(meshes["mirror"], false)
+		var depth := ShaderMaterial.new()
+		depth.shader = GLASS_SHADER
+		depth.set_shader_parameter("pass_alpha", 0.0)
+		depth.render_priority = DEPTH_PRIORITY
 		var glass := ShaderMaterial.new()
 		glass.shader = GLASS_SHADER
-		glass.set_shader_parameter("near_alpha", KINDS[kind]["near"])
-		var edge := ShaderMaterial.new()
-		edge.shader = NEON_SHADER
+		glass.render_priority = COLOR_PRIORITY
 		var reflect := ShaderMaterial.new()
 		reflect.shader = MIRROR_SHADER
 		reflect.render_priority = -1  # 젤리 발밑 그림자보다 먼저 그린다
-		_kind_meshes[kind] = {"mesh": meshes["glass"], "edges": meshes["edges"], "mirror": meshes["mirror"], "glass": glass, "edge": edge, "reflect": reflect}
+		for pair: Array in [[body, depth], [body, glass], [mirror, reflect]]:
+			var node := MultiMeshInstance3D.new()
+			node.multimesh = pair[0]
+			node.material_override = pair[1]
+			node.extra_cull_margin = 16384.0  # 반사는 셰이더가 옮겨 그리고, 영역 계산보다 몇 번 더 그리는 편이 싸다
+			_pieces_root.add_child(node)
+		_kind_meshes[kind] = {"body": body, "mirror": mirror, "depth": depth, "glass": glass, "reflect": reflect}
+
+
+func _new_pieces_mesh(mesh: Mesh, custom: bool) -> MultiMesh:
+	var many := MultiMesh.new()
+	many.transform_format = MultiMesh.TRANSFORM_3D
+	many.use_custom_data = custom
+	many.use_colors = true  # 끄면 꼭짓점 색(COLOR)의 RGB가 0으로 읽혀 테두리가 검게 나온다
+	many.mesh = mesh
+	many.instance_count = MAX_PIECES
+	for i in MAX_PIECES:
+		many.set_instance_color(i, Color.WHITE)
+	many.visible_instance_count = 0
+	return many
 
 
 func _build_ui() -> void:

@@ -16,9 +16,7 @@ func _ready() -> void:
 	add_child(_main)
 	while not _main.prewarmed:
 		await get_tree().process_frame
-	for id in _main._obstacles:
-		_main._obstacles[id].queue_free()
-	_main._obstacles.clear()
+	_main.clear_pieces()
 	_main.field.items.clear()
 	var i := 0
 	for z in [-10.0, -25.0, -45.0]:
@@ -26,18 +24,14 @@ func _ready() -> void:
 			_main._spawn_node({"id": 5000 + i, "lane": kind, "z": z, "kind": kind})
 			i += 1
 		await _shot("%s/sheet_z%d.png" % [out, int(-z)])
-		for id in _main._obstacles:
-			_main._obstacles[id].queue_free()
-		_main._obstacles.clear()
+		_main.clear_pieces()
 	if _main.has_method("_apply_tint"):  # 옛 버전을 찍을 때는 건너뛴다
 		for n in 3:
 			for kind in ObstacleField.Kind.values():
 				_main._spawn_node({"id": 7000 + n * 100 + kind, "lane": kind, "z": -7.0 - 9.0 * kind, "kind": kind})
 			_main._apply_tint(n * 0.5)
 			await _shot("%s/tint_%d.png" % [out, n * 50])
-			for id in _main._obstacles:
-				_main._obstacles[id].queue_free()
-			_main._obstacles.clear()
+			_main.clear_pieces()
 		_main._apply_tint(0.0)
 	# 가까운 세 종류와 주인공 반사 (바로 앞 레인에 막대, 점프)
 	for kind in ObstacleField.Kind.values():
@@ -49,9 +43,7 @@ func _ready() -> void:
 		_main.runner.lift = _main.player.height()
 		await get_tree().process_frame
 	await _shot("%s/jump.png" % out)
-	for id in _main._obstacles:
-		_main._obstacles[id].queue_free()
-	_main._obstacles.clear()
+	_main.clear_pieces()
 	var row: ShaderMaterial = _main._droplet_material
 	_main.runner.visible = false  # 주인공 옆 줄이 가리지 않게
 	_main._droplets.position.z = 0.0  # 박 줄이 주인공 옆

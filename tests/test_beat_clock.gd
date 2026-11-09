@@ -12,6 +12,40 @@ func test_프레임_시간이_달라도_재생_위치만_따름() -> void:
 	assert_eq(clock.time, 1.5)
 
 
+## 재생 위치는 오디오 블록(여기서는 10ms)마다 계단처럼 오른다. 화면 시간은 프레임마다 고르게 흘러야 세상이 떨리지 않는다
+func _steps_with_blocks(frame: float) -> Array[float]:
+	var clock := BeatClock.new()
+	var t := 0.0
+	var last := 0.0
+	var steps: Array[float] = []
+	for i in 600:
+		t += frame
+		clock.update(floorf(t * 100.0) / 100.0, frame)
+		var now := clock.smoothed(frame)
+		assert_true(now >= last, "되돌아가지 않음")
+		assert_true(absf(now - t) < 0.02, "실제 시간과 벌어지지 않음 %f" % (now - t))
+		if i > 60:
+			steps.append(absf(now - last - frame))
+		last = now
+	return steps
+
+
+func test_블록_단위_재생_위치도_60Hz와_120Hz에서_고르게_흐름() -> void:
+	for frame in [1.0 / 60.0, 1.0 / 120.0]:
+		var worst := 0.0
+		for step in _steps_with_blocks(frame):
+			worst = maxf(worst, step)
+		assert_true(worst < 0.002, "프레임 %f: 들쭉날쭉 %f초" % [frame, worst])
+
+
+func test_크게_벌어지면_바로_맞춤() -> void:
+	var clock := BeatClock.new()
+	clock.update(1.0, DT)
+	clock.smoothed(DT)
+	clock.update(2.0, DT)
+	assert_eq(clock.smoothed(DT), 2.0, "긴 프레임 뒤")
+
+
 func test_읽은_값이_살짝_뒤로_가도_시간은_되돌리지_않음() -> void:
 	var clock := BeatClock.new()
 	clock.update(5.0, DT)

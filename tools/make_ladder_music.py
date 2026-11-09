@@ -1,9 +1,9 @@
 #!/usr/bin/env python3
-"""음악 사다리 7곡을 다시 합성해 assets/audio/music/에 저장한다 (numpy, ffmpeg 필요).
+"""음악 사다리 13곡을 다시 합성해 assets/audio/music/에 저장한다 (numpy, ffmpeg 필요).
 
 리샘플이 아니라 review/v0.3.1/music/make_music.py의 합성을 템포만 바꿔 다시 하므로 음 높이가 그대로다.
 사용: python3 tools/make_ladder_music.py  (기준을 못 맞추면 종료 코드 1)
-결과: assets/audio/music/bgm_<BPM>_<편곡>.ogg, review/v0.4.0/music.md
+결과: assets/audio/music/bgm_<BPM>_<편곡>.ogg, review/v0.5.1/music.md
 """
 import sys
 from pathlib import Path
@@ -15,9 +15,9 @@ sys.path.insert(0, str(ROOT / "review/v0.3.1/music"))
 import make_music as mm
 
 # scripts/logic/music_ladder.gd의 STEPS와 같은 순서
-LADDER = [(100, "orig"), (105, "orig"), (110, "a"), (115, "a"), (120, "b"), (125, "b"), (130, "b")]
+LADDER = [(100, "orig"), (105, "orig"), (110, "a"), (115, "a")] + [(bpm, "b") for bpm in range(120, 165, 5)]
 OUT = ROOT / "assets/audio/music"
-REPORT = ROOT / "review/v0.4.0/music.md"
+REPORT = ROOT / "review/v0.5.1/music.md"
 LOOP_BEATS = 64
 
 
@@ -26,7 +26,7 @@ def main():
     gains = mm.game_gains()
     crash_peak = 10 ** (-0.7 / 20) * 10 ** (gains["SFX_DB"] / 20)
     target = None
-    errors, lines = [], ["# 음악 사다리 7곡 측정", "", "`python3 tools/make_ladder_music.py`가 만든 파일을 다시 디코딩해 쟀다.", "",
+    errors, lines = [], ["# 음악 사다리 13곡 측정", "", "`python3 tools/make_ladder_music.py`가 만든 파일을 다시 디코딩해 쟀다.", "",
                          "| 파일 | 길이 | 표본 수 | A 가중 | 피크 | 4kHz 위 | 반복 이음매 (곡 안 99.9%) | 크기 |", "|---|---|---|---|---|---|---|---|"]
     for bpm, arr in LADDER:
         x = mm.render(arr, bpm)

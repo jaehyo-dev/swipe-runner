@@ -265,6 +265,11 @@ func _ready() -> void:
 
 
 ## 셰이더 미리 준비용 물방울 하나 (같은 메시·재질, 보이는 상태)
+## 바닥 반사를 켜고 끈다 (프레임이 밀릴 때)
+func set_reflection(on: bool) -> void:
+	_mirror.visible = on
+
+
 func make_prewarm_drop() -> MeshInstance3D:
 	var drop: MeshInstance3D = _drops[0].duplicate()
 	drop.visible = true

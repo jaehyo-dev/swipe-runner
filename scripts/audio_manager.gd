@@ -17,6 +17,12 @@ const TRACKS: Array[AudioStreamOggVorbis] = [
 	preload("res://assets/audio/music/bgm_120_b.ogg"),
 	preload("res://assets/audio/music/bgm_125_b.ogg"),
 	preload("res://assets/audio/music/bgm_130_b.ogg"),
+	preload("res://assets/audio/music/bgm_135_b.ogg"),
+	preload("res://assets/audio/music/bgm_140_b.ogg"),
+	preload("res://assets/audio/music/bgm_145_b.ogg"),
+	preload("res://assets/audio/music/bgm_150_b.ogg"),
+	preload("res://assets/audio/music/bgm_155_b.ogg"),
+	preload("res://assets/audio/music/bgm_160_b.ogg"),
 ]
 const POOL_SIZE := 6
 ## 소리 균형은 여기서만 바꾼다 (dB). 음악의 A 가중 크기가 효과음(lane·jump·slide 평균)보다 2~3dB 작게.
@@ -30,9 +36,9 @@ const DUCK_DB := -8.0
 const DUCK_TIME := 1.0          # 음악을 낮춘 뒤 원래대로 돌아올 때까지
 const DUCK_FADE := 0.1          # 내려가고 올라오는 데 쓰는 시간 (뚝 끊겨 들리지 않게)
 const RESTART_FADE := 0.3       # 재시작 때 지금 곡에서 첫 곡으로 겹치며 넘어가는 시간
-## 경계가 이만큼 안으로 들어오면 다음 곡을 예약한다. 장애물은 z -60(속도 10에서 6초 앞)에 나오며 박 → 거리는 경계를 알아야 정해지므로, 첫 장애물보다 먼저 정한다.
+## 경계가 이만큼 안으로 들어오면 다음 곡을 예약한다. 장애물은 z -60(속도 12에서 5초 앞)에 나오며 박 → 거리는 경계를 알아야 정해지므로, 첫 장애물보다 먼저 정한다.
 const SCHEDULE_LEAD := 7.0
-## 이보다 가까운 경계는 8마디 뒤로 미룬다. 위와 같은 이유로 6초보다 길어야 한다 (데스크톱 제너레이터 버퍼 0.5초보다도 길다)
+## 이보다 가까운 경계는 4마디 뒤로 미룬다. 위와 같은 이유로 6초보다 길어야 한다 (데스크톱 제너레이터 버퍼 0.5초보다도 길다)
 const SCHEDULE_MIN := 6.2
 const GENERATOR_BUFFER := 0.5   # RESTART_FADE보다 길어야 겹치는 동안 이전 곡이 끊기지 않는다
 const FADE_FLOOR_DB := -60.0
@@ -60,6 +66,7 @@ var _pushed := 0          # 이번 판에 제너레이터에 넣은 표본 수
 var _switch_frame := -1   # 이 표본에서 다음 곡으로 바꾼다
 var _switch_step := 0
 var _switch_from := 0.0   # 다음 곡을 시작할 곡 안 위치(초)
+var _waiting_switches: Array[Dictionary] = []  # 빠른 단계는 앞 전환이 일어나기 전에 다음 경계가 정해진다
 var _clock := BeatClock.new()
 var _pool: Array[AudioStreamPlayer] = []
 var _next := 0
@@ -97,13 +104,16 @@ func _ready() -> void:
 
 func _process(delta: float) -> void:
 	if _web:
+		if not _blocked:  # 게임 오버 화면에서는 경계가 계속 밀리므로 곡을 다시 풀지 않는다
+			_want_next_track()
 		_web.decode_slice()
 	if not is_music_on():
 		return
 	if not _web:
 		_pump_generator()
 	var beat := MusicLadder.beat_time(ladder.segment_at(music_time)["step"])
-	music_time = _clock.update(_raw_position(), delta, beat)
+	_clock.update(_raw_position(), delta, beat)
+	music_time = _clock.smoothed(delta)
 	if not _blocked:  # 부딪힌 뒤에는 지금 곡을 그대로 둔다
 		_plan_next_track()
 
@@ -115,20 +125,37 @@ func is_music_on() -> bool:
 ## 경계가 가까워지면 다음 곡을 예약한다. 재생 위치 기준으로 알려 주므로 시계 보정값을 뺀다.
 ## shortcut: 오디오가 멈췄다 돌아오면(전화 등) 곡 경계가 반복 끝과 어긋날 수 있다. 박은 맞고 재시작하면 풀린다, 실기기에서 거슬리면 곡을 시계에 맞춰 다시 시작한다.
 func _plan_next_track() -> void:
-	var last: Dictionary = ladder.segments[-1]
-	var next_step: int = last["step"] + 1
-	if next_step >= TRACKS.size():
-		return
-	var plan := ladder.plan(music_time, SCHEDULE_LEAD, SCHEDULE_MIN, _web == null or _web.is_ready(next_step))
+	var plan := ladder.plan(music_time, SCHEDULE_LEAD, SCHEDULE_MIN, _web == null or _next_track_ready())
 	if plan.is_empty():
 		return
 	var at: float = plan["at"] - _clock.offset
 	if _web:
 		_web.schedule(plan["step"], at, plan["from"])
 	else:
-		_switch_frame = maxi(roundi(at * AudioServer.get_mix_rate()), _pushed)  # 지연이 커서 이미 넣은 표본을 지났으면 바로 다음 표본에서
-		_switch_step = plan["step"]
-		_switch_from = plan["from"]
+		_waiting_switches.append({"frame": roundi(at * AudioServer.get_mix_rate()), "step": plan["step"], "from": plan["from"]})
+		_next_switch()
+
+
+## 데스크톱: 지금 기다리는 전환이 없으면 다음 전환을 꺼낸다
+func _next_switch() -> void:
+	if _switch_frame >= 0 or _waiting_switches.is_empty():
+		return
+	var next: Dictionary = _waiting_switches.pop_front()
+	_switch_frame = maxi(next["frame"], _pushed)  # 지연이 커서 이미 넣은 표본을 지났으면 바로 다음 표본에서
+	_switch_step = next["step"]
+	_switch_from = next["from"]
+
+
+## 웹: 다음 경계에서 필요한 곡 구간을 미리 풀어 둔다
+func _want_next_track() -> void:
+	var edge := ladder.next_edge(music_time, SCHEDULE_MIN)
+	if not edge.is_empty():
+		_web.want(edge["step"], edge["from"])
+
+
+func _next_track_ready() -> bool:
+	var edge := ladder.next_edge(music_time, SCHEDULE_MIN)
+	return edge.is_empty() or _web.is_ready(edge["step"], edge["from"])
 
 
 ## 지금 귀에 들리는 음악 위치 (판 시작 기준)
@@ -175,6 +202,7 @@ func _pump_generator() -> void:
 			room -= blend
 			_feed = next
 			_switch_frame = -1
+			_next_switch()
 
 
 ## 새 판의 음악을 첫 곡 0초부터 튼다. fade초 동안 지금 곡과 겹친다.
@@ -202,8 +230,10 @@ func _begin_music(fade: float) -> void:
 		_feed = open_track(TRACKS[start_step])
 		_pushed = 0
 		_switch_frame = -1
+		_waiting_switches.clear()
 		_pump_generator()
 	_clock.time = minf(_raw_position(), 0.0)
+	_clock.smooth = _clock.time
 	music_time = _clock.time
 
 

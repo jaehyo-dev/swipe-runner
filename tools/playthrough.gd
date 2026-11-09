@@ -4,7 +4,7 @@ extends Node
 ##   녹화: godot --path . --write-movie x.avi --fixed-fps 60 --resolution 720x1280 res://tools/playthrough.tscn -- clean 66 all 105
 ##     (clean = 안 부딪힘, movie = 12초쯤 일부러 부딪힘. 세 번째 값 Music|SFX면 그 버스만 들림, 네 번째 값은 시작 BPM)
 ##   환경 변수 BEST=숫자: 예전 최고 기록을 이 값으로 두고 시작 (새 기록 장면 녹화), SEED=숫자: 장애물 배치
-##   사람 모델이 죽을 때까지: godot ... res://tools/playthrough.tscn -- human 300 all 100  (죽고 3초 뒤 끝)
+##   사람 모델이 죽을 때까지: godot ... res://tools/playthrough.tscn -- human 300 all 100  (죽고 3초 뒤 끝). 환경 변수 MODEL=good이면 잘하는 모델
 ##   음악 시계 시작 기록: 웹 주소에 ?mode=startup&secs=4 (첫 탭 뒤 프레임마다 재생 위치와 음악 시간)
 ## 웹 측정은 주소에 ?mode=accuracy&secs=265 (시작 BPM은 &bpm=115)
 
@@ -37,6 +37,9 @@ var _born_step := {}   # id -> 처음 보였을 때의 사다리 단계
 var _slow_frames := 0  # 33ms 넘는 프레임
 var _wall_zero := INF
 var _deltas: Array[float] = []
+var _clock_steps: Array[float] = []  # 프레임마다 음악 시간이 간 양 - 프레임 시간 (세상 움직임의 들쭉날쭉함)
+var _last_music := 0.0
+var _force_slip := false  # ?off=slip: 음악 5~6.7초 동안 다음 곡 예약을 막아 경계를 4마디 미룬다 (review/v0.5.1/measure_slip.mjs)
 var _max_time := 0.0
 var _crashes := 0
 var _input_usec := 0
@@ -70,7 +73,7 @@ func _ready() -> void:
 	main = load("res://scenes/main.tscn").instantiate()
 	main.seed_value = int(OS.get_environment("SEED")) if OS.has_environment("SEED") else SEED
 	if mode == "human":
-		_human = HumanPlayer.new(main.seed_value)
+		_human = HumanPlayer.new(main.seed_value, HumanPlayer.GOOD if OS.get_environment("MODEL") == "good" else HumanPlayer.NORMAL)
 	main.best_path = "user://playthrough_best.txt"
 	if not OS.get_environment("BEST").is_empty():
 		var file := FileAccess.open(main.best_path, FileAccess.WRITE)
@@ -79,10 +82,41 @@ func _ready() -> void:
 	else:
 		DirAccess.remove_absolute(main.best_path)
 	add_child(main)
+	_apply_measure_switches()
 	AudioManager.played.connect(_on_played)
 	_start_usec = Time.get_ticks_usec()
 	if OS.has_feature("web"):
 		_perf_to_now = float(JavaScriptBridge.eval("performance.now()")) / 1000.0
+
+
+## 렉 측정: 주소의 ?off=msaa,glow,mirror,sky,drops,hero 로 효과를 끄고 ?scale=0.7 로 3D 해상도를 바꿔 효과별 비용을 잰다 (review/v0.5.1/perf_mac.md)
+func _apply_measure_switches() -> void:
+	if not OS.has_feature("web"):
+		return
+	var off := str(JavaScriptBridge.eval("new URLSearchParams(location.search).get('off') || ''")).split(",")
+	if bool(JavaScriptBridge.eval("new URLSearchParams(location.search).has('quiet')")):
+		AudioServer.set_bus_mute(0, true)  # 스피커로 소리를 내지 않되 AudioContext는 실제 장치로 돈다
+		AudioManager._set_music_db(-120.0)
+	var scale := float(str(JavaScriptBridge.eval("new URLSearchParams(location.search).get('scale') || 0")))
+	if "msaa" in off:
+		get_viewport().msaa_3d = Viewport.MSAA_DISABLED
+	if "glow" in off:
+		main._env.glow_enabled = false
+	if "sky" in off:
+		main.get_node("Sky").visible = false
+	if "drops" in off:
+		main._droplets.visible = false
+	if "hero" in off:
+		main.runner.visible = false
+	if "mirror" in off:
+		for kind in main._kind_meshes:
+			main._kind_meshes[kind]["reflect"].set_shader_parameter("reflect_on", 0.0)
+		main.runner.set_reflection(false)
+	if scale > 0.0:
+		get_viewport().scaling_3d_scale = scale
+	_force_slip = "slip" in off
+	if "guard" in off:  # 비용을 잴 때는 자동 낮춤이 끼어들지 않게 한다
+		main._quality.level = QualityGuard.LEVELS
 
 
 ## 기록 시각(초). 녹화는 실제 시간과 무관하게 프레임 단위로 흐르므로 게임 시간을 쓴다.
@@ -150,6 +184,11 @@ func _process(delta: float) -> void:
 	if delta > 0.033 and main.prewarmed:
 		_slow_frames += 1
 	_max_time = maxf(_max_time, AudioManager.music_time)
+	if _force_slip:
+		AudioManager._blocked = AudioManager.music_time >= 5.0 and AudioManager.music_time < 6.7
+	if main.started and not main.dead:
+		_clock_steps.append(absf(AudioManager.music_time - _last_music - delta))
+	_last_music = AudioManager.music_time
 	_record_arrivals()
 	_record_rows()
 	_draws.append(RenderingServer.get_rendering_info(RenderingServer.RENDERING_INFO_TOTAL_DRAW_CALLS_IN_FRAME))
@@ -246,8 +285,8 @@ func _record_rows() -> void:
 	var now_beat := ladder.beat_at(music)
 	var wall := _now()
 	var beat := ceilf(now_beat - 0.5)  # 가장 가까운 박
-	var slot := int((beat - BeatRows.beat_of(0, now_beat)) * 2.0) * 2
-	var z: float = main._droplets.multimesh.get_instance_transform(slot).origin.z
+	var slot := BeatRows.slot_of(beat) * 2
+	var z: float = main._droplets.multimesh.get_instance_transform(slot).origin.z + main._droplets.position.z
 	if not _last_row.is_empty() and _last_row[0] == beat and _last_row[1] < 0.0 and z >= 0.0:
 		var beat_t := ladder.time_of_beat(beat)
 		_rows["frame"].append(music - beat_t)
@@ -289,7 +328,10 @@ func _finish() -> void:
 	var gap_max := 0
 	for g in _gaps:
 		gap_max = maxi(gap_max, g)
+	_clock_steps.sort()
+	var jitter := {"p50_ms": _clock_steps[_clock_steps.size() / 2] * 1000.0, "p99_ms": _clock_steps[int(_clock_steps.size() * 0.99)] * 1000.0, "max_ms": _clock_steps[-1] * 1000.0}
 	print("RESULT ", JSON.stringify({
+		"clock_jitter": jitter, "render_size": [get_viewport().get_visible_rect().size, get_viewport().scaling_3d_scale, DisplayServer.window_get_size()],
 		"mode": mode, "wall_secs": _now(), "music_time": _max_time, "crashes": _crashes,
 		"frames": frame, "fps": frame / maxf(t, 0.001), "delta_p50_ms": deltas[deltas.size() / 2] * 1000.0, "delta_max_ms": deltas[-1] * 1000.0,
 		"frame_err": _stats(_frame_err), "wall_err": _stats(_wall_err), "by_bpm": by_bpm,
