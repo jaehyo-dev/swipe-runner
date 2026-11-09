@@ -7,7 +7,6 @@ const SFX := {
 	&"slide": preload("res://assets/audio/sfx/slide.wav"),
 	&"land": preload("res://assets/audio/sfx/land.wav"),
 	&"crash": preload("res://assets/audio/sfx/crash.wav"),
-	&"shatter": preload("res://assets/audio/sfx/shatter.wav"),  # 파일 자체가 lane보다 A 가중 3dB 작다 (tools/make_final_sounds.py)
 }
 ## MusicLadder.STEPS와 같은 순서
 const TRACKS: Array[AudioStreamOggVorbis] = [
@@ -265,11 +264,6 @@ func play_action(sound: StringName) -> void:
 
 
 ## 충돌: 음악을 잠깐 낮추고, 다시 시작할 때까지 다른 효과음을 막는다.
-## 장애물이 부서지는 "칭". 자주 나므로 매번 높낮이를 조금씩 바꾼다.
-func play_shatter() -> void:
-	_play(&"shatter", _jitter())
-
-
 func play_crash() -> void:
 	_play(&"crash", 0.0)
 	_blocked = true

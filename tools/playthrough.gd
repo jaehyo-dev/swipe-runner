@@ -89,7 +89,7 @@ func _ready() -> void:
 		_perf_to_now = float(JavaScriptBridge.eval("performance.now()")) / 1000.0
 
 
-## 렉 측정: 주소의 ?off=msaa,glow,mirror,sky,drops,hero,laser,streak,shard 로 효과를 끄고 ?scale=0.7 로 3D 해상도를 바꿔 효과별 비용을 잰다 (review/v0.5.1/perf_mac.md)
+## 렉 측정: 주소의 ?off=msaa,glow,mirror,sky,drops,hero,streak 로 효과를 끄고 ?scale=0.7 로 3D 해상도를 바꿔 효과별 비용을 잰다 (review/v0.5.1/perf_mac.md)
 func _apply_measure_switches() -> void:
 	if not OS.has_feature("web"):
 		return
@@ -106,12 +106,8 @@ func _apply_measure_switches() -> void:
 		main.get_node("Sky").visible = false
 	if "drops" in off:
 		main._dashes.visible = false
-	if "laser" in off:
-		main.get_node("Lasers").visible = false
 	if "streak" in off:
 		main.get_node("Streaks").visible = false
-	if "shard" in off:
-		main.get_node("Shards").visible = false
 	if "hero" in off:
 		main.runner.visible = false
 	if "mirror" in off:

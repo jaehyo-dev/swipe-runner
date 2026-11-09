@@ -1,5 +1,5 @@
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1200 1010" width="1200" height="1010" font-family="Apple SD Gothic Neo, Noto Sans KR, sans-serif">
-  <!-- 디렉터 시안 (v0.6.0): 네온 리듬 무대 한 장면 + 장애물 세 종류 정면. 직접 제작. 값은 ART_BIBLE.md 1·4·10장 -->
+  <!-- 디렉터 시안 (v0.6.1): 네온 리듬 무대 한 장면 + 장애물 세 종류 정면. 직접 제작. 값은 ART_BIBLE.md 1·4·10장 -->
   <defs>
     <linearGradient id="sky" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#05040D"/><stop offset="0.82" stop-color="#05040D"/><stop offset="1" stop-color="#241650"/></linearGradient>
     <linearGradient id="floor" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#241650"/><stop offset="0.16" stop-color="#0C0A1C"/><stop offset="1" stop-color="#0C0A1C"/></linearGradient>
@@ -20,15 +20,6 @@
     <g clip-path="url(#stage)">
       <rect width="520" height="380" fill="url(#sky)"/>
       <rect y="380" width="520" height="540" fill="url(#floor)"/>
-      <!-- 레이저: 지평선 양쪽에서, 파랑·분홍 번갈아, 장애물 테두리보다 어둡게 -->
-      <g stroke-width="3" opacity="0.6" filter="url(#soft)">
-        <line x1="20" y1="385" x2="230" y2="20" stroke="#4A6FC4"/>
-        <line x1="70" y1="385" x2="340" y2="-10" stroke="#A8568F"/>
-        <line x1="-20" y1="385" x2="110" y2="10" stroke="#A8568F"/>
-        <line x1="500" y1="385" x2="290" y2="20" stroke="#A8568F"/>
-        <line x1="450" y1="385" x2="180" y2="-10" stroke="#4A6FC4"/>
-        <line x1="540" y1="385" x2="410" y2="10" stroke="#4A6FC4"/>
-      </g>
       <!-- 빛 줄기 -->
       <g stroke="#fff" stroke-width="1.6" opacity="0.4">
         <line x1="44" y1="500" x2="10" y2="570"/><line x1="90" y1="440" x2="66" y2="486"/>
@@ -50,7 +41,7 @@
       <!-- 먼 장애물: 멀리서도 실루엣과 기호 -->
       <g filter="url(#glow)">
         <g><rect x="232" y="404" width="20" height="10" rx="2" fill="#120E24" stroke="#FF9A1F" stroke-width="1.5"/><path d="M238 411 L242 406 L246 411" fill="none" stroke="#FFD08A" stroke-width="1.6"/></g>
-        <g><rect x="270" y="392" width="16" height="30" rx="2" fill="#120E24" stroke="#2FB8FF" stroke-width="1.5"/><path d="M276 402 L273 407 L276 412 M280 402 L283 407 L280 412" fill="none" stroke="#9FDCFF" stroke-width="1.5"/></g>
+        <g><rect x="270" y="392" width="16" height="30" rx="2" fill="#1C6FB0" stroke="#2FB8FF" stroke-width="1.5"/></g>
       </g>
       <!-- 슬라이드 블록과 빛 웅덩이 -->
       <ellipse cx="256" cy="590" rx="66" ry="17" fill="url(#pool)"/>
@@ -60,15 +51,10 @@
         <path d="M236 505 L257 526 L278 505" fill="none" stroke="#FF9AD8" stroke-width="6" stroke-linecap="round" stroke-linejoin="round"/>
       </g>
       <!-- 옆 블록 + 바닥 반사 -->
-      <g opacity="0.3"><rect x="350" y="640" width="82" height="96" rx="6" fill="#120E24" stroke="#2FB8FF" stroke-width="3"/></g>
+      <g opacity="0.3"><rect x="350" y="640" width="82" height="96" rx="6" fill="#1C6FB0" stroke="#2FB8FF" stroke-width="3"/></g>
       <g filter="url(#glow)">
-        <rect x="350" y="482" width="82" height="158" rx="7" fill="#120E24" stroke="#2FB8FF" stroke-width="3"/>
-        <rect x="356" y="474" width="70" height="10" rx="4" fill="url(#top)"/>
-        <path d="M384 532 L368 561 L384 590 M398 532 L414 561 L398 590" fill="none" stroke="#9FDCFF" stroke-width="6" stroke-linecap="round" stroke-linejoin="round"/>
-      </g>
-      <!-- 부서지는 조각 -->
-      <g fill="#FF9A1F" filter="url(#glow)">
-        <path d="M60 760 l16 -8 l-4 16z"/><path d="M104 712 l12 4 l-10 8z" fill="#FFD08A"/><path d="M26 708 l10 -12 l6 12z"/><path d="M128 776 l10 -4 l-2 12z"/><path d="M78 672 l8 -8 l4 10z" fill="#FFD08A"/><path d="M38 806 l14 2 l-8 10z"/>
+        <rect x="350" y="482" width="82" height="158" rx="7" fill="#1C6FB0" stroke="#2FB8FF" stroke-width="3"/>
+        <rect x="356" y="474" width="70" height="10" rx="4" fill="#6FB4E6"/>
       </g>
       <!-- 주인공: 화면에서 가장 밝다 -->
       <ellipse cx="260" cy="812" rx="118" ry="52" fill="url(#halo)"/>
@@ -84,12 +70,11 @@
   <g transform="translate(610 70)">
     <rect width="550" height="920" rx="10" fill="#0C0A1C"/>
     <text x="24" y="44" font-size="22" fill="#fff" font-weight="700">장애물 세 종류 (정면, 크기 비례)</text>
-    <text x="24" y="72" font-size="16" fill="#AAA6C8">불투명 몸통 #120E24 · 둥글게 깎은 모서리 · 색 빛 테두리 · 기호 50~60%</text>
+    <text x="24" y="72" font-size="16" fill="#AAA6C8">불투명 몸통 · 둥글게 깎은 모서리 · 색 빛 테두리 · 점프·슬라이드 기호 50~60%</text>
     <g filter="url(#glow)">
       <!-- 옆으로: 1.1 x 2.1 -->
-      <rect x="44" y="130" width="146" height="280" rx="14" fill="#120E24" stroke="#2FB8FF" stroke-width="5"/>
-      <rect x="49" y="135" width="136" height="270" rx="10" fill="#2FB8FF" fill-opacity="0.05"/>
-      <path d="M103 193 L73 270 L103 347 M131 193 L161 270 L131 347" fill="none" stroke="#9FDCFF" stroke-width="11" stroke-linecap="round" stroke-linejoin="round"/>
+      <rect x="44" y="130" width="146" height="280" rx="14" fill="#1C6FB0" stroke="#2FB8FF" stroke-width="5"/>
+      <rect x="58" y="136" width="118" height="14" rx="6" fill="#6FB4E6"/>
       <!-- 점프: 1.3 x 0.45 -->
       <rect x="226" y="350" width="174" height="60" rx="11" fill="#120E24" stroke="#FF9A1F" stroke-width="5"/>
       <path d="M266 389 L313 371 L360 389" fill="none" stroke="#FFD08A" stroke-width="9" stroke-linecap="round" stroke-linejoin="round"/>
@@ -100,18 +85,18 @@
     <ellipse cx="313" cy="302" rx="78" ry="14" fill="url(#pool)"/>
     <line x1="24" y1="411" x2="526" y2="411" stroke="#3A3358" stroke-width="2"/>
     <g font-size="18" fill="#fff">
-      <text x="117" y="446" text-anchor="middle">옆으로 ‹ ›</text>
+      <text x="117" y="446" text-anchor="middle">옆으로: 파란 기둥</text>
       <text x="313" y="446" text-anchor="middle">점프 ^ (아래) · 슬라이드 v (위)</text>
     </g>
     <g font-size="16" fill="#AAA6C8">
       <text x="24" y="500">밝기 순서</text>
-      <text x="24" y="528" fill="#fff">주인공 &gt; 기호 &gt; 테두리 &gt; 레이저·난간 &gt; 빛 줄기 &gt; 바닥·하늘</text>
+      <text x="24" y="528" fill="#fff">주인공 &gt; 기호 &gt; 테두리·파란 기둥 &gt; 난간 &gt; 빛 줄기 &gt; 바닥·하늘</text>
       <text x="24" y="580">색 뜻: 파랑 #2FB8FF 옆, 주황 #FF9A1F 위, 분홍 #FF2FA8 아래</text>
       <text x="24" y="608">민트는 주인공 전용</text>
-      <text x="24" y="660">레이저: 지평선 양쪽 4~6줄, 박에 살짝, 마디 첫 박에 크게</text>
+      <text x="24" y="660">하늘: 거의 검정 + 지평선 보라 안개 띠</text>
       <text x="24" y="688">길: #0C0A1C 반사 바닥, 난간 #7B5CFF + 흰빛 심, 박마다 빛 대시</text>
       <text x="24" y="716">빛 줄기: 속도에 비례해 개수와 길이 증가</text>
-      <text x="24" y="768">부서짐: 박에 8~14조각, 바깥과 뒤로, 0.35초</text>
+      <text x="24" y="768">지나간 장애물: 깨지지 않고 그대로 뒤로 지나감</text>
       <text x="24" y="820">다른 게임의 블록 디자인·기호·레이아웃을 베끼지 않는다.</text>
       <text x="24" y="848">분위기와 연출 방식만 참고.</text>
     </g>

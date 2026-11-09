@@ -31,7 +31,6 @@ SOUNDS = {
     "slide": ("sounds_v3/slide_a.wav", 7, 12000.0, 0.28),
     "land": ("sounds_v2/land_c.wav", -10, 12000.0, 0.37),
     "crash": ("sounds_v3/crash_c.wav", 9, 9500.0, 0.43),
-    "shatter": ("../v0.6.0/shatter_sounds/shatter_a.wav", 0, None, 0.16),  # 사용자가 다른 후보를 고르면 여기만 바꾼다
 }
 LENGTH_TOLERANCE = 0.02
 

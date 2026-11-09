@@ -54,9 +54,7 @@ func test_한두_번_끊김이나_탭_전환은_낮추지_않음() -> void:
 	assert_eq(guard.level, 0, "긴 멈춤은 렉이 아님")
 
 
-func test_빛_줄기가_먼저_줄고_그다음_레이저가_줄어듦() -> void:
-	assert_eq(QualityGuard.LEVELS, 5, "줄기, 레이저, 반사, MSAA, 빛 번짐")
+func test_빛_줄기가_가장_먼저_줄어듦() -> void:
+	assert_eq(QualityGuard.LEVELS, 4, "줄기, 반사, MSAA, 빛 번짐")
 	assert_eq(QualityGuard.streaks(48.0, 0), 48)
 	assert_true(QualityGuard.streaks(48.0, 1) < 48, "1단계 줄기")
-	assert_eq(QualityGuard.lasers(6.0, 1), 6.0, "1단계 레이저 그대로")
-	assert_eq(QualityGuard.lasers(6.0, 2), QualityGuard.LASER_LOW, "2단계 레이저")

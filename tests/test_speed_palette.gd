@@ -44,16 +44,15 @@ func _gray(c: Color) -> Color:
 
 
 func test_표의_값이_데이터_파일_양끝과_같음() -> void:
-	var want0 := {"sky_top": "05040d", "horizon": "241650", "floor": "0c0a1c", "rail": "7b5cff", "body": "120e24", "block": "2fb8ff", "low": "ff9a1f", "high": "ff2fa8"}
-	var want1 := {"sky_top": "05040d", "horizon": "3d1880", "floor": "0e0a24", "rail": "7b5cff", "body": "120e24", "block": "0faeff", "low": "ff9405", "high": "ff0c9c"}
+	var want0 := {"sky_top": "05040d", "horizon": "241650", "floor": "0c0a1c", "rail": "7b5cff", "body": "120e24", "block_body": "1c6fb0", "block": "2fb8ff", "low": "ff9a1f", "high": "ff2fa8"}
+	var want1 := {"sky_top": "05040d", "horizon": "3d1880", "floor": "0e0a24", "rail": "7b5cff", "body": "120e24", "block_body": "1268b8", "block": "0faeff", "low": "ff9405", "high": "ff0c9c"}
 	var at0 := SpeedPalette.at(0.0)
 	var at1 := SpeedPalette.at(1.0)
 	for key in want0:
 		assert_eq(at0[key].to_html(false), want0[key], key)
 		assert_eq(at1[key].to_html(false), want1[key], key)
-	assert_eq(at0["laser_count"], 4.0, "레이저 t=0 4줄")
-	assert_eq(at1["laser_count"], 6.0, "레이저 t=1 6줄")
-	assert_true(at1["laser_energy"] > at0["laser_energy"], "레이저가 강해짐")
+	assert_true(at1["sky_band"] > at0["sky_band"], "안개 띠가 넓어짐")
+	assert_true(at1["rail_energy"] > at0["rail_energy"], "난간 빛이 넓게 번짐")
 	assert_true(at1["streak_count"] > at0["streak_count"] and at1["streak_length"] > at0["streak_length"], "빛 줄기가 많고 길어짐")
 
 
@@ -73,6 +72,8 @@ func test_장애물_세_색의_색상_차이는_60도_이상() -> void:
 		var c := SpeedPalette.at(t)
 		for part in ["", "_edge", "_mark"]:
 			for pair in [["block", "low"], ["low", "high"], ["high", "block"]]:
+				if part == "_mark" and "block" in pair:  # 기둥에는 기호가 없다
+					continue
 				var gap := _hue_gap(_screen(c[pair[0] + part]), _screen(c[pair[1] + part]))
 				assert_true(gap >= 60.0, "t=%f %s%s %s: %f도" % [t, pair[0], part, pair[1], gap])
 
@@ -102,13 +103,16 @@ func test_주인공과_다른_모든_요소의_색상_차이() -> void:
 	assert_true(_hue_gap(HERO, Color("060817")) >= 30.0, "길 밖 바닥: 셰이더에 고정된 색")
 
 
-## 레이저는 장애물 색과 헷갈리지 않게 채도를 한 단계 낮춘다
-func test_레이저는_장애물보다_채도가_낮음() -> void:
+## 기둥은 면 전체가 파랗다. 테두리가 몸통 위에서도 보이고 몸통은 바닥에서 떠 보여야 키 큰 실루엣으로 읽힌다
+func test_파란_기둥의_몸통은_바닥과_테두리_사이_밝기() -> void:
 	for t in TS:
 		var c := SpeedPalette.at(t)
-		for laser in ["laser_blue", "laser_pink"]:
-			for kind in KINDS:
-				assert_true(c[laser].s < c[kind].s, "t=%f %s < %s" % [t, laser, kind])
+		var body: Color = c["block_body"]
+		assert_true(_hue_gap(body, c["block"]) < 15.0, "t=%f 같은 파랑 계열" % t)
+		assert_true(_contrast(body, c["floor"]) >= 3.0, "t=%f 몸통과 바닥" % t)
+		assert_true(_contrast(_screen(c["block_edge"]), body) >= 1.5, "t=%f 테두리와 몸통" % t)
+		for view: Callable in [_gray, _deutan]:
+			assert_true(_contrast(view.call(body), view.call(c["floor"])) >= 3.0, "t=%f 흑백·색약에서 몸통과 바닥" % t)
 
 
 func test_장애물_테두리와_바닥_대비는_3대1_이상() -> void:
@@ -135,12 +139,12 @@ func test_흑백과_적록색약에서도_테두리가_바닥에서_보임() -> 
 				assert_true(ratio >= 3.0, "t=%f %s %f" % [t, kind, ratio])
 
 
-## 주인공 > 장애물 기호 > 테두리 > 레이저·난간 > 빛 줄기 > 바닥·하늘 (HDR 가장 센 채널, 번쩍임이 가장 셀 때 기준)
-func test_밝기_순서는_진해져도_번쩍여도_유지() -> void:
+## 주인공 > 장애물 기호 > 테두리·파란 기둥 > 난간 > 빛 줄기 > 바닥·하늘 (HDR 가장 센 채널, 단계 빛남이 가장 셀 때 기준)
+func test_밝기_순서는_진해져도_단계가_올라도_유지() -> void:
 	for t in TS:
 		var row := BrightnessOrder.table(t, HERO_PEAK)
 		assert_true(row["hero"] > row["mark"], "t=%f 주인공 > 기호: %s" % [t, row])
 		assert_true(row["mark"] > row["edge"], "t=%f 기호 > 테두리: %s" % [t, row])
-		assert_true(row["edge"] > row["stage"], "t=%f 테두리 > 레이저·난간: %s" % [t, row])
-		assert_true(row["laser_rest"] > row["streak"], "t=%f 평소 레이저 > 빛 줄기: %s" % [t, row])
+		assert_true(row["edge"] > row["rail"], "t=%f 테두리 > 난간: %s" % [t, row])
+		assert_true(row["rail_rest"] > row["streak"], "t=%f 평소 난간 > 빛 줄기: %s" % [t, row])
 		assert_true(row["streak"] > row["ground"], "t=%f 빛 줄기 > 바닥·하늘: %s" % [t, row])

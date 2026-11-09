@@ -1,6 +1,6 @@
 class_name ArtMeshes
 extends RefCounted
-## 장애물·난간·레이저 메시를 코드로 만든다 (텍스처 없음). 모양 기준은 ART_BIBLE.md 6·10장.
+## 장애물·난간 메시를 코드로 만든다 (텍스처 없음). 모양 기준은 ART_BIBLE.md 6·10장.
 ## 장애물 몸통·테두리·기호는 한 메시·한 재질이라 종류마다 MultiMesh 하나로 그린다 (block.gdshader).
 ## 모든 장애물은 바닥(y=0)을 원점으로 삼고, 크기는 ObstacleField 판정 값에서 그대로 가져온다 (보이는 모양 = 판정 범위).
 ## 선은 가는 관(tube)이라 메시 하나에 모이고, 관 반지름을 UV.x, 부위를 UV.y에 담아 셰이더가 멀리서 최소 굵기를 지키게 한다.
@@ -13,15 +13,11 @@ const ELLIPSE_SIDES := 20
 const EDGE_RADIUS := 0.034
 const CORNER := {ObstacleField.Kind.BLOCK: 0.1, ObstacleField.Kind.LOW: 0.09, ObstacleField.Kind.HIGH: 0.11}
 const MARK_SHARE := 0.55         # 기호 크기: 앞면 폭·높이의 55% (둥근 끝까지 포함)
-const MARK_RADIUS := {ObstacleField.Kind.BLOCK: 0.058, ObstacleField.Kind.LOW: 0.044, ObstacleField.Kind.HIGH: 0.05}
-const BLOCK_MARK_GAP := 0.14     # ‹ ›의 꺾쇠 사이 빈틈의 절반
+const MARK_RADIUS := {ObstacleField.Kind.LOW: 0.044, ObstacleField.Kind.HIGH: 0.05}
 const MIRROR_BODY_ALPHA := 0.5   # 반사 불투명도: 몸통은 어두워 바닥을 가리는 역할, 빛은 또렷하게
 const MIRROR_EDGE_ALPHA := 0.3
 const POOL_ALPHA := 0.3          # 슬라이드 블록 아래 빛 웅덩이 가운데 불투명도 (35% 이하): 떠 있는 높이를 말해 준다
 const POOL_HALF := Vector2(0.58, 0.46)    # 웅덩이 반지름 (x, z): 블록 폭의 절반 0.65보다 살짝 좁게
-const LASER_COUNT := 6           # 양쪽 번갈아: 앞에서부터 켜지므로 4줄이면 양쪽 2줄씩
-const LASER_ORIGIN := Vector3(34.0, -1.0, -150.0)  # 첫 줄 시작점 (x는 양쪽)
-const LASER_STEP := 30.0         # 같은 쪽 다음 줄이 더 바깥으로 가는 거리
 
 var _v := PackedVector3Array()
 var _n := PackedVector3Array()
@@ -31,7 +27,7 @@ var _part := Part.BODY
 
 
 ## 종류별 {body, mirror} 메시. 색은 재질 값이다.
-## body: 몸통 + 테두리 + 기호. UV.x 관 반지름(몸통 0), UV.y 부위.
+## body: 몸통 + 테두리 + 기호(기둥에는 없음). UV.x 관 반지름(몸통 0), UV.y 부위.
 ## mirror: 바닥 반사 + 바닥 흔적. COLOR.r 몸통(0)·빛(1), COLOR.b 1이면 멀어도 그리는 바닥 흔적, COLOR.a 불투명도 (mirror.gdshader)
 static func obstacle(kind: ObstacleField.Kind) -> Dictionary:
 	var size: Vector3 = _size_of(kind)
@@ -48,8 +44,9 @@ static func obstacle(kind: ObstacleField.Kind) -> Dictionary:
 	var lines := ArtMeshes.new()
 	lines._part = Part.EDGE
 	lines._box_edges(size, bottom, corner, flush)
-	lines._part = Part.MARK
-	lines._mark(kind, size, bottom)
+	if kind != ObstacleField.Kind.BLOCK:
+		lines._part = Part.MARK
+		lines._mark(kind, size, bottom)
 	if kind == ObstacleField.Kind.HIGH:
 		mirror._floor_ellipse(POOL_HALF, Color(1.0, 0.0, 1.0, POOL_ALPHA))
 	body._add_all(lines)
@@ -80,21 +77,6 @@ static func rails(x: float, tube_y: float, tube_radius: float, z_near: float, z_
 			m._part = Part.EDGE
 			m._tube(Vector3(side * x, core_y, z), Vector3(side * x, core_y, next), core_radius)
 		z = next
-	return m.commit()
-
-
-## 레이저 6줄 한 메시. 줄마다 사각형 하나, 움직임은 laser.gdshader가 계산한다.
-static func lasers() -> ArrayMesh:
-	var m := ArtMeshes.new()
-	for i in LASER_COUNT:
-		var side := -1.0 if i % 2 == 0 else 1.0
-		var at := Vector3(side * (LASER_ORIGIN.x + (i / 2) * LASER_STEP), LASER_ORIGIN.y, LASER_ORIGIN.z)
-		var c := Color(float(i % 2 == (i / 2) % 2), i / float(LASER_COUNT - 1), fposmod(i * 0.37, 1.0), fposmod(i * 0.61, 1.0))
-		for uv: Vector2 in [Vector2(0.0, -1.0), Vector2(1.0, -1.0), Vector2(1.0, 1.0), Vector2(0.0, -1.0), Vector2(1.0, 1.0), Vector2(0.0, 1.0)]:
-			m._v.append(at)
-			m._n.append(Vector3.BACK)
-			m._c.append(c)
-			m._uv.append(uv)
 	return m.commit()
 
 
@@ -131,22 +113,17 @@ func _box_edges(size: Vector3, bottom: float, r: float, flush: bool) -> void:
 			_tube(Vector3(side * x, y, half_z - inset), Vector3(side * x, y, -half_z + inset), EDGE_RADIUS)
 
 
-## 앞면 기호: 굵고 둥근 선 하나. 옆 = ‹ ›, 점프 = ^, 슬라이드 = v. 폭과 높이가 앞면의 MARK_SHARE가 되도록 둥근 끝을 뺀 자리에 놓는다.
+## 앞면 기호: 굵고 둥근 선 하나. 점프 = ^, 슬라이드 = v. 폭과 높이가 앞면의 MARK_SHARE가 되도록 둥근 끝을 뺀 자리에 놓는다.
 func _mark(kind: ObstacleField.Kind, size: Vector3, bottom: float) -> void:
 	var r: float = MARK_RADIUS[kind]
 	var half_w := size.x * MARK_SHARE * 0.5 - r
 	var half_h := size.y * MARK_SHARE * 0.5 - r
 	var y := bottom + size.y * 0.5
 	var z := size.z * 0.5 - r * 0.3  # 앞면에서 살짝 솟은 관
-	match kind:
-		ObstacleField.Kind.BLOCK:
-			for side: float in [-1.0, 1.0]:
-				var inner := side * BLOCK_MARK_GAP
-				_chevron(Vector3(side * half_w, y, z), Vector3(inner, y + half_h, z), Vector3(inner, y - half_h, z), r)
-		ObstacleField.Kind.LOW:
-			_chevron(Vector3(0.0, y + half_h, z), Vector3(-half_w, y - half_h, z), Vector3(half_w, y - half_h, z), r)
-		ObstacleField.Kind.HIGH:
-			_chevron(Vector3(0.0, y - half_h, z), Vector3(-half_w, y + half_h, z), Vector3(half_w, y + half_h, z), r)
+	if kind == ObstacleField.Kind.LOW:
+		_chevron(Vector3(0.0, y + half_h, z), Vector3(-half_w, y - half_h, z), Vector3(half_w, y - half_h, z), r)
+	else:
+		_chevron(Vector3(0.0, y - half_h, z), Vector3(-half_w, y + half_h, z), Vector3(half_w, y + half_h, z), r)
 
 
 ## 꺾쇠 하나: 꼭짓점 tip에서 두 끝으로 가는 둥근 선

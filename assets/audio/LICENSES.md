@@ -9,7 +9,6 @@
 | `sfx/slide.wav` | `sounds_v3/slide_a.wav` | +7반음, 12kHz, 끝 페이드 | 직접 합성, 프로젝트 소유 |
 | `sfx/land.wav` | `sounds_v2/land_c.wav` | -10반음, 12kHz, 끝 페이드 | Kenney CC0 소리 가공 + 프로젝트 가공 (아래) |
 | `sfx/crash.wav` | `sounds_v3/crash_c.wav` | +9반음, 9.5kHz, 끝 페이드 | rubberduck CC0 소리 가공 + 직접 합성 몸통 (아래) |
-| `sfx/shatter.wav` | `review/v0.6.0/shatter_sounds/shatter_a.wav` | 높이 0, 필터 없음, 끝 페이드 | 직접 합성, 프로젝트 소유 |
 | `music/bgm_<BPM>_<편곡>.ogg` 7개 | `tools/make_ladder_music.py` (`review/v0.3.1/music/make_music.py`의 합성) | 템포별로 다시 합성, Vorbis q5 | 직접 합성, 프로젝트 소유 |
 
 ## 착지: Kenney CC0

@@ -137,15 +137,18 @@ func test_장애물_종류별_색이_정해진_색으로_나옴() -> void:
 	for kind in expected:
 		var material: ShaderMaterial = main._kind_meshes[kind]["block"]
 		var edge: Color = material.get_shader_parameter("edge_color")
-		var mark: Color = material.get_shader_parameter("mark_color")
 		assert_true(material.get_shader_parameter("tint").is_equal_approx(expected[kind]), "색 (종류 %d)" % kind)
-		assert_true(material.get_shader_parameter("body_color").is_equal_approx(Color("120e24")), "몸통 (종류 %d)" % kind)
+		var body := Color("1c6fb0") if kind == K.BLOCK else Color("120e24")  # 기둥은 파랗게 채운다
+		assert_true(material.get_shader_parameter("body_color").is_equal_approx(body), "몸통 (종류 %d)" % kind)
+		assert_true(main._kind_meshes[kind]["reflect"].get_shader_parameter("body_color").is_equal_approx(body), "반사 몸통 (종류 %d)" % kind)
 		assert_eq(_strongest(edge), _strongest(expected[kind]), "테두리 색조 (종류 %d)" % kind)
 		assert_true(_peak(edge) > 1.0, "테두리는 HDR 발광 (종류 %d)" % kind)
-		# 밝기 순서(HDR 가장 센 채널 기준): 주인공 > 기호 > 테두리 > 레이저·난간
-		assert_true(_peak(mark) < _peak(hero_peak), "기호가 주인공보다 어두움 (종류 %d)" % kind)
-		assert_true(_peak(mark) > _peak(edge), "기호가 테두리보다 밝음 (종류 %d)" % kind)
-		assert_true(_peak(edge) > main.ROAD_PEAK_MAX, "테두리가 번쩍이는 무대보다 밝음 (종류 %d)" % kind)
+		# 밝기 순서(HDR 가장 센 채널 기준): 주인공 > 기호 > 테두리 > 난간
+		if kind != K.BLOCK:  # 기둥에는 기호가 없다
+			var mark: Color = material.get_shader_parameter("mark_color")
+			assert_true(_peak(mark) < _peak(hero_peak), "기호가 주인공보다 어두움 (종류 %d)" % kind)
+			assert_true(_peak(mark) > _peak(edge), "기호가 테두리보다 밝음 (종류 %d)" % kind)
+		assert_true(_peak(edge) > StageLight.PEAK_MAX, "테두리가 단계 빛남보다 밝음 (종류 %d)" % kind)
 	main.queue_free()
 
 
@@ -493,7 +496,7 @@ func test_재시작_뒤_0_82초_동안_어떤_장애물도_닿을_수_없음() -
 	main.queue_free()
 
 
-func test_첫_화면_전에_세_종류와_조각과_글자를_가림막_뒤에서_그린다() -> void:
+func test_첫_화면_전에_세_종류와_글자를_가림막_뒤에서_그린다() -> void:
 	var main: Node3D = load("res://scenes/main.tscn").instantiate()
 	main.seed_value = 1234
 	add_child(main)
@@ -507,7 +510,6 @@ func test_첫_화면_전에_세_종류와_조각과_글자를_가림막_뒤에�
 	main._sync_pieces()
 	for kind in main._kind_meshes:
 		assert_true(main._kind_meshes[kind]["body"].visible_instance_count > 0, "장애물 %d을 그림" % kind)
-	assert_eq(main._shard_live.size(), 1, "조각 재질도 그림")
 	var cover: ColorRect = main.find_children("*", "ColorRect", true, false)[0]
 	assert_true(cover.get_parent().layer > 1, "화면 맨 위 가림막")
 	assert_eq(main.find_children("*", "Label", true, false).size(), 7, "숫자·안내·최고 글자도 그림")
@@ -516,7 +518,6 @@ func test_첫_화면_전에_세_종류와_조각과_글자를_가림막_뒤에�
 		await wait_frames()
 	await wait_frames()
 	assert_eq(main.find_children("*", "ColorRect", true, false).size(), 0, "가림막 사라짐")
-	assert_eq(main._shard_live.size(), 0, "준비용 조각 정리")
 	assert_true(_count_nodes(main) < nodes_during, "준비용 노드 정리")
 	assert_eq(main.find_children("*", "Label", true, false).size(), 4)
 	main.queue_free()
@@ -693,7 +694,7 @@ func test_최고를_넘는_순간_숫자가_커졌다_돌아오고_NEW_BEST로_�
 	main.queue_free()
 
 
-func test_단계가_오를_때만_레이저_전체가_0_3초_번쩍임() -> void:
+func test_단계가_오를_때만_난간과_대시가_0_3초_밝아짐() -> void:
 	var main := _make_main()
 	await wait_frames()
 	main.field.items.clear()
@@ -701,16 +702,16 @@ func test_단계가_오를_때만_레이저_전체가_0_3초_번쩍임() -> void
 	AudioManager.ladder = ladder
 	ladder.add_segment(10.0, 32, 1)  # BPM만 오름
 	ladder.add_segment(20.0, 64, 2)  # 원본 → A
-	var flash := func(t: float) -> float:
+	var glow := func(t: float) -> float:
 		main._music_t = t
 		main._move_world()
-		assert_true(is_equal_approx(main._laser_material.get_shader_parameter("energy"), StageLight.energy(main._laser_base, main._beat_flash, main._flash, main._laser_peak)), "레이저에 들어감")
-		assert_true(is_equal_approx(main._rail_material.get_shader_parameter("energy"), SpeedPalette.at(main._tint)["rail_energy"]), "난간은 번쩍이지 않음: 진하기 값 그대로")
-		return main._flash
-	assert_eq(flash.call(10.05), 0.0, "BPM만 오르면 신호 없음")
-	assert_eq(flash.call(19.99), 0.0)
-	assert_true(flash.call(20.0) > 0.99, "경계 박에 바로 밝음")
-	assert_true(absf(flash.call(20.15) - 0.5) < 0.01)
-	assert_eq(flash.call(20.31), 0.0, "0.3초 뒤 끝")
+		assert_true(is_equal_approx(main._rail_material.get_shader_parameter("energy"), StageLight.energy(SpeedPalette.at(main._tint)["rail_energy"], main._stage_glow)), "난간에 들어감")
+		assert_true(is_equal_approx(main._dash_material.get_shader_parameter("stage_add"), main._stage_glow * (StageLight.PEAK_MAX - StageLight.ROAD_PEAK)), "대시에 들어감")
+		return main._stage_glow
+	assert_eq(glow.call(10.05), 0.0, "BPM만 오르면 신호 없음")
+	assert_eq(glow.call(19.99), 0.0)
+	assert_true(glow.call(20.0) > 0.99, "경계 박에 바로 밝음")
+	assert_true(absf(glow.call(20.15) - 0.5) < 0.01)
+	assert_eq(glow.call(20.31), 0.0, "0.3초 뒤 끝")
 	AudioManager.ladder = MusicLadder.new(0)
 	main.queue_free()

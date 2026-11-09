@@ -1,5 +1,5 @@
 extends TestCase
-## 무대·장애물 아트의 규칙: 보이는 모양 = 판정 범위, 판정 값 그대로, 대시 줄은 박에 닿음, 반사는 몸을 따라감, 지나간 장애물은 부서짐.
+## 무대·장애물 아트의 규칙: 보이는 모양 = 판정 범위, 판정 값 그대로, 대시 줄은 박에 닿음, 반사는 몸을 따라감, 지나간 장애물은 그대로 사라짐.
 ## 충돌 소리·음악을 실제로 켜서 AudioManager 상태가 남는다. test_audio보다 뒤에 돌도록 파일 이름을 test_track_로 시작한다.
 
 const K := ObstacleField.Kind
@@ -107,7 +107,7 @@ func test_슬라이드_블록에는_받침이_없고_아래_빛_웅덩이는_블
 
 ## 기호 하나가 면의 50~60% (둥근 끝까지 포함한 폭과 높이), 앞면에 있고 면 안에 든다
 func test_기호는_앞면의_50에서_60퍼센트() -> void:
-	for kind: K in [K.BLOCK, K.LOW, K.HIGH]:
+	for kind: K in [K.LOW, K.HIGH]:
 		var face: AABB = _box(kind, ArtMeshes.Part.BODY)
 		var mark: AABB = _box(kind, ArtMeshes.Part.MARK)
 		for axis in 2:
@@ -118,9 +118,20 @@ func test_기호는_앞면의_50에서_60퍼센트() -> void:
 		assert_true(mark.position.z > 0.0, "종류 %d: 앞면에만" % kind)
 
 
+## 기둥은 기호 없이 키 큰 실루엣으로 읽힌다. 모양과 판정은 v0.6.0과 같다
+func test_기둥에는_기호가_없고_크기는_판정_그대로() -> void:
+	var arrays: Array = _meshes(K.BLOCK)["body"].surface_get_arrays(0)
+	for uv: Vector2 in arrays[Mesh.ARRAY_TEX_UV]:
+		assert_true(uv.y < ArtMeshes.Part.MARK, "기호 꼭짓점 없음")
+	var body := _box(K.BLOCK, ArtMeshes.Part.BODY)
+	assert_true(is_equal_approx(body.size.x, ObstacleField.BLOCK_SIZE), "폭")
+	assert_true(is_equal_approx(body.size.y, ObstacleField.BLOCK_HEIGHT), "키")
+	assert_eq(ObstacleField.BLOCK_HEIGHT, 2.1, "높이 그대로")
+
+
 ## 뒤집힌 ^는 슬라이드 기호 v로 읽힌다
 func test_반사에는_기호가_없음() -> void:
-	for kind: K in [K.BLOCK, K.LOW, K.HIGH]:
+	for kind: K in [K.LOW, K.HIGH]:
 		var mark := _box(kind, ArtMeshes.Part.MARK)
 		assert_true(mark.size.x > 0.0, "몸통에는 기호가 있음")
 		var arrays: Array = _meshes(kind)["mirror"].surface_get_arrays(0)
@@ -149,13 +160,6 @@ func test_몸통은_불투명이고_안개를_직접_섞음() -> void:
 	assert_false(code.contains("ALPHA"), "불투명")
 	assert_true(code.contains("fog_disabled"))
 	assert_false(ResourceLoader.exists("res://shaders/glass.gdshader"), "유리 재질 제거")
-
-
-## 가산 혼합에 안개가 있으면 안개 색이 그대로 더해져 사각형째 떠 보인다
-func test_가산_셰이더는_안개를_끔() -> void:
-	for path in ["res://shaders/laser.gdshader", "res://shaders/shard.gdshader"]:
-		var code: String = load(path).code
-		assert_true(code.contains("blend_add") and code.contains("fog_disabled"), path)
 
 
 func test_연속_블록의_뒤쪽만_흐림() -> void:
@@ -212,7 +216,7 @@ func test_대시는_새로_들어온_줄만_다시_씀() -> void:
 	main.queue_free()
 
 
-func test_프레임이_밀리면_줄기_레이저_반사_MSAA_빛_번짐_순서로_낮춤() -> void:
+func test_프레임이_밀리면_줄기_반사_MSAA_빛_번짐_순서로_낮춤() -> void:
 	var main := _make_main()
 	await wait_frames()
 	var msaa: int = get_viewport().msaa_3d
@@ -221,22 +225,18 @@ func test_프레임이_밀리면_줄기_레이저_반사_MSAA_빛_번짐_순서�
 	main._apply_tint(1.0)
 	var streaks: int = main._streaks.visible_instance_count
 	assert_eq(streaks, 48, "t=1 빛 줄기")
-	assert_eq(main._laser_material.get_shader_parameter("count"), 6.0, "t=1 레이저")
 	main.apply_quality(1)
 	assert_true(main._streaks.visible_instance_count < streaks, "1단계 줄기")
-	assert_eq(main._laser_material.get_shader_parameter("count"), 6.0, "레이저는 그대로")
-	main.apply_quality(2)
-	assert_eq(main._laser_material.get_shader_parameter("count"), QualityGuard.LASER_LOW, "2단계 레이저")
 	assert_true(main.runner._mirror.visible, "반사는 그대로")
-	main.apply_quality(3)
-	assert_eq(main._kind_meshes[K.BLOCK]["reflect"].get_shader_parameter("reflect_on"), 0.0, "3단계 반사 끔")
+	main.apply_quality(2)
+	assert_eq(main._kind_meshes[K.BLOCK]["reflect"].get_shader_parameter("reflect_on"), 0.0, "2단계 반사 끔")
 	assert_false(main.runner._mirror.visible, "주인공 반사도")
 	assert_eq(get_viewport().msaa_3d, msaa, "MSAA는 그대로")
-	main.apply_quality(4)
-	assert_eq(get_viewport().msaa_3d, Viewport.MSAA_2X, "4단계 MSAA 2x")
+	main.apply_quality(3)
+	assert_eq(get_viewport().msaa_3d, Viewport.MSAA_2X, "3단계 MSAA 2x")
 	assert_eq(main._env.glow_intensity, glow, "빛 번짐은 그대로")
-	main.apply_quality(5)
-	assert_true(main._env.glow_intensity < glow, "5단계 빛 번짐 낮춤")
+	main.apply_quality(4)
+	assert_true(main._env.glow_intensity < glow, "4단계 빛 번짐 낮춤")
 	get_viewport().msaa_3d = msaa
 	main.queue_free()
 
@@ -451,7 +451,7 @@ func test_색은_속도를_따라_진해지고_재질을_새로_만들지_않음
 	assert_true(_sky_top(main).is_equal_approx(Color("05040d")), "t=0 하늘")
 	assert_true(block.get_shader_parameter("tint").is_equal_approx(Color("2fb8ff")))
 	assert_true(main._env.fog_light_color.is_equal_approx(Color("241650")), "안개 = 지평선")
-	assert_eq(main._laser_material.get_shader_parameter("count"), 4.0, "t=0 레이저 4줄")
+	assert_eq(_sky_band(main), 0.07, "t=0 안개 띠")
 	ladder.add_segment(9.6, 16, 12)
 	main.advance(0.0, 9.6 + 60.0 / 160.0 * 4.0)  # 2마디의 절반
 	assert_true(absf(main._tint - 0.5) < 0.001, "절반 %f" % main._tint)
@@ -462,26 +462,31 @@ func test_색은_속도를_따라_진해지고_재질을_새로_만들지_않음
 	assert_true(main._env.fog_light_color.is_equal_approx(Color("3d1880")), "t=1 안개 짙게")
 	assert_true(block.get_shader_parameter("tint").is_equal_approx(Color("0faeff")))
 	assert_eq(main._kind_meshes[K.BLOCK]["block"], block, "같은 재질")
-	assert_eq(main._laser_material.get_shader_parameter("count"), 6.0, "t=1 레이저 6줄")
+	assert_eq(_sky_band(main), 0.13, "t=1 안개 띠 넓게")
+	assert_true(block.get_shader_parameter("body_color").is_equal_approx(Color("1268b8")), "t=1 기둥 몸통")
 	assert_eq(main._streaks.visible_instance_count, 48, "t=1 빛 줄기")
 	AudioManager.ladder = MusicLadder.new(0)
 	main.queue_free()
 
 
-func test_번쩍여도_레이저와_대시는_상한을_넘지_않음() -> void:
+func _sky_band(main: Node3D) -> float:
+	return main._sky_material.get_shader_parameter("curve")
+
+
+func test_단계_빛남에도_난간과_대시는_상한을_넘지_않고_끝나면_평소로() -> void:
 	var main := _make_main()
 	await wait_frames()
 	for t in [0.0, 0.5, 1.0]:
 		main._tint = -1.0
 		main._apply_tint(t)
-		main._beat_flash = StageLight.BAR_BOOST
-		main._set_flash(1.0)
-		assert_true(main._laser_peak * main._laser_material.get_shader_parameter("energy") <= main.ROAD_PEAK_MAX + 0.001, "레이저 t=%f" % t)
+		main._set_stage_glow(1.0)
+		assert_true(main._rail_material.get_shader_parameter("energy") <= StageLight.PEAK_MAX + 0.001, "난간 t=%f" % t)
 		var rail: Color = main._rail_material.get_shader_parameter("color")
-		assert_true(maxf(rail.r, maxf(rail.g, rail.b)) * main._dash_material.get_shader_parameter("max_energy") <= main.ROAD_PEAK_MAX + 0.001, "대시 t=%f" % t)
-		main._beat_flash = 0.0
-		main._set_flash(0.0)
-		assert_true(is_equal_approx(main._laser_material.get_shader_parameter("energy"), SpeedPalette.at(t)["laser_energy"]), "평소 빛 세기")
+		var dash_peak: float = maxf(rail.r, maxf(rail.g, rail.b)) * (main._dash_material.get_shader_parameter("max_energy") + main._dash_material.get_shader_parameter("stage_add"))
+		assert_true(dash_peak <= StageLight.PEAK_MAX + 0.001, "대시 t=%f" % t)
+		main._set_stage_glow(0.0)
+		assert_true(is_equal_approx(main._rail_material.get_shader_parameter("energy"), SpeedPalette.at(t)["rail_energy"]), "평소 빛 세기")
+		assert_eq(main._dash_material.get_shader_parameter("stage_add"), 0.0, "대시 평소")
 	main.queue_free()
 
 
@@ -520,115 +525,76 @@ func _passing(main: Node3D, id: int, kind: K, lane: int, ahead := 0.01) -> Dicti
 	return item
 
 
-func _shatter_sounds(main: Node3D, frames: int) -> int:
-	var heard := [0]
-	var count := func(sound: StringName, _pitch: float) -> void:
-		if sound == &"shatter":
-			heard[0] += 1
-	AudioManager.played.connect(count)
-	for i in frames:
-		main.advance(STEP)
-	AudioManager.played.disconnect(count)
-	return heard[0]
-
-
-func test_지나간_장애물은_박에_조각으로_부서지고_판정이_끝나면_몸통이_사라짐() -> void:
+func test_지나간_장애물은_그대로_뒤로_지나가_z6에서_사라짐() -> void:
 	AudioManager.unblock()
 	var main := _make_main()
-	while not main.prewarmed:  # 미리 준비용 조각이 사라질 때까지
+	while not main.prewarmed:
 		await wait_frames()
 	main.field.items.clear()
 	main.clear_pieces()
 	var item := _passing(main, 7100, K.LOW, 2)
-	var free_before: int = main._shard_free.size()
-	assert_eq(_shatter_sounds(main, 1), 1, "한 번")
-	assert_true(item.has("broken"))
-	var made: int = free_before - main._shard_free.size()
-	assert_true(made >= Shatter.COUNT_MIN and made <= Shatter.COUNT_MAX, "조각 %d개" % made)
-	assert_true(item["z"] <= PlayerAction.HIT_Z, "아직 판정 범위")
-	assert_false(main._obstacles[7100].broken, "판정이 남아 있는 동안 몸통은 보임")
-	main._sync_pieces()
-	assert_eq(main._kind_meshes[K.LOW]["body"].visible_instance_count, 1, "그림")
-	assert_eq(_shatter_sounds(main, 3), 0, "한 장애물은 한 번만")
-	while item["z"] <= PlayerAction.HIT_Z:
+	while item["z"] <= ObstacleField.REMOVE_Z:
 		main.advance(STEP)
-	main._sync_pieces()
-	assert_true(main._obstacles[7100].broken, "판정이 끝나면 숨김")
+		main._sync_pieces()
+		if item["z"] <= ObstacleField.REMOVE_Z:
+			assert_eq(main._kind_meshes[K.LOW]["body"].visible_instance_count, 1, "z %f에서 그대로 보임" % item["z"])
+	assert_false(main._obstacles.has(7100), "z +6을 넘으면 사라짐")
 	assert_eq(main._kind_meshes[K.LOW]["body"].visible_instance_count, 0, "그리지 않음")
-	for i in 30:
-		main.advance(STEP)
-	assert_eq(main._shard_live.size(), 0, "0.35초 안에 사라짐")
-	assert_eq(main._shard_free.size(), free_before, "풀로 돌아옴")
+	assert_false(main.dead, "옆 레인이라 부딪히지 않음")
 	main.queue_free()
 
 
-func test_같은_박에_여러_개면_모두_부서지고_소리는_하나() -> void:
+## 판정은 z 0.7까지 그대로다: 지나친 직후 그 범위로 파고들면 원래대로 부딪히고 장애물은 계속 보인다
+func test_z0을_지난_직후_판정_범위에서_부딪힘() -> void:
 	AudioManager.unblock()
 	var main := _make_main()
-	while not main.prewarmed:  # 미리 준비용 조각이 사라질 때까지
-		await wait_frames()
-	main.field.items.clear()
-	main.clear_pieces()
-	var a := _passing(main, 7200, K.BLOCK, 0)
-	var b := _passing(main, 7201, K.HIGH, 2)
-	var free_before: int = main._shard_free.size()
-	assert_eq(_shatter_sounds(main, 1), 1, "소리 하나")
-	assert_true(a.has("broken") and b.has("broken"), "둘 다")
-	assert_true(free_before - main._shard_free.size() >= Shatter.COUNT_MIN * 2, "조각도 둘 다")
-	main.queue_free()
-
-
-func test_충돌한_장애물은_부서지지_않음() -> void:
-	AudioManager.unblock()
-	var main := _make_main()
-	while not main.prewarmed:  # 미리 준비용 조각이 사라질 때까지
-		await wait_frames()
-	main.field.items.clear()
-	main.clear_pieces()
-	var item := _passing(main, 7300, K.BLOCK, main.lane)
-	var free_before: int = main._shard_free.size()
-	main.advance(STEP)
-	assert_true(main.dead, "부딪힘")
-	assert_false(item.has("broken"))
-	assert_eq(main._shard_free.size(), free_before, "조각 없음")
-	main.queue_free()
-
-
-## 판정은 z 0.7까지 그대로다. 부서진 직후 그 범위로 파고들면 원래대로 부딪히고, 몸통은 계속 보이며 그 조각만 사라진다
-func test_부서진_직후_판정_범위에서_부딪히면_몸통은_보이고_조각이_사라짐() -> void:
-	AudioManager.unblock()
-	var main := _make_main()
-	while not main.prewarmed:  # 미리 준비용 조각이 사라질 때까지
+	while not main.prewarmed:
 		await wait_frames()
 	main.field.items.clear()
 	main.clear_pieces()
 	var side: int = (main.lane + 1) % 3
 	var item := _passing(main, 7400, K.BLOCK, side)
 	main.advance(STEP)
-	assert_true(item.has("broken") and not main.dead, "옆 레인이라 부서짐")
-	assert_true(item["z"] < PlayerAction.HIT_Z)
-	var free_before: int = main._shard_free.size()
+	assert_false(main.dead, "옆 레인")
+	assert_true(item["z"] >= 0.0 and item["z"] < PlayerAction.HIT_Z)
 	main.runner.position.x = RunLogic.lane_x(side)
 	main.advance(STEP)
-	assert_true(main.dead, "v0.5.1과 같이 부딪힘")
-	assert_false(main._obstacles[7400].broken, "몸통이 보임")
-	assert_true(main._shard_free.size() > free_before, "그 조각을 지움")
-	assert_eq(main._shard_live.size(), 0)
+	assert_true(main.dead, "v0.6.0과 같이 부딪힘")
+	main._sync_pieces()
+	assert_eq(main._kind_meshes[K.BLOCK]["body"].visible_instance_count, 1, "장애물이 보임")
 	main.queue_free()
 
 
-func test_조각은_새_노드를_만들지_않고_풀이_차도_안전함() -> void:
-	AudioManager.unblock()
+## 게임 코드·데이터에 레이저, 부서짐, 칭 소리의 흔적이 남아 있지 않다 (후보 소리는 review/에만 있고 review/는 .gdignore로 빌드에서 빠진다)
+func test_레이저_부서짐_칭_소리가_남아_있지_않음() -> void:
+	var words := ["laser", "레이저", "shatter", "shard", "부서", "조각", "번쩍", "\"칭"]
+	var files: Array[String] = ["res://project.godot", "res://export_presets.cfg"]
+	for dir in ["res://scripts", "res://shaders", "res://data", "res://scenes"]:
+		_collect(dir, files)
+	assert_true(files.size() > 20, "파일을 찾음 %d" % files.size())
+	for path in files:
+		var text := FileAccess.get_file_as_string(path).to_lower()
+		for word: String in words:
+			assert_false(text.contains(word), "%s에 %s" % [path, word])
+	var sounds: Array[String] = []
+	_collect("res://assets/audio", sounds)
+	assert_true(sounds.size() > 0)
+	for path in sounds:
+		assert_false(path.contains("shatter"), path)
+	assert_true(FileAccess.file_exists("res://review/.gdignore"), "후보 소리 폴더는 빌드에 들어가지 않음")
+	assert_false(AudioManager.has_method("play_shatter"))
+	for path in ["res://shaders/laser.gdshader", "res://shaders/shard.gdshader", "res://scripts/logic/shatter.gd"]:
+		assert_false(FileAccess.file_exists(path), path)
 	var main := _make_main()
-	while not main.prewarmed:  # 미리 준비용 조각이 사라질 때까지
-		await wait_frames()
-	main.field.items.clear()
-	main.clear_pieces()
-	var nodes: int = main.get_child_count()
-	for i in 40:  # 풀보다 많이
-		_passing(main, 7500 + i, K.LOW, 2)
-	main.advance(STEP)
-	assert_eq(main._shard_free.size(), 0, "풀을 다 씀")
-	assert_eq(main._shard_live.size(), main.SHARD_POOL)
-	assert_eq(main.get_child_count(), nodes, "노드 그대로")
+	await wait_frames()
+	for node: Node in main.find_children("*", "", true, false):
+		var low := node.name.to_lower()
+		assert_false(low.contains("laser") or low.contains("shard"), node.name)
 	main.queue_free()
+
+
+func _collect(dir: String, into: Array[String]) -> void:
+	for file in DirAccess.get_files_at(dir):
+		into.append(dir.path_join(file))
+	for sub in DirAccess.get_directories_at(dir):
+		_collect(dir.path_join(sub), into)
