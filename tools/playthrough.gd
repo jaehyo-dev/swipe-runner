@@ -4,7 +4,7 @@ extends Node
 ##   녹화: godot --path . --write-movie x.avi --fixed-fps 60 --resolution 720x1280 res://tools/playthrough.tscn -- clean 66 all 105
 ##     (clean = 안 부딪힘, movie = 12초쯤 일부러 부딪힘. 세 번째 값 Music|SFX면 그 버스만 들림, 네 번째 값은 시작 BPM)
 ##   환경 변수 BEST=숫자: 예전 최고 기록을 이 값으로 두고 시작 (새 기록 장면 녹화), SEED=숫자: 장애물 배치
-##   사람 모델이 죽을 때까지: godot ... res://tools/playthrough.tscn -- human 300 all 100  (죽고 3초 뒤 끝). 환경 변수 MODEL=good이면 잘하는 모델
+##   사람 모델이 죽을 때까지: godot ... res://tools/playthrough.tscn -- human 300 all 100  (죽고 3초 뒤 끝). 환경 변수 MODEL=good이면 잘하는 모델, greedy면 욕심쟁이
 ##   음악 시계 시작 기록: 웹 주소에 ?mode=startup&secs=4 (첫 탭 뒤 프레임마다 재생 위치와 음악 시간)
 ## 웹 측정은 주소에 ?mode=accuracy&secs=265 (시작 BPM은 &bpm=115)
 
@@ -73,7 +73,8 @@ func _ready() -> void:
 	main = load("res://scenes/main.tscn").instantiate()
 	main.seed_value = int(OS.get_environment("SEED")) if OS.has_environment("SEED") else SEED
 	if mode == "human":
-		_human = HumanPlayer.new(main.seed_value, HumanPlayer.GOOD if OS.get_environment("MODEL") == "good" else HumanPlayer.NORMAL)
+		var models := {"good": HumanPlayer.GOOD, "greedy": HumanPlayer.GREEDY}
+		_human = HumanPlayer.new(main.seed_value, models.get(OS.get_environment("MODEL"), HumanPlayer.NORMAL))
 	main.best_path = "user://playthrough_best.txt"
 	if not OS.get_environment("BEST").is_empty():
 		var file := FileAccess.open(main.best_path, FileAccess.WRITE)
@@ -222,7 +223,7 @@ func _process(delta: float) -> void:
 		var dir: int
 		var seen := RunSim.visible_items(main.field.items, AudioManager.ladder, AudioManager.music_time)  # 안개 속 줄은 모른다
 		if _human:
-			dir = _human.decide(AudioManager.music_time, seen, main.lane, main.player, main.speed)
+			dir = _human.decide(AudioManager.music_time, seen, main.lane, main.player, main.speed, RunSim.visible_items(main.field.orbs, AudioManager.ladder, main._music_t))
 		else:
 			dir = AutoPlayer.decide(seen, main.lane, main.player, main.speed, t - _last_input)
 		if dir != Dir.NONE:

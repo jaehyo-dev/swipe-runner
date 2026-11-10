@@ -1,10 +1,12 @@
 class_name BestRecord
 extends RefCounted
-## 최고 거리 기록: user://에 저장 (웹은 파일을 닫으면 엔진이 IndexedDB로 동기화한다). 자동 테스트 대상.
+## 최고 점수 기록: user://에 저장 (웹은 파일을 닫으면 엔진이 IndexedDB로 동기화한다). 자동 테스트 대상.
+## v0.8.0부터 점수 기록. v0.7.0까지의 최고 거리(user://best.txt)는 지우지 않고 그대로 두며 화면에는 쓰지 않는다.
 
-const PATH := "user://best.txt"
-## 새 기록을 넘은 뒤에는 거리가 계속 오르므로 이만큼 늘 때마다 저장한다 (약 1초). 첫 순간과 충돌 때는 바로 저장.
-const SAVE_STEP := 10
+const PATH := "user://best_score.txt"
+## 새 기록을 넘은 뒤에는 점수가 계속 오르므로 이만큼 늘 때마다 저장한다 (약 1~3초). 첫 순간과 충돌 때는 바로 저장.
+## 10이면 방울 하나(10점)마다 저장하고, 웹은 저장마다 IndexedDB 동기화를 해 방울 줄을 먹는 동안 프레임이 밀렸다
+const SAVE_STEP := 50
 
 var best := 0
 ## 이번 판 시작 전의 기록. 0이면 첫 판이라 "최고" 줄을 숨긴다.
@@ -29,7 +31,7 @@ func begin_run() -> void:
 	broken = false
 
 
-## 이번 판 거리를 알린다. 예전 기록을 넘은 바로 그 순간에만 true
+## 이번 판 점수를 알린다. 예전 기록을 넘은 바로 그 순간에만 true
 func update(distance: int) -> bool:
 	if distance <= best:
 		return false

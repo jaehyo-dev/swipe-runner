@@ -1,0 +1,204 @@
+<!doctype html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>보상 소리 후보</title>
+<link rel="icon" href="data:,">
+<style>
+  :root { --bg:#100c2a; --panel:#1c1642; --line:#3a2f73; --text:#eef; --dim:#a9a6d0; --mint:#86e3e6; }
+  * { box-sizing:border-box; }
+  body { margin:0; padding:24px 16px 48px; background:var(--bg); color:var(--text); font:16px/1.5 -apple-system, "Apple SD Gothic Neo", sans-serif; }
+  main { max-width:640px; margin:0 auto; }
+  h1 { font-size:22px; margin:0 0 4px; }
+  h2 { font-size:16px; margin:28px 0 8px; color:var(--mint); }
+  p { margin:0 0 8px; color:var(--dim); font-size:14px; }
+  a { color:var(--mint); }
+  img { display:block; width:100%; border-radius:8px; }
+  .row { display:flex; align-items:center; gap:8px; padding:10px 12px; background:var(--panel); border:1px solid var(--line); border-radius:10px; margin-bottom:8px; flex-wrap:wrap; }
+  .row .name { flex:1 1 170px; }
+  .row small { display:block; color:var(--dim); font-size:12px; }
+  button { font:inherit; min-width:48px; min-height:44px; padding:0 14px; color:var(--text); background:#2a2260; border:1px solid var(--line); border-radius:8px; cursor:pointer; }
+  button:hover { border-color:var(--mint); }
+  button.on { background:var(--mint); color:#10233a; border-color:var(--mint); font-weight:600; }
+  label { display:flex; align-items:center; gap:8px; font-size:14px; color:var(--dim); flex:1 1 200px; }
+  input[type=range] { flex:1; min-width:0; accent-color:var(--mint); }
+  output { min-width:64px; text-align:right; color:var(--text); font-variant-numeric:tabular-nums; }
+  #tuner { position:sticky; top:0; z-index:1; display:block; }
+  #tuner label { margin-top:4px; }
+</style>
+</head>
+<body>
+<main>
+  <h1>v0.8.0 보상 소리 후보</h1>
+  <p>방울 먹기 "톡", 콤보 끊김 "툭", 아슬아슬 "슉". 종류마다 하나씩 골라 알려 주세요. 게임에는 일단 셋 다 A가 들어가 있습니다.</p>
+  <p>방울은 한 줄 안에서 연속으로 먹으면 마단조 5음(E·G·A·B·D)을 따라 한 음씩 올라가고, 다음 줄에서 처음 음으로 돌아갑니다. 빠른 구간(압박 단계 6 이상)에서는 3dB 더 작게 납니다.</p>
+
+  <div class="row" id="tuner">
+    <div class="name">지금 고른 소리: <strong id="current"></strong></div>
+    <label>높이 <input id="pitch" type="range" min="-12" max="12" step="1" value="0"><output id="pitchValue"></output></label>
+    <label>밝기 <input id="bright" type="range" min="1" max="12" step="0.5" value="12"><output id="brightValue"></output></label>
+  </div>
+
+  <h2>방울 "톡" (lane보다 6dB 작게)</h2>
+  <div class="row"><div class="name">A 맑은 톡<small>lane_c 몸통을 E4에, 유리빛 조금</small></div><button data-key="orb_a">듣기</button><button data-climb="orb_a">5음 오르기</button></div>
+  <div class="row"><div class="name">B 방울 톡<small>몸통 + 한 옥타브 위 작은 물방울</small></div><button data-key="orb_b">듣기</button><button data-climb="orb_b">5음 오르기</button></div>
+  <div class="row"><div class="name">C 부드러운 톡<small>유리빛 없이 몸통 + 옥타브 배음</small></div><button data-key="orb_c">듣기</button><button data-climb="orb_c">5음 오르기</button></div>
+
+  <h2>콤보 끊김 "툭" (lane보다 10dB 작게)</h2>
+  <div class="row"><div class="name">A 내려가는 툭<small>E3 → C#3</small></div><button data-key="break_a">듣기</button></div>
+  <div class="row"><div class="name">B 막힌 툭<small>낮은 몸통 + 아주 작은 낮은 노이즈</small></div><button data-key="break_b">듣기</button></div>
+  <div class="row"><div class="name">C 두 번 툭<small>B3 → E3 짧게 두 번</small></div><button data-key="break_c">듣기</button></div>
+
+  <h2>아슬아슬 "슉" (lane보다 4dB 작게)</h2>
+  <div class="row"><div class="name">A 스치는 슉<small>1~3kHz 바람 + 작은 lane_c 몸통</small></div><button data-key="close_a">듣기</button></div>
+  <div class="row"><div class="name">B 지나가는 슉<small>바람이 높은 쪽에서 낮은 쪽으로</small></div><button data-key="close_b">듣기</button></div>
+  <div class="row"><div class="name">C 짧은 숨 슉<small>더 짧고 몸통이 앞에</small></div><button data-key="close_c">듣기</button></div>
+
+  <h2>같이 듣기</h2>
+  <p>게임의 곡에 맞춰 마디마다: 방울 6개(반 박 간격, 5음으로 오름) → 아슬아슬 → 두 마디에 한 번 콤보 끊김. 각 종류에서 고른 소리(높이·밝기 포함)를 씁니다. 160BPM은 빠른 구간이라 방울이 3dB 작습니다.</p>
+  <div class="row">
+    <button id="demo100">100BPM 같이 듣기</button>
+    <button id="demo160">160BPM 같이 듣기</button>
+    <label>음악 크기 <input id="bgmVol" type="range" min="0" max="1.5" step="0.01" value="0.95"></label>
+  </div>
+
+  <h2>측정</h2>
+  <p>숫자 표는 <a href="report.md">report.md</a>에 있습니다.</p>
+  <img src="spectrograms.png" alt="lane과 후보 9개의 스펙트로그램. 수치는 report.md 표에 있습니다." loading="lazy">
+</main>
+<script src="audio_data.js"></script>
+<script>
+const BARS = 8, BEATS = 4;
+const SFX_GAIN = 0.19;  // 게임의 음악 +4dB, 효과음 -10dB와 같은 비율 (음악 크기 0.95 기준)
+const PENTA = [0, 3, 5, 7, 10, 12, 15, 17];  // 마단조 5음: E G A B D E G A
+const FAST_DB = -3;
+const tweaks = {};
+const chosen = {orb: "orb_a", break: "break_a", close: "close_a"};
+let current = "orb_a";
+let ctx, bgmGain, sfxGain, bgmSource = null, bgmStart = 0, demoBpm = 0, demoTimer = null;
+const buffers = {}, playing = new Set();
+const $ = id => document.getElementById(id);
+const tweakOf = key => tweaks[key] || (tweaks[key] = {pitch:0, bright:12});
+const kindOf = key => key.split("_")[0];
+
+function audio() {
+  if (!ctx) {
+    ctx = new (window.AudioContext || window.webkitAudioContext)();
+    bgmGain = ctx.createGain();
+    bgmGain.gain.value = +$("bgmVol").value;
+    bgmGain.connect(ctx.destination);
+    sfxGain = ctx.createGain();
+    sfxGain.gain.value = SFX_GAIN;
+    sfxGain.connect(ctx.destination);
+  }
+  if (ctx.state === "suspended") ctx.resume();
+  return ctx;
+}
+
+// file://에서는 옆 파일을 소리 데이터로 못 읽어서 audio_data.js에 담긴 것을 푼다. 처음 쓸 때 한 번만
+async function load(key) {
+  if (!buffers[key]) {
+    const bytes = Uint8Array.from(atob(window.SOUND_DATA[key]), c => c.charCodeAt(0));
+    buffers[key] = await audio().decodeAudioData(bytes.buffer);
+  }
+  return buffers[key];
+}
+
+function applyTweak(item) {
+  const {pitch, bright} = tweakOf(item.key);
+  item.src.playbackRate.value = 2 ** ((pitch + item.semitones) / 12);
+  item.filter.frequency.value = bright * 1000;
+}
+
+async function play(key, when, semitones = 0, db = 0) {
+  const buffer = await load(key);
+  const item = {key, semitones, src:audio().createBufferSource(), filter:ctx.createBiquadFilter(), gain:ctx.createGain()};
+  item.src.buffer = buffer;
+  item.filter.type = "lowpass";
+  item.filter.Q.value = 0.5;  // 봉우리가 생기지 않는 값
+  item.gain.gain.value = 10 ** (db / 20);
+  item.src.connect(item.filter).connect(item.gain).connect(sfxGain);
+  applyTweak(item);
+  playing.add(item);
+  item.src.onended = () => playing.delete(item);
+  item.src.start(when || 0);
+}
+
+async function climb(key, start, step, db = 0) {
+  for (let i = 0; i < 6; i++) play(key, start + i * step, PENTA[i], db);
+}
+
+function stopDemo() {
+  clearInterval(demoTimer);
+  demoTimer = null;
+  if (bgmSource) bgmSource.stop();
+  bgmSource = null;
+  demoBpm = 0;
+  mark();
+}
+
+async function startDemo(bpm) {
+  stopDemo();
+  demoBpm = bpm;
+  mark();
+  const buffer = await load(`bgm_${bpm}`);
+  for (const key of Object.values(chosen)) await load(key);
+  const beat = 60 / bpm;
+  const db = bpm >= 160 ? FAST_DB : 0;
+  bgmSource = audio().createBufferSource();
+  bgmSource.buffer = buffer;
+  bgmSource.loop = true;
+  bgmSource.loopEnd = Math.min(beat * BEATS * BARS, buffer.duration);
+  bgmSource.connect(bgmGain);
+  bgmStart = ctx.currentTime + 0.05;
+  bgmSource.start(bgmStart);
+  // 음악과 같은 시계로 다음 마디를 예약해 어긋나지 않게 한다
+  let bar = 1;
+  demoTimer = setInterval(() => {
+    while (bgmStart + bar * BEATS * beat < ctx.currentTime + 0.3) {
+      const at = bgmStart + bar * BEATS * beat;
+      climb(chosen.orb, at, beat / 2, db);
+      play(chosen.close, at + 3 * beat);
+      if (bar % 2 === 0) play(chosen.break, at + 3.5 * beat);
+      bar++;
+    }
+  }, 50);
+}
+
+function mark() {
+  document.querySelectorAll("[data-key]").forEach(b => b.classList.toggle("on", chosen[kindOf(b.dataset.key)] === b.dataset.key));
+  for (const bpm of [100, 160]) {
+    const button = $(`demo${bpm}`);
+    button.classList.toggle("on", demoBpm === bpm);
+    button.textContent = demoBpm === bpm ? "멈춤" : `${bpm}BPM 같이 듣기`;
+  }
+  const {pitch, bright} = tweakOf(current);
+  $("current").textContent = current.replace("_", " ").toUpperCase();
+  $("pitch").value = pitch;
+  $("bright").value = bright;
+  $("pitchValue").textContent = `${pitch > 0 ? "+" : ""}${pitch}반음`;
+  $("brightValue").textContent = `${bright}kHz`;
+}
+
+document.querySelectorAll("[data-key]").forEach(button => {
+  button.onclick = () => { current = button.dataset.key; chosen[kindOf(current)] = current; mark(); play(current); };
+});
+document.querySelectorAll("[data-climb]").forEach(button => {
+  button.onclick = () => { current = button.dataset.climb; chosen.orb = current; mark(); climb(current, audio().currentTime + 0.03, 0.3); };
+});
+for (const bpm of [100, 160]) $(`demo${bpm}`).onclick = () => demoBpm === bpm ? stopDemo() : startDemo(bpm);
+// 슬라이더: 움직이는 동안 재생 중인 소리에 바로 적용하고, 손을 떼면 다시 들려준다
+for (const field of ["pitch", "bright"]) {
+  $(field).oninput = e => {
+    tweakOf(current)[field] = +e.target.value;
+    playing.forEach(item => { if (item.key === current) applyTweak(item); });
+    mark();
+  };
+  $(field).onchange = () => play(current);
+}
+$("bgmVol").oninput = e => { if (bgmGain) bgmGain.gain.value = +e.target.value; };
+mark();
+</script>
+</body>
+</html>

@@ -5,11 +5,13 @@ extends RefCounted
 const DT := 1.0 / 60.0
 
 
-## player: "perfect" 또는 HumanPlayer. 결과 {time, hit: 부딪힌 장애물(없으면 빈 값), step: 그때 단계, gaps: 최소 입력 간격, ladder}
+## player: "perfect" 또는 HumanPlayer. 결과 {time, hit: 부딪힌 장애물(없으면 빈 값), step: 그때 단계, gaps: 최소 입력 간격, ladder,
+##   score: 점수, orbs: 먹은 방울, orbs_seen: 지나간 방울 전체, close: 아슬아슬, distance}
 static func run(seed_value: int, player: Variant, seconds: float, start_step := 0) -> Dictionary:
 	var ladder := MusicLadder.new(start_step)
 	var field := ObstacleField.new(seed_value, ladder)
 	var action := PlayerAction.new()
+	var board := ScoreBoard.new()
 	var lane := RunLogic.START_LANE
 	var x := RunLogic.lane_x(lane)
 	var from_x := x
@@ -26,12 +28,13 @@ static func run(seed_value: int, player: Variant, seconds: float, start_step := 
 		x = lerpf(from_x, RunLogic.lane_x(lane), (1.0 - cos(PI * move_t / Runner.MOVE_TIME)) * 0.5)
 		for item in field.items:
 			if PlayerAction.hits(item["kind"], x - RunLogic.lane_x(item["lane"]), PlayerAction.swept_dz(item), action.height(), action.is_ducking()):
-				return {"time": t, "hit": item, "step": ladder.segment_at(t)["step"], "min_gap": min_gap, "ladder": ladder}
+				return _result(t, item, ladder, min_gap, board)
 		var speed := ladder.speed_at(t)
+		board.watch(field, x, action.height(), action.crouch(), lane, t, speed)
 		var seen := visible_items(field.items, ladder, t)
 		var dir: int
 		if player is HumanPlayer:
-			dir = player.decide(t, seen, lane, action, speed)
+			dir = player.decide(t, seen, lane, action, speed, visible_items(field.orbs, ladder, t))
 		else:
 			dir = AutoPlayer.decide(seen, lane, action, speed, t - last_input)
 		if dir == SwipeDetector.Dir.NONE:
@@ -42,14 +45,23 @@ static func run(seed_value: int, player: Variant, seconds: float, start_step := 
 			SwipeDetector.Dir.LEFT, SwipeDetector.Dir.RIGHT:
 				var next := RunLogic.move_lane(lane, -1 if dir == SwipeDetector.Dir.LEFT else 1)
 				if next != lane:
+					board.note_move(t, lane)
 					lane = next
 					from_x = x
 					move_t = 0.0
 			SwipeDetector.Dir.UP:
-				action.jump()
+				if action.jump():
+					board.note_jump(t)
 			SwipeDetector.Dir.DOWN:
-				action.slide()
-	return {"time": t, "hit": {}, "step": ladder.segment_at(t)["step"], "min_gap": min_gap, "ladder": ladder}
+				if action.slide():
+					board.note_slide(t)
+	return _result(t, {}, ladder, min_gap, board)
+
+
+static func _result(t: float, hit: Dictionary, ladder: MusicLadder, min_gap: float, board: ScoreBoard) -> Dictionary:
+	var distance := ladder.distance_at(t)
+	return {"time": t, "hit": hit, "step": ladder.segment_at(t)["step"], "min_gap": min_gap, "ladder": ladder,
+		"score": board.total(distance), "orbs": board.orbs, "orbs_seen": board.orbs + board.missed, "close": board.close, "distance": distance}
 
 
 ## 플레이어가 알아볼 수 있는 장애물: 안개에서 반쯤 진해진 것까지 (나타나는 0.15초의 가운데)

@@ -20,6 +20,8 @@ const HIGH_TOP := 1.32
 const REMOVE_Z := 6.0
 ## 시작·재시작 뒤 첫 장애물은 1마디 뒤 첫 박에 도착한다
 const FIRST_BEAT := BeatClock.BEATS_PER_BAR
+## 이만큼 방울이 계획돼 있으면 계획을 쉰다 (줄 두 개쯤: 160BPM에서도 3초 넘게 남는다)
+const ORB_AHEAD := 16
 
 ## 현재 살아 있는 장애물: {id:int, lane:int, z:float, kind:Kind, beat:float, arrive:float}. arrive: 주인공(z=0)에 닿을 때의 이동 거리
 var items: Array[Dictionary] = []
@@ -28,8 +30,18 @@ var travel := 0.0
 
 ## 박을 이동 거리로 바꾸는 이번 판의 사다리. 첫 입력에 음악이 시작하며 새 사다리로 바뀐다 (main.begin)
 var ladder: MusicLadder
+## 살아 있는 빛 방울: {id, beat, x, y, lane, trail, index, z, arrive}. 먹거나 놓친 것은 화면이 표시한다 (taken, missed)
+var orbs: Array[Dictionary] = []
+## true면 만든 방울 줄을 모두 남긴다 (공정성 테스트)
+var keep_trails := false
+## 먹거나 놓쳤다는 처리 없이 지워진 방울 수 (시간이 크게 건너뛴 프레임). ScoreBoard.watch가 놓침으로 센다
+var skipped_orbs := 0
+var trails: Array[Dictionary] = []
 var _pattern: BeatPattern
-var _coming: Dictionary  # 아직 생성하지 않은 다음 장애물
+var _orb_trail: OrbTrail
+var _known: Array[Dictionary] = []  # 패턴에서 꺼낸 장애물: 아직 생성 안 된 것 + 방울 줄 계획에 필요한 최근 것
+var _next_spawn := 0               # _known에서 다음에 생성할 번호
+var _orb_queue: Array[Dictionary] = []  # 계획했지만 아직 생성 안 된 방울
 var _next_id := 0
 
 
@@ -37,7 +49,34 @@ var _next_id := 0
 func _init(seed_value: int = 0, run_ladder := MusicLadder.new()) -> void:
 	ladder = run_ladder
 	_pattern = BeatPattern.new(seed_value, FIRST_BEAT, ladder.segments[0]["step"])
-	_coming = _pattern.next()
+	_orb_trail = OrbTrail.new(seed_value, ladder.segments[0]["step"])
+
+
+## 패턴을 beat까지 꺼내 둔다
+func _pull_until(beat: float) -> void:
+	while _known.is_empty() or _known[-1]["beat"] < beat:
+		_known.append(_pattern.next())
+
+
+## 방울 줄 계획을 한 걸음 진행한다 (계획된 방울이 ORB_AHEAD개보다 적을 때만, 한 프레임에 후보 하나).
+## 큐가 비었으면(시작·재시작) 줄 하나가 정해질 때까지 이어서 한다. 다 쓴 옛 장애물은 버린다.
+func _plan_orbs() -> void:
+	while _orb_queue.size() < ORB_AHEAD:
+		_pull_until(_orb_trail.horizon())
+		var trail := _orb_trail.work(_known)
+		if not trail.is_empty():
+			_orb_queue.append_array(trail["orbs"])
+			if keep_trails:
+				trails.append(trail)
+		if not _orb_queue.is_empty():
+			break
+	var keep_from := _orb_trail.next_beat - OrbTrail.LEAD - 2.0
+	var drop := 0
+	while drop < _next_spawn and _known[drop]["beat"] < keep_from:
+		drop += 1
+	if drop > 0:
+		_known = _known.slice(drop)
+		_next_spawn -= drop
 
 
 ## 같은 줄에서 이웃한 두 레인의 기둥이면 그림은 넓은 벽 하나다. 판정은 레인마다 그대로 따로다.
@@ -60,13 +99,47 @@ func step(now: float, spawn: float) -> Dictionary:
 		else:
 			kept.append(item)
 	items = kept
-	while ladder.distance_of_beat(_coming["beat"]) - now <= spawn:
-		var arrive := ladder.distance_of_beat(_coming["beat"])
+	while true:
+		if _next_spawn >= _known.size():
+			_known.append(_pattern.next())
+		var coming := _known[_next_spawn]
+		var arrive := ladder.distance_of_beat(coming["beat"])
+		if arrive - now > spawn:
+			break
+		_next_spawn += 1
 		var z := now - arrive
 		if z <= REMOVE_Z:  # 시간이 크게 건너뛰면(탭 전환 등) 이미 지나간 것은 만들지 않는다
-			var item := {"id": _next_id, "lane": _coming["lane"], "z": z, "kind": _coming["kind"], "beat": _coming["beat"], "arrive": arrive, "shape": _coming["shape"]}
+			var item := {"id": _next_id, "lane": coming["lane"], "z": z, "kind": coming["kind"], "beat": coming["beat"], "arrive": arrive, "shape": coming["shape"]}
 			_next_id += 1
 			items.append(item)
 			spawned.append(item)
-		_coming = _pattern.next()
+	_step_orbs(now, spawn)
 	return {"spawned": spawned, "removed": removed}
+
+
+## 방울도 장애물과 같은 규칙으로 다가오고 생기고 지워진다
+func _step_orbs(now: float, spawn: float) -> void:
+	var kept: Array[Dictionary] = []
+	for orb in orbs:
+		orb["prev_z"] = orb["z"]
+		orb["z"] = now - orb["arrive"]
+		if orb["z"] <= REMOVE_Z:
+			kept.append(orb)
+		elif not orb.has("taken") and not orb.has("missed"):
+			skipped_orbs += 1
+	orbs = kept
+	_plan_orbs()
+	while true:
+		var orb: Dictionary = _orb_queue[0]
+		var arrive := ladder.distance_of_beat(orb["beat"])
+		if arrive - now > spawn:
+			return
+		_orb_queue.pop_front()
+		if _orb_queue.is_empty():
+			_plan_orbs()
+		orb["arrive"] = arrive
+		orb["z"] = now - arrive
+		orb["id"] = _next_id
+		_next_id += 1
+		if orb["z"] <= REMOVE_Z:
+			orbs.append(orb)

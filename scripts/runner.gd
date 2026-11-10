@@ -76,7 +76,11 @@ const FLAT_SPREAD_TIME := 0.05   # 착지 순간 바닥이 다시 평평하게 �
 ## 점프 그림자: 최고 높이(JUMP_HEIGHT)에서의 값. 그 사이는 높이에 비례해 줄어든다
 const SHADOW_AIR_OPACITY := 0.3  # 최고 높이 진하기 (땅 1)
 const SHADOW_AIR_SIZE := 0.6     # 최고 높이 크기 (땅 1)
-const MIRROR_ALPHA := 0.25       # 유리 바닥 반사 불투명도 (바닥에 닿은 곳, ART_BIBLE.md 10)
+const MIRROR_ALPHA := 0.25
+## 빛 방울을 먹은 순간 (ART_BIBLE.md 13): 속빛이 잠깐 밝아지고 아주 작게 출렁인다. 기존 모션을 덮지 않게 작게
+const ABSORB_GLOW := 1.0       # 속빛 세기에 더하는 양 (기본 1.0): 먹은 순간 안이 또렷하게 밝아진다
+const ABSORB_TIME := 0.15      # 돌아오는 시간(초)
+const ABSORB_KICK := 0.8       # 눌림 스프링에 주는 작은 속도 (착지 킥 16의 1/20)       # 유리 바닥 반사 불투명도 (바닥에 닿은 곳, ART_BIBLE.md 10)
 
 var _body: MeshInstance3D
 var _mirror: MeshInstance3D      # 바닥에 비친 몸. 같은 메시 + 같은 셰이더 값이라 모양이 변하는 대로 따라간다
@@ -105,6 +109,7 @@ var _prev_lift_vel := 0.0
 var _crouch_vis := 0.0  # 화면에 보이는 슬라이드 정도: 점프로 슬라이드가 끊겨도 한 프레임에 튀지 않게 천천히 돌아온다
 var _flat := 1.0        # 바닥 평평함 (1 = 땅, 0 = 공중의 둥근 바닥)
 var _shadow_mat: ShaderMaterial
+var _absorb := 0.0     # 방울을 먹은 빛남 (1 → 0)
 ## 점프로 뜬 높이와 슬라이드로 낮아진 정도(0~1). main이 매 프레임 넣어 준다.
 var lift := 0.0
 var crouch := 0.0
@@ -280,6 +285,9 @@ func _process(delta: float) -> void:
 	if crash_t >= 0.0:  # 충돌 모션은 crash_t만으로 정해진다. 스프링은 쉰다
 		_animate()
 		return
+	if _absorb > 0.0:
+		_absorb = maxf(_absorb - delta / ABSORB_TIME, 0.0)
+		_mat.set_shader_parameter("core_strength", 1.0 + ABSORB_GLOW * _absorb)
 	if _reform_t >= 0.0:
 		_reform_t += delta
 		if _reform_t >= REFORM_TIME:
@@ -435,6 +443,12 @@ func reform(lane: int) -> void:
 
 
 ## 박자가 정한 눌림 목표: 바닥에 닿을 때 1, 공중에서 0
+## 빛 방울을 먹었다
+func absorb() -> void:
+	_absorb = 1.0
+	_squish_vel += ABSORB_KICK
+
+
 func _squish_target() -> float:
 	var squash := 1.0 - absf(sin(_phase))
 	return squash * squash

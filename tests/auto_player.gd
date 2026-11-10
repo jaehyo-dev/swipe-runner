@@ -9,6 +9,7 @@ const JUMP_LOOK := 0.25
 const SLIDE_LOOK := 0.28
 const MIN_GAP := BeatPattern.MIN_INPUT_GAP  # 사람 기준 입력 간격
 const PLAN_ROWS := 6      # 내다보는 줄 수
+const ORB_MISS := 3.0     # 욕심쟁이: 방울 레인에 없으면 더하는 비용 (레인 이동 3번만큼 방울을 원한다)
 const ACTION_LEAD := 0.3  # 옆으로 옮긴 뒤 뛰거나 미끄러지려면 줄 도착까지 입력 간격 + 이만큼이 있어야 한다 (늦으면 몸이 덜 떠서 부딪힌다)
 
 
@@ -48,14 +49,20 @@ static func big_input(kind: ObstacleField.Kind, eta: float, player: PlayerAction
 
 
 ## 아직 지나가지 않은 줄들을 가까운 순서로: {beat, eta, lanes: {레인: 종류}}. 같은 레인의 기둥이 먼저 잡히면 그대로 둔다.
-static func rows_ahead(items: Array, speed: float) -> Array[Dictionary]:
+## orbs를 주면(욕심쟁이) 아직 먹지 않은 방울도 줄로 넣는다: orbs: {레인: true}. 옮기는 방울은 도착 레인으로 친다.
+static func rows_ahead(items: Array, speed: float, orbs: Array = []) -> Array[Dictionary]:
 	var by_beat := {}
-	for item: Dictionary in items:
+	for item: Dictionary in items + orbs.filter(func(o): return not o.has("taken")):
 		if item["z"] > PlayerAction.HIT_Z:
 			continue
 		if not by_beat.has(item["beat"]):
 			by_beat[item["beat"]] = {"beat": item["beat"], "eta": -item["z"] / speed, "lanes": {}}
-		by_beat[item["beat"]]["lanes"][item["lane"]] = item["kind"]
+		if item.has("trail"):
+			if not by_beat[item["beat"]].has("orbs"):
+				by_beat[item["beat"]]["orbs"] = {}
+			by_beat[item["beat"]]["orbs"][item["lane"]] = true
+		else:
+			by_beat[item["beat"]]["lanes"][item["lane"]] = item["kind"]
 	var rows: Array[Dictionary] = []
 	rows.assign(by_beat.values())
 	rows.sort_custom(func(a: Dictionary, b: Dictionary) -> bool: return a["beat"] < b["beat"])
@@ -95,6 +102,7 @@ static func _search(rows: Array, i: int, lane: int, cost: float, path: Array[int
 		var time_left: float = row["eta"] if i == 0 else row["eta"] - prev_eta
 		if next != lane and kinds.has(next) and time_left < MIN_GAP * absi(next - lane) + ACTION_LEAD:
 			continue
+		var orb_miss := ORB_MISS if row.has("orbs") and not row["orbs"].has(next) else 0.0
 		path.append(next)
-		_search(rows, i + 1, next, cost + absi(next - lane) + (0.5 if kinds.has(next) else 0.0), path, best, row["eta"])
+		_search(rows, i + 1, next, cost + absi(next - lane) + (0.5 if kinds.has(next) else 0.0) + orb_miss, path, best, row["eta"])
 		path.pop_back()

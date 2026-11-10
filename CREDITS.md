@@ -28,6 +28,7 @@
 | Interface Sounds (scratch_001, drop_001) | 1.0 | Kenney | CC0 1.0 | https://kenney.nl/assets/interface-sounds | `sfx/land.wav` | 있음 |
 | 40 CC0 water / splash / slime SFX (splash_02) | 받은 날 2026-11-08 | rubberduck | CC0 1.0 (페이지 표시가 근거) | https://opengameart.org/content/40-cc0-water-splash-slime-sfx | `sfx/crash.wav` | 있음 |
 | 레인 이동·점프·슬라이드 효과음 | - | 이 프로젝트 (직접 합성) | 프로젝트 소유 | `review/v0.2.8/` | `sfx/lane.wav`, `jump.wav`, `slide.wav` | - |
+| 방울 "톡"·콤보 끊김 "툭"·아슬아슬 "슉" 효과음 | v0.8.0 | 이 프로젝트 (직접 합성, lane_c 재료) | 프로젝트 소유 | `review/v0.8.0/sounds/make_reward_sounds.py` | `sfx/orb.wav`, `combo_break.wav`, `close.wav` | - |
 | 부서짐 효과음 (후보 A·B·C) | - | 이 프로젝트 (직접 합성, 외부 음원 없음) | 프로젝트 소유 | `review/v0.6.0/shatter_sounds/make_shatter_sounds.py` | 게임에 쓰지 않음 (v0.6.1에서 삭제). 듣기 페이지만 기록으로 남김 | - |
 | 배경 음악 Jelly Pulse (원본·A Drive·B Drive+ 13곡) | - | 이 프로젝트 (직접 합성) | 프로젝트 소유 | `tools/make_ladder_music.py` | `music/bgm_*.ogg` | - |
 

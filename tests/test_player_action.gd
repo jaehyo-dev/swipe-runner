@@ -249,3 +249,14 @@ func test_저장된_입력은_한_번만_실행() -> void:
 	var a := _buffered_jump(0.1)
 	a.step(PlayerAction.JUMP_TIME + 0.01)
 	assert_false(a.is_jumping(), "한 번 뛰고 끝")
+
+
+## 저장만 된 입력은 새 동작이 아니다: 아슬아슬 판정 시각을 바꾸지 않게 main이 이 값을 본다 (Codex 리뷰)
+func test_점프_슬라이드는_새로_시작했을_때만_true() -> void:
+	var a := PlayerAction.new()
+	assert_true(a.slide(), "땅에서 슬라이드")
+	assert_false(a.slide(), "슬라이드 중 또 아래는 저장만")
+	assert_true(a.jump(), "슬라이드 중 점프는 끊고 뜀")
+	assert_false(a.jump(), "공중 점프는 저장만")
+	assert_true(a.slide(), "공중 아래는 빠르게 떨어지기 시작")
+	assert_false(a.slide(), "떨어지는 중 아래는 저장만")

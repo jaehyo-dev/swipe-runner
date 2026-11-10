@@ -7,6 +7,9 @@ const SFX := {
 	&"slide": preload("res://assets/audio/sfx/slide.wav"),
 	&"land": preload("res://assets/audio/sfx/land.wav"),
 	&"crash": preload("res://assets/audio/sfx/crash.wav"),
+	&"orb": preload("res://assets/audio/sfx/orb.wav"),
+	&"combo_break": preload("res://assets/audio/sfx/combo_break.wav"),
+	&"close": preload("res://assets/audio/sfx/close.wav"),
 }
 ## MusicLadder.STEPS와 같은 순서 (맨 위 곡 뒤의 단계는 MusicLadder.track으로 마지막 곡)
 const TRACKS: Array[AudioStreamOggVorbis] = [
@@ -32,6 +35,13 @@ const MUSIC_DB := 4.0
 const SFX_DB := -10.0
 const LANE_SEMITONES := 1.0     # 왼쪽 -1반음, 오른쪽 +1반음 (ART_BIBLE 9)
 const JITTER_SEMITONES := 0.5   # 반복해도 기계적으로 들리지 않게
+## 방울 소리가 시끄러워지지 않게 (2026-11-10 사용자): 같은 소리는 동시에 ORB_VOICES개까지, ORB_MERGE초 안에 연달아 먹으면 소리 하나,
+## 압박 단계 ORB_FAST_PRESSURE 이상에서는 ORB_FAST_DB만큼 더 작게. 방울 파일 자체가 lane보다 6dB 작다 (review/v0.8.0/sounds)
+const ORB_VOICES := 3
+const ORB_MERGE := 0.06
+const ORB_FAST_PRESSURE := 6
+const ORB_FAST_DB := -3.0
+const PENTATONIC: Array[int] = [0, 3, 5, 7, 10]  # 마단조 5음 E G A B D (방울 파일이 E4)
 const DUCK_DB := -8.0
 const DUCK_TIME := 1.0          # 음악을 낮춘 뒤 원래대로 돌아올 때까지
 const DUCK_FADE := 0.1          # 내려가고 올라오는 데 쓰는 시간 (뚝 끊겨 들리지 않게)
@@ -70,6 +80,9 @@ var _waiting_switches: Array[Dictionary] = []  # 빠른 단계는 앞 전환이 
 var _clock := BeatClock.new()
 var _pool: Array[AudioStreamPlayer] = []
 var _next := 0
+var _orb_pool: Array[AudioStreamPlayer] = []  # 방울 전용: 이 수만큼만 겹친다
+var _orb_next := 0
+var _last_orb := -INF  # 마지막 방울 소리 시각(초)
 var _blocked := false
 var _rng := RandomNumberGenerator.new()
 var _music_bus := AudioServer.get_bus_index(&"Music")
@@ -91,6 +104,12 @@ func _ready() -> void:
 		player.bus = &"SFX"
 		add_child(player)
 		_pool.append(player)
+	for i in ORB_VOICES:
+		var player := AudioStreamPlayer.new()
+		player.bus = &"SFX"
+		player.stream = SFX[&"orb"]
+		add_child(player)
+		_orb_pool.append(player)
 	# 웹은 소리를 처음 재생할 때 디코딩해 첫 입력 프레임이 막힌다. 로딩 중에 미리 해 둔다
 	if OS.has_feature("web"):
 		var bpm := int(str(JavaScriptBridge.eval("new URLSearchParams(location.search).get('bpm') || 0")))
@@ -261,6 +280,34 @@ func play_lane(direction: int) -> void:
 ## "jump", "slide", "land"
 func play_action(sound: StringName) -> void:
 	_play(sound, _jitter())
+
+
+## 방울 줄 안에서 streak번째(1부터)로 먹은 방울의 높이: 5음을 따라 오르고 다섯 개마다 한 옥타브 위
+static func orb_semitones(streak: int) -> int:
+	var i := maxi(streak - 1, 0)
+	return PENTATONIC[i % PENTATONIC.size()] + 12 * (i / PENTATONIC.size())
+
+
+## 방울 "톡". now: 지금 시각(초, 테스트에서 넣는다). 소리를 냈으면 true
+func play_orb(streak: int, pressure: int, now := Time.get_ticks_usec() / 1000000.0) -> bool:
+	if _blocked or now - _last_orb < ORB_MERGE:
+		return false
+	_last_orb = now
+	var player := _orb_pool[_orb_next]
+	_orb_next = (_orb_next + 1) % ORB_VOICES
+	player.pitch_scale = pow(2.0, orb_semitones(streak) / 12.0)
+	player.volume_db = ORB_FAST_DB if pressure >= ORB_FAST_PRESSURE else 0.0
+	player.play()
+	played.emit(&"orb", player.pitch_scale)
+	return true
+
+
+func play_combo_break() -> void:
+	_play(&"combo_break", 0.0)
+
+
+func play_close() -> void:
+	_play(&"close", _jitter())
 
 
 ## 충돌: 음악을 잠깐 낮추고, 다시 시작할 때까지 다른 효과음을 막는다.

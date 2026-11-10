@@ -139,12 +139,13 @@ func test_흑백과_적록색약에서도_테두리가_바닥에서_보임() -> 
 				assert_true(ratio >= 3.0, "t=%f %s %f" % [t, kind, ratio])
 
 
-## 주인공 > 장애물 기호 > 테두리·파란 기둥 > 난간 > 빛 줄기 > 바닥·하늘 (HDR 가장 센 채널, 단계 빛남이 가장 셀 때 기준)
+## 주인공 > 장애물 기호 > 테두리·파란 기둥 > 빛 방울 > 난간 > 빛 줄기 > 바닥·하늘 (HDR 가장 센 채널, 단계 빛남이 가장 셀 때 기준)
 func test_밝기_순서는_진해져도_단계가_올라도_유지() -> void:
 	for t in TS:
 		var row := BrightnessOrder.table(t, HERO_PEAK)
 		assert_true(row["hero"] > row["mark"], "t=%f 주인공 > 기호: %s" % [t, row])
 		assert_true(row["mark"] > row["edge"], "t=%f 기호 > 테두리: %s" % [t, row])
-		assert_true(row["edge"] > row["rail"], "t=%f 테두리 > 난간: %s" % [t, row])
+		assert_true(row["edge_min"] > row["orb_peak"], "t=%f 테두리 > 빛 방울: %s" % [t, row])
+		assert_true(row["orb"] > row["rail"], "t=%f 빛 방울 > 난간: %s" % [t, row])
 		assert_true(row["rail_rest"] > row["streak"], "t=%f 평소 난간 > 빛 줄기: %s" % [t, row])
 		assert_true(row["streak"] > row["ground"], "t=%f 빛 줄기 > 바닥·하늘: %s" % [t, row])

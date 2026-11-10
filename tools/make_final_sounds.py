@@ -17,7 +17,7 @@ from scipy.signal import lfilter
 ROOT = Path(__file__).resolve().parent.parent
 SRC = ROOT / "review/v0.2.8"
 OUT = ROOT / "assets/audio"
-REPORT = ROOT / "review/v0.6.0/final_sounds"  # 측정표. v0.3.0 기록은 그때 것으로 남긴다
+REPORT = ROOT / "review/v0.8.0/final_sounds"  # 측정표. 이전 버전 기록은 그때 것으로 남긴다
 sys.path.insert(0, str(SRC / "sounds_v2"))
 import make_sounds_v2 as v2  # 후보 보고서와 같은 자로 재려고 측정 함수를 함께 쓴다
 
@@ -31,6 +31,10 @@ SOUNDS = {
     "slide": ("sounds_v3/slide_a.wav", 7, 12000.0, 0.28),
     "land": ("sounds_v2/land_c.wav", -10, 12000.0, 0.37),
     "crash": ("sounds_v3/crash_c.wav", 9, 9500.0, 0.43),
+    # v0.8.0 보상 소리: 후보 페이지(review/v0.8.0/sounds/)의 A. 사용자가 고르면 여기만 바꾼다
+    "orb": ("../v0.8.0/sounds/orb_a.wav", 0, None, 0.09),
+    "combo_break": ("../v0.8.0/sounds/break_a.wav", 0, None, 0.10),
+    "close": ("../v0.8.0/sounds/close_a.wav", 0, None, 0.18),
 }
 LENGTH_TOLERANCE = 0.02
 
@@ -113,7 +117,7 @@ def write_graph(before, after):
 
 
 def write_report(rows):
-    lines = ["# v0.3.0 확정 소리 측정", "",
+    lines = ["# 확정 소리 측정 (v0.8.0에 다시 만듦)", "",
              "`python3 tools/make_final_sounds.py`가 만든 파일을 다시 읽어 쟀다. A 가중 크기·중심 주파수는 후보 보고서와 같은 함수(`make_sounds_v2.py`).", "",
              "| 파일 | 원본 | 높이 | 밝기 | 길이 (예상) | 중심 주파수 | A 가중 크기 | 피크 | 끝 30ms 100~150Hz 전 → 후 |",
              "|---|---|---|---|---|---|---|---|---|"]

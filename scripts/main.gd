@@ -10,6 +10,10 @@ const MIRROR_SHADER := preload("res://shaders/mirror.gdshader")
 const DASH_SHADER := preload("res://shaders/dash.gdshader")
 const STREAK_SHADER := preload("res://shaders/streak.gdshader")
 const SKY_SHADER := preload("res://shaders/sky.gdshader")
+const ORB_SHADER := preload("res://shaders/orb.gdshader")
+const ORB_HALO_SHADER := preload("res://shaders/orb_halo.gdshader")
+const ORB_LINK_SHADER := preload("res://shaders/orb_link.gdshader")
+const ORB_RING_SHADER := preload("res://shaders/orb_ring.gdshader")
 const FONT := preload("res://assets/fonts/Poppins-ExtraLight.ttf")
 ## 장애물 종류별 팔레트 이름 (색은 data/speed_palette.json). 파랑 = 옆으로, 주황 = 위로, 분홍 = 아래로.
 const KINDS := {
@@ -44,12 +48,37 @@ const DASH_SIZE := Vector3(0.07, 0.02, 1.0)  # 레인 경계 빛 대시. 길이�
 const STREAK_MAX := 64          # 빛 줄기 풀 (data/speed_palette.json의 t = 1 값)
 const STREAK_SEED := 606        # 줄기 자리를 고정하는 시드
 const STREAK_X := Vector2(2.9, 8.0)  # 길 바깥 좌우 거리
-const STREAK_Y := Vector2(0.4, 7.0)
+const STREAK_Y := Vector2(2.6, 7.0)  # 방울(높이 2.0까지)과 겹쳐 보이지 않게 길 위쪽 공간 위주로
 const FOV_SLOW := 62.0       # 시야각: 색 진하기와 함께 속도가 오른 뒤 2마디 동안 넓어진다
 const FOV_FAST := 68.0
 const POP_SCALE := 1.22      # 새 기록 순간 거리 숫자가 커지는 배율 (말랑)
 const POP_UP := 0.08
 const POP_DOWN := 0.32
+## 빛 방울과 점수 연출 (ART_BIBLE.md 13)
+const ORB_MAX := 48            # 방울 풀: z -85~+6에 들어오는 방울 수보다 넉넉하다 (반 박 간격 줄, 줄 사이 빈 박)
+const ORB_RADIUS := 0.21       # 지름 0.42 (보이는 크기만, 먹기 범위는 OrbTrail 그대로)
+const ORB_ENERGY := 1.62       # 밝기 순서: 장애물 테두리(1.7 이상) > 방울(+ 박 빛 0.06) > 난간(단계 빛남 때도 1.6 이하). tools/brightness_order.gd가 검사
+const ORB_PULSE_ENERGY := 0.06
+const ORB_HALO_SIZE := 1.1     # 빛 번짐 판의 폭 (연보라 바깥 테)
+const ORB_LINK_WIDTH := 0.035  # 한 줄의 방울을 잇는 빛 실선 굵기
+const RING_TIME := 0.15        # 먹을 때 주인공 둘레에 퍼지는 빛 고리 시간
+const ABSORB_TIME := 0.12      # 먹은 방울이 주인공 쪽으로 빨려 들어가며 사라지는 시간
+const MULT_POP := 1.35         # 배수가 오를 때 커지는 배율
+const MULT_DROP := 60.0        # 콤보가 끊기면 배수 글자가 떨어지는 거리(px)
+const MULT_DROP_TIME := 0.35
+const MULT_TOP := 262.0        # 글자 위치(px, 720x1280 기준): 점수 아래 배수, 그 아래 BEST, 게임 오버 한 줄
+const BEST_TOP := 330.0
+const STATS_TOP := 384.0
+const PLUS_TOP := 150.0
+const PLUS_RISE := 40.0        # "+50"이 떠오르는 거리(px)
+const PLUS_TIME := 0.6
+const FLASH_ALPHA := 0.08      # 아슬아슬 순간 화면이 밝아지는 정도 (과하지 않게)
+const FLASH_TIME := 0.1
+const SWISH_TIME := 0.18       # 주인공 옆을 스치는 흰 빛 줄기
+const SWISH_SIZE := Vector3(0.03, 0.03, 2.2)
+const SWISH_FROM := -2.5
+const SWISH_TO := 2.5
+const SWISH_SIDE := 0.62       # 주인공 가운데에서 옆으로
 const BOOT_COLOR := Color(0.02, 0.016, 0.051)  # project.godot boot_splash/bg_color와 같은 색: 로딩에서 가림막으로 이어져 보이게
 
 ## 0이면 실행할 때마다 무작위. 테스트에서는 0이 아닌 값을 줘서 장애물 레인을 고정한다.
@@ -63,6 +92,7 @@ var travel := 0.0
 ## 지금 세상이 다가오는 속도
 var speed := RunLogic.SPEED
 var record: BestRecord
+var score := ScoreBoard.new()
 var field: ObstacleField
 var runner: Runner
 var player := PlayerAction.new()
@@ -105,11 +135,30 @@ var _last_frame_usec := 0
 var _dead_time := 0.0
 var _restart_label: Label
 var _camera: Camera3D
-var _distance_label: Label
+var _score_label: Label
 var _best_label: Label
 var _pop: Tween
 var _scroll := 0.0
 var _music_t := 0.0  # 박자 기준 시간
+var _orbs: MultiMesh
+var _halos: MultiMesh
+var _orb_material: ShaderMaterial
+var _halo_material: ShaderMaterial
+var _links: MultiMesh             # 한 줄의 이웃 방울을 잇는 빛 실선
+var _link_material: ShaderMaterial
+var _ring: MeshInstance3D          # 먹을 때 퍼지는 빛 고리
+var _ring_material: ShaderMaterial
+var _ring_from := -INF            # 마지막으로 먹은 음악 시각 (고리는 음악 시간으로 돈다)
+var _orb_prewarm := false  # 가림막 뒤에서 방울 재질을 한 번 그린다
+var _mult_label: Label
+var _mult_shown := 1       # 화면에 보이는 배수
+var _mult_tween: Tween
+var _plus_label: Label
+var _plus_tween: Tween
+var _stats_label: Label
+var _flash: ColorRect
+var _swish: MeshInstance3D
+var _swish_material: StandardMaterial3D
 
 
 ## 장애물 하나의 화면 상태. 노드 대신 MultiMesh 한 칸에 옮겨 그린다.
@@ -139,6 +188,7 @@ func _ready() -> void:
 	_build_camera()
 	_build_floor()
 	_build_obstacle_resources()
+	_build_orbs()
 	_apply_tint(AudioManager.ladder.tint_at(0.0))
 	_apply_fog(AudioManager.ladder, 0.0)
 	_place_rows()
@@ -156,6 +206,7 @@ func _ready() -> void:
 func _process(delta: float) -> void:
 	advance(delta, AudioManager.music_time)
 	_sync_pieces()
+	_sync_orbs()
 	if OS.has_feature("web") and prewarmed:
 		_watch_frames()
 
@@ -213,14 +264,144 @@ func advance(delta: float, music_t := NAN) -> void:
 	if not started:
 		return
 	_move_world()
-	_distance_label.text = str(int(travel))
-	if record.update(int(travel)):
-		_on_new_record()
 	for item in field.items:
 		var dx := runner.position.x - RunLogic.lane_x(item["lane"])
 		if not item.has("cleared") and PlayerAction.hits(item["kind"], dx, PlayerAction.swept_dz(item), player.height(), player.is_ducking()):
+			_show_score()
 			_game_over(item)
 			return
+	_on_watch(score.watch(field, runner.position.x, player.height(), player.crouch(), lane, _music_t, speed))
+	_show_score()
+
+
+## 점수 숫자와 최고 기록
+func _show_score() -> void:
+	var total := score.total(travel)
+	_score_label.text = str(total)
+	if record.update(total):
+		_on_new_record()
+
+
+## 이번 프레임에 먹은 방울·끊긴 콤보·아슬아슬의 소리와 연출
+func _on_watch(result: Dictionary) -> void:
+	var pressure := BeatPattern.pressure(AudioManager.ladder.beat_at(_music_t))
+	for orb: Dictionary in result["taken"]:
+		AudioManager.play_orb(orb["streak"], pressure)
+		runner.absorb()
+	if not result["taken"].is_empty():
+		_ring_from = _music_t
+	if result["broke"]:
+		AudioManager.play_combo_break()
+	for close: Dictionary in result["close"]:
+		AudioManager.play_close()
+		_on_close(close["item"], close["points"])
+	_show_multiplier(result["broke"])
+
+
+## 배수 글자: ×2 이상일 때만. 오르면 말랑 커졌다 돌아오고, 끊기면 아래로 떨어지며 사라진다
+func _show_multiplier(broke: bool) -> void:
+	var now := ScoreBoard.multiplier(score.combo)
+	if now == _mult_shown:
+		return
+	var was := _mult_shown
+	_mult_shown = now
+	if _mult_tween:
+		_mult_tween.kill()
+	_mult_label.pivot_offset = _mult_label.size * 0.5
+	if broke or now < was:
+		_mult_tween = create_tween().set_parallel()
+		_mult_tween.tween_property(_mult_label, "position:y", _mult_label.position.y + MULT_DROP, MULT_DROP_TIME).set_trans(Tween.TRANS_QUAD).set_ease(Tween.EASE_IN)
+		_mult_tween.tween_property(_mult_label, "modulate:a", 0.0, MULT_DROP_TIME)
+		_mult_tween.chain().tween_callback(_reset_multiplier)
+		return
+	_reset_multiplier()
+	_mult_label.text = "×%d" % now
+	_mult_label.visible = true
+	_mult_tween = create_tween()
+	_mult_tween.tween_property(_mult_label, "scale", Vector2.ONE * MULT_POP, POP_UP).set_trans(Tween.TRANS_SINE).set_ease(Tween.EASE_OUT)
+	_mult_tween.tween_property(_mult_label, "scale", Vector2.ONE, POP_DOWN).set_trans(Tween.TRANS_BACK).set_ease(Tween.EASE_OUT)
+
+
+func _reset_multiplier() -> void:
+	_mult_label.visible = false
+	_mult_label.modulate.a = 1.0
+	_mult_label.scale = Vector2.ONE
+	_mult_label.position.y = MULT_TOP
+
+
+## 아슬아슬: 주인공 옆을 스치는 흰 빛 줄기, 화면 살짝 밝아짐, 점수 옆 "+50"
+func _on_close(item: Dictionary, points: int) -> void:
+	var side := signf(RunLogic.lane_x(item["lane"]) - runner.position.x)
+	_swish.position = Vector3(runner.position.x + (side if side != 0.0 else -1.0) * SWISH_SIDE, 0.45 + player.height(), SWISH_FROM)
+	_swish.visible = true
+	var swish := create_tween().set_parallel()
+	swish.tween_property(_swish, "position:z", SWISH_TO, SWISH_TIME)
+	swish.tween_property(_swish_material, "albedo_color:a", 0.0, SWISH_TIME).from(0.9)
+	swish.chain().tween_callback(_swish.hide)
+	create_tween().tween_property(_flash, "color:a", 0.0, FLASH_TIME).from(FLASH_ALPHA)
+	if _plus_tween:
+		_plus_tween.kill()
+	var settings := _score_label.label_settings
+	var half := settings.font.get_string_size(_score_label.text, HORIZONTAL_ALIGNMENT_LEFT, -1, settings.font_size).x * 0.5
+	_plus_label.text = "+%d" % points
+	_plus_label.position = Vector2(_score_label.size.x * 0.5 + half + 12.0, PLUS_TOP)
+	_plus_label.modulate.a = 1.0
+	_plus_label.visible = true
+	_plus_tween = create_tween().set_parallel()
+	_plus_tween.tween_property(_plus_label, "position:y", PLUS_TOP - PLUS_RISE, PLUS_TIME).set_trans(Tween.TRANS_SINE).set_ease(Tween.EASE_OUT)
+	_plus_tween.tween_property(_plus_label, "modulate:a", 0.0, PLUS_TIME).set_trans(Tween.TRANS_QUAD).set_ease(Tween.EASE_IN)
+
+
+## 방울 MultiMesh를 다시 쓴다 (많아야 수십 개). 먹은 방울은 ABSORB_TIME 동안 주인공 가운데로 빨려 들며 작아진다.
+func _sync_orbs() -> void:
+	var used := 0
+	var center := runner.position + Vector3(0.0, player.height() + OrbTrail.body_height(player.crouch()) * 0.5, 0.0)
+	if _orb_prewarm:
+		_put_orb(0, Vector3(0.0, 0.6, -5.0), 1.0)
+		used = 1
+	for orb: Dictionary in field.orbs:
+		if used >= ORB_MAX:
+			break
+		var at := Vector3(orb["x"], orb["y"], orb["z"])
+		var size := 1.0
+		if orb.has("taken"):
+			var k := clampf((_music_t - orb["taken"]) / ABSORB_TIME, 0.0, 1.0)
+			if k >= 1.0:
+				continue
+			at = at.lerp(center, ease(k, 0.5))
+			size = 1.0 - k
+		_put_orb(used, at, size)
+		used += 1
+	_orbs.visible_instance_count = used
+	_halos.visible_instance_count = used
+	var links := 0
+	var prev: Dictionary = {}
+	for orb: Dictionary in field.orbs:
+		if links >= ORB_MAX:
+			break
+		# 같은 줄의 바로 다음 방울끼리만, 둘 다 아직 안 먹었을 때 잇는다
+		if not prev.is_empty() and prev["trail"] == orb["trail"] and orb["index"] == prev["index"] + 1 and not prev.has("taken") and not orb.has("taken") and orb["z"] < 0.0 and prev["z"] < 0.0:  # 지나친 방울로 이으면 카메라 쪽으로 큰 사선이 생긴다
+			var a := Vector3(prev["x"], prev["y"], prev["z"])
+			var b := Vector3(orb["x"], orb["y"], orb["z"])
+			var basis := Basis.looking_at(b - a).scaled_local(Vector3(1.0, 1.0, a.distance_to(b)))
+			_links.set_instance_transform(links, Transform3D(basis, (a + b) * 0.5))
+			links += 1
+		prev = orb
+	if _orb_prewarm:  # 실선 셰이더도 가림막 뒤에서 한 번 그려 첫 줄에서 멈칫하지 않게
+		_links.set_instance_transform(0, Transform3D(Basis.IDENTITY, Vector3(0.0, 0.6, -5.5)))
+		links = maxi(links, 1)
+	_links.visible_instance_count = links
+	# 먹은 순간 주인공 둘레에 작은 빛 고리가 퍼졌다 사라진다 (RING_TIME). 연달아 먹으면 처음부터 다시
+	var age := (_music_t - _ring_from) / RING_TIME
+	_ring.visible = _orb_prewarm or (age >= 0.0 and age < 1.0)
+	if _ring.visible:
+		_ring.position = center
+		_ring_material.set_shader_parameter("age", 0.0 if _orb_prewarm else age)
+
+
+func _put_orb(slot: int, at: Vector3, size: float) -> void:
+	_orbs.set_instance_transform(slot, Transform3D(Basis.from_scale(Vector3.ONE * size), at))
+	_halos.set_instance_transform(slot, Transform3D(Basis.from_scale(Vector3.ONE * size), at))
 
 
 ## 음악 시간에서 이동 거리·속도·대시 박자·단계 빛남을 구해 세상에 옮긴다.
@@ -237,7 +418,11 @@ func _move_world() -> void:
 	_apply_stretch(maxf(speed / MusicLadder.STEPS[MusicLadder.TOP]["speed"], 1.0))
 	var beat := ladder.beat_at(_music_t)
 	var beat_time := MusicLadder.beat_time(ladder.segment_at(_music_t)["step"])
-	_dash_material.set_shader_parameter("pulse", BeatRows.pulse(fposmod(beat, 1.0) * beat_time))
+	var pulse := BeatRows.pulse(fposmod(beat, 1.0) * beat_time)
+	_dash_material.set_shader_parameter("pulse", pulse)
+	_orb_material.set_shader_parameter("pulse", pulse)
+	_halo_material.set_shader_parameter("pulse", pulse)
+	_link_material.set_shader_parameter("pulse", pulse)
 	var age := ladder.stage_up_age(_music_t)
 	_set_stage_glow(1.0 - age / STAGE_GLOW_TIME if age >= 0.0 and age < STAGE_GLOW_TIME else 0.0)
 	_apply_step(field.step(travel, ladder.spawn_distance_at(_music_t)))
@@ -281,7 +466,7 @@ func _apply_fog(ladder: MusicLadder, t: float) -> void:
 	if fog == _fog:
 		return
 	_fog = fog
-	var materials: Array[ShaderMaterial] = [_dash_material, _rail_material]
+	var materials: Array[ShaderMaterial] = [_dash_material, _rail_material, _orb_material, _halo_material, _link_material]
 	for shape: Dictionary in _kind_meshes.values():
 		materials.append(shape["block"])
 		materials.append(shape["reflect"])
@@ -416,6 +601,8 @@ func _advance_dead(delta: float) -> void:
 	for item in field.items:
 		item["z"] += speed * slow
 		_obstacles[item["id"]].position.z = item["z"]
+	for orb in field.orbs:
+		orb["z"] += speed * slow
 	runner.crash_t = _dead_time
 	var shake := CrashMotion.shake(_dead_time)
 	_camera.h_offset = shake.x
@@ -434,6 +621,13 @@ func _game_over(item: Dictionary) -> void:
 	record.save()
 	_best_label.visible = true
 	_best_label.text = ("NEW BEST %d" if record.broken else "BEST %d") % record.best
+	_stats_label.text = "ORBS %d · CLOSE %d · %dm" % [score.orbs, score.close, int(travel)]
+	_stats_label.visible = true
+	if _mult_tween:  # 게임 오버 화면은 점수·BEST·한 줄만
+		_mult_tween.kill()
+	_reset_multiplier()
+	_orb_material.set_shader_parameter("pulse", 0.0)
+	_halo_material.set_shader_parameter("pulse", 0.0)
 	# 느려지는 동안 장애물이 조금 더 다가오므로 그만큼 앞으로 간 면에 붙는다
 	var z: float = item["z"] + speed * CrashMotion.SLOW_SCALE * CrashMotion.SLOW_TIME
 	runner.crash(CrashMotion.contact(item["kind"], RunLogic.lane_x(item["lane"]), runner.position.x, z, player.height()))
@@ -449,6 +643,7 @@ func restart() -> void:
 	_tint_clock = _music_t
 	travel = AudioManager.ladder.distance_at(_music_t)  # 출력 지연만큼 음수에서 출발: 다음 프레임에 길이 뒤로 튀지 않게
 	player = PlayerAction.new()
+	score = ScoreBoard.new()
 	_swipe = SwipeDetector.new()
 	var old_pieces := _obstacles.values()
 	_obstacles.clear()
@@ -474,7 +669,12 @@ func restart() -> void:
 	_camera.h_offset = 0.0
 	_camera.v_offset = 0.0
 	_restart_label.visible = false
-	_distance_label.text = "0"
+	_stats_label.visible = false
+	_mult_shown = 1
+	if _mult_tween:
+		_mult_tween.kill()
+	_reset_multiplier()
+	_score_label.text = "0"
 	record.begin_run()
 	_show_best()
 	runner.reform(lane)
@@ -489,10 +689,10 @@ func _show_best() -> void:
 ## 예전 기록을 넘은 순간: 숫자가 한 번 말랑하게 커졌다 돌아온다. 소리는 내지 않는다.
 func _on_new_record() -> void:
 	_best_label.text = "NEW BEST"
-	_distance_label.pivot_offset = _distance_label.size * 0.5
+	_score_label.pivot_offset = _score_label.size * 0.5
 	_pop = create_tween()
-	_pop.tween_property(_distance_label, "scale", Vector2.ONE * POP_SCALE, POP_UP).set_trans(Tween.TRANS_SINE).set_ease(Tween.EASE_OUT)
-	_pop.tween_property(_distance_label, "scale", Vector2.ONE, POP_DOWN).set_trans(Tween.TRANS_BACK).set_ease(Tween.EASE_OUT)
+	_pop.tween_property(_score_label, "scale", Vector2.ONE * POP_SCALE, POP_UP).set_trans(Tween.TRANS_SINE).set_ease(Tween.EASE_OUT)
+	_pop.tween_property(_score_label, "scale", Vector2.ONE, POP_DOWN).set_trans(Tween.TRANS_BACK).set_ease(Tween.EASE_OUT)
 
 
 func _input(event: InputEvent) -> void:
@@ -532,11 +732,13 @@ func apply_swipe(dir: SwipeDetector.Dir) -> void:
 		SwipeDetector.Dir.RIGHT:
 			_change_lane(1)
 		SwipeDetector.Dir.UP:
-			player.jump()
+			if player.jump():  # 저장만 된 입력은 아슬아슬 시각을 바꾸지 않는다
+				score.note_jump(_music_t)
 			_play_action_sounds()
 		SwipeDetector.Dir.DOWN:
 			_drop_clear_hurdles()
-			player.slide()
+			if player.slide():
+				score.note_slide(_music_t)
 			_play_action_sounds()
 
 
@@ -560,6 +762,7 @@ func _change_lane(direction: int) -> void:
 	var next := RunLogic.move_lane(lane, direction)
 	if next == lane:
 		return
+	score.note_move(_music_t, lane)
 	lane = next
 	runner.move_to_lane(lane)
 	AudioManager.play_lane(direction)
@@ -621,13 +824,16 @@ func _prewarm() -> void:
 		samples.append(sample)
 		_leaving.append(sample)
 	_pieces_dirty = true
+	_orb_prewarm = true
+	_swish.visible = true
+	_flash.color.a = 0.01  # 아슬아슬 화면 밝힘도 가림막 뒤에서 한 번 그린다 (첫 아슬아슬에 멈칫하지 않게)
 	var drop: MeshInstance3D = runner.make_prewarm_drop()
 	drop.position = Vector3(0.0, 1.0, -3.0)
 	world.add_child(drop)
 	var cover := CanvasLayer.new()
 	cover.layer = 100
 	add_child(cover)
-	for pair in [["0123456789", _distance_label], [_restart_label.text, _restart_label], ["NEW BEST 0123456789", _best_label]]:  # 글자 그림도 미리 만든다
+	for pair in [["0123456789", _score_label], [_restart_label.text, _restart_label], ["NEW BEST 0123456789", _best_label], ["×+0123456789", _mult_label], ["ORBS CLOSE · m0123456789", _stats_label], ["+0123456789", _plus_label]]:  # 글자 그림도 미리 만든다
 		var label := Label.new()
 		label.text = pair[0]
 		label.label_settings = pair[1].label_settings
@@ -650,6 +856,9 @@ func _prewarm() -> void:
 	for sample in samples:
 		_leaving.erase(sample)
 	_pieces_dirty = true
+	_orb_prewarm = false
+	_swish.visible = false
+	_flash.color.a = 0.0
 	prewarmed = true
 	if OS.has_feature("web"):
 		JavaScriptBridge.eval("window.gameReady = performance.now()")  # 첫 화면이 드러난 시각: 프레임 측정의 시작점
@@ -817,28 +1026,131 @@ func _new_pieces_mesh(mesh: Mesh) -> MultiMesh:
 	return many
 
 
+func _small_label(node_name: String, top: float, size: int, color: Color) -> Label:
+	var label := Label.new()
+	label.name = node_name
+	label.set_anchors_and_offsets_preset(Control.PRESET_TOP_WIDE)
+	label.offset_top = top
+	label.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	label.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	var settings := LabelSettings.new()
+	settings.font = FONT
+	settings.font_size = size
+	settings.font_color = color
+	label.label_settings = settings
+	return label
+
+
+## 빛 방울 풀: 구슬과 빛 번짐 MultiMesh 두 개 (그리는 횟수 2). 새 노드를 만들지 않는다. 아슬아슬 빛 줄기도 하나 만들어 둔다.
+func _build_orbs() -> void:
+	var ball := SphereMesh.new()
+	ball.radius = ORB_RADIUS
+	ball.height = ORB_RADIUS * 2.0
+	ball.radial_segments = 12
+	ball.rings = 6
+	var halo := QuadMesh.new()
+	halo.size = Vector2.ONE * ORB_HALO_SIZE
+	_orb_material = ShaderMaterial.new()
+	_orb_material.shader = ORB_SHADER
+	_orb_material.set_shader_parameter("energy", ORB_ENERGY)
+	_orb_material.set_shader_parameter("pulse_energy", ORB_PULSE_ENERGY)
+	_halo_material = ShaderMaterial.new()
+	_halo_material.shader = ORB_HALO_SHADER
+	var thread := BoxMesh.new()
+	thread.size = Vector3(ORB_LINK_WIDTH, ORB_LINK_WIDTH, 1.0)  # 길이 1을 두 방울 사이 거리로 늘린다
+	_link_material = ShaderMaterial.new()
+	_link_material.shader = ORB_LINK_SHADER
+	for pair: Array in [[ball, _orb_material, "Orbs"], [halo, _halo_material, "OrbHalos"], [thread, _link_material, "OrbLinks"]]:
+		var many := MultiMesh.new()
+		many.transform_format = MultiMesh.TRANSFORM_3D
+		many.mesh = pair[0]
+		many.instance_count = ORB_MAX
+		many.visible_instance_count = 0
+		var node := MultiMeshInstance3D.new()
+		node.name = pair[2]
+		node.multimesh = many
+		node.material_override = pair[1]
+		node.extra_cull_margin = 16384.0
+		add_child(node)
+		match pair[2]:
+			"Orbs": _orbs = many
+			"OrbHalos": _halos = many
+			_: _links = many
+	var ring := QuadMesh.new()
+	ring.size = Vector2.ONE * 2.0
+	_ring_material = ShaderMaterial.new()
+	_ring_material.shader = ORB_RING_SHADER
+	_ring = MeshInstance3D.new()
+	_ring.name = "AbsorbRing"
+	_ring.mesh = ring
+	_ring.material_override = _ring_material
+	_ring.visible = false
+	add_child(_ring)
+	_swish_material = StandardMaterial3D.new()
+	_swish_material.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
+	_swish_material.transparency = BaseMaterial3D.TRANSPARENCY_ALPHA
+	_swish_material.blend_mode = BaseMaterial3D.BLEND_MODE_ADD
+	_swish_material.albedo_color = Color(1, 1, 1, 0.9)
+	var bar := BoxMesh.new()
+	bar.size = SWISH_SIZE
+	_swish = MeshInstance3D.new()
+	_swish.name = "Swish"
+	_swish.mesh = bar
+	_swish.material_override = _swish_material
+	_swish.visible = false
+	add_child(_swish)
+
+
 func _build_ui() -> void:
 	var layer := CanvasLayer.new()
 	add_child(layer)
-	_distance_label = Label.new()
-	_distance_label.name = "DistanceLabel"
-	_distance_label.text = "0"
-	_distance_label.set_anchors_and_offsets_preset(Control.PRESET_TOP_WIDE)
-	_distance_label.offset_top = 90.0
-	_distance_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
-	_distance_label.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	_score_label = Label.new()
+	_score_label.name = "ScoreLabel"
+	_score_label.text = "0"
+	_score_label.set_anchors_and_offsets_preset(Control.PRESET_TOP_WIDE)
+	_score_label.offset_top = 90.0
+	_score_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	_score_label.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	var settings := LabelSettings.new()
 	settings.font = FONT
 	settings.font_size = 170
 	settings.font_color = Color.WHITE
-	_distance_label.label_settings = settings
-	layer.add_child(_distance_label)
+	_score_label.label_settings = settings
+	layer.add_child(_score_label)
 
-	# 최고 기록: 거리 숫자 아래에 작게 (Poppins에 한글이 없어 영문)
+	# 배수: 점수 아래에 작게, ×2 이상일 때만
+	_mult_label = _small_label("MultiplierLabel", MULT_TOP, 52, Color(1, 1, 1, 0.9))
+	_mult_label.visible = false
+	layer.add_child(_mult_label)
+	# 아슬아슬 "+50": 점수 숫자 오른쪽에 떠올랐다 사라진다 (자리는 _on_close)
+	_plus_label = Label.new()
+	_plus_label.name = "PlusLabel"
+	_plus_label.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	var ps := LabelSettings.new()
+	ps.font = FONT
+	ps.font_size = 44
+	ps.font_color = Color(1, 1, 1, 0.85)
+	_plus_label.label_settings = ps
+	_plus_label.visible = false
+	layer.add_child(_plus_label)
+	# 게임 오버 한 줄: 먹은 방울, 아슬아슬, 거리
+	_stats_label = _small_label("StatsLabel", STATS_TOP, 30, Color(1, 1, 1, 0.6))
+	_stats_label.visible = false
+	layer.add_child(_stats_label)
+	# 아슬아슬 순간 화면이 살짝 밝아진다 (글자보다 아래)
+	_flash = ColorRect.new()
+	_flash.name = "Flash"
+	_flash.color = Color(1, 1, 1, 0)
+	_flash.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
+	_flash.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	layer.add_child(_flash)
+	layer.move_child(_flash, 0)
+
+	# 최고 기록: 점수 숫자 아래에 작게 (Poppins에 한글이 없어 영문)
 	_best_label = Label.new()
 	_best_label.name = "BestLabel"
 	_best_label.set_anchors_and_offsets_preset(Control.PRESET_TOP_WIDE)
-	_best_label.offset_top = 290.0
+	_best_label.offset_top = BEST_TOP
 	_best_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 	_best_label.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	var bs := LabelSettings.new()

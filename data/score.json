@@ -1,0 +1,12 @@
+{
+	"_설명": "점수·보상 값 (GAME_SPEC.md v0.8.0). 점수 = 이동 거리(1m당 1점) + 방울 orb_points × 배수 + 아슬아슬 close_points × 배수. multiplier_from[i]: 콤보가 이 값 이상이면 ×(i+1). 마지막 단계 뒤로는 multiplier_every마다 +1, multiplier_max까지. close_window: 장애물 도착 이 시간(초) 안에 피한 입력이면 아슬아슬. trail_orbs: 방울 줄 하나의 방울 수 [최소, 최대], trail_gap: 줄 사이 빈 박 [최소, 최대], move_rate: 방울 하나마다 레인을 옮기기 시작할 확률.",
+	"orb_points": 10,
+	"close_points": 50,
+	"close_window": 0.25,
+	"multiplier_from": [0, 10, 20, 35, 55],
+	"multiplier_every": 30,
+	"multiplier_max": 8,
+	"trail_orbs": [4, 8],
+	"trail_gap": [1, 2],
+	"move_rate": 0.35
+}

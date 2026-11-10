@@ -57,7 +57,7 @@ func test_버스와_기본_크기() -> void:
 
 
 func test_소리_파일_길이와_음악_반복_설정() -> void:
-	var want := {&"lane": 0.10, &"jump": 0.22, &"slide": 0.28, &"land": 0.37, &"crash": 0.43}
+	var want := {&"lane": 0.10, &"jump": 0.22, &"slide": 0.28, &"land": 0.37, &"crash": 0.43, &"orb": 0.09, &"combo_break": 0.10, &"close": 0.18}
 	for sound in want:
 		var stream: AudioStreamWAV = AudioManager.SFX[sound]
 		assert_true(absf(stream.get_length() - want[sound]) < 0.02, "%s %f" % [sound, stream.get_length()])
@@ -382,3 +382,29 @@ func test_데스크톱_곡_전환은_앞_전환이_끝날_때까지_기다림() 
 	assert_eq(AudioManager._switch_frame, 2000)
 	assert_true(AudioManager._waiting_switches.is_empty())
 	AudioManager._switch_frame = -1
+
+
+func test_방울은_줄_안에서_마단조_5음으로_오름() -> void:
+	var want := [0, 3, 5, 7, 10, 12, 15, 17]
+	for i in want.size():
+		assert_eq(AudioManager.orb_semitones(i + 1), want[i], "%d번째" % (i + 1))
+
+
+func test_방울_소리는_0_06초_안이면_하나로_묶이고_동시에_3개까지_빠른_구간은_3dB_작게() -> void:
+	_start_log()
+	AudioManager._last_orb = -INF
+	assert_true(AudioManager.play_orb(1, 0, 100.0))
+	assert_false(AudioManager.play_orb(2, 0, 100.05), "0.05초 뒤는 묶음")
+	assert_true(AudioManager.play_orb(2, 0, 100.07), "0.07초 뒤는 따로")
+	assert_true(AudioManager.play_orb(3, 6, 100.2))
+	assert_eq(_names(), ["orb", "orb", "orb"])
+	assert_true(absf(_semitones(_log[1][1]) - 3.0) < 0.001, "두 번째 음 G")
+	var players := {}
+	for p: AudioStreamPlayer in AudioManager._orb_pool:
+		players[p] = true
+	assert_eq(players.size(), 3, "방울 전용 플레이어 3개")
+	assert_true(AudioManager.play_orb(4, 0, 100.4))
+	var last: AudioStreamPlayer = AudioManager._orb_pool[(AudioManager._orb_next + 2) % 3]
+	assert_eq(last.volume_db, 0.0, "느린 구간")
+	assert_eq(AudioManager._orb_pool[(AudioManager._orb_next + 1) % 3].volume_db, AudioManager.ORB_FAST_DB, "압박 6 이상")
+	AudioManager._last_orb = -INF

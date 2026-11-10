@@ -19,7 +19,9 @@ func _report() -> void:
 	sim = load("res://tests/run_sim.gd")
 	human = load("res://tests/human_player.gd")
 	_model("보통 모델", human.NORMAL)
-	_model("잘하는 모델", human.GOOD)
+	var safe := _model("잘하는 모델 (= 안전 모델, 방울 무시)", human.GOOD)
+	var greedy := _model("욕심쟁이 모델 (잘하는 모델 + 방울 쫓기)", human.GREEDY)
+	_compare({"안전": safe, "욕심쟁이": greedy})
 	_kind_share()
 	print("\n## 완벽한 자동 플레이어 (처음부터 10분)\n")
 	for s in PERFECT_SEEDS:
@@ -45,7 +47,23 @@ func _table(title: String, table: Dictionary, deaths: int) -> int:
 	return top
 
 
-func _model(title: String, model: Dictionary) -> void:
+## 두 모델의 버틴 시간·점수·방울·아슬아슬 비교표
+func _compare(models: Dictionary) -> void:
+	print("\n## 안전 모델 vs 욕심쟁이 (시드 %d개, 중앙값)\n" % SEEDS)
+	print("| 모델 | 버틴 시간 | 점수 | 거리 | 먹은 방울 비율 | 아슬아슬/판 | 25% 점수 | 75% 점수 |\n|---|---|---|---|---|---|---|---|")
+	for title in models:
+		var rs: Array = models[title]
+		var mid := func(key: String, q := 0.5) -> float:
+			var v: Array = rs.map(func(r): return float(r[key]))
+			v.sort()
+			return v[int(q * (v.size() - 1))]
+		var orbs: float = rs.reduce(func(a, r): return a + r["orbs"], 0)
+		var seen: float = rs.reduce(func(a, r): return a + r["orbs_seen"], 0)
+		var close: float = rs.reduce(func(a, r): return a + r["close"], 0)
+		print("| %s | %.1f초 | %d | %dm | %.0f%% | %.1f | %d | %d |" % [title, mid.call("time"), mid.call("score"), mid.call("distance"), 100.0 * orbs / maxf(seen, 1.0), close / rs.size(), mid.call("score", 0.25), mid.call("score", 0.75)])
+
+
+func _model(title: String, model: Dictionary) -> Array:
 	var results := []
 	for s in range(1, SEEDS + 1):
 		results.append(sim.run(s, human.new(s, model), LIMIT))
@@ -84,6 +102,7 @@ func _model(title: String, model: Dictionary) -> void:
 		if absf(results[i]["time"] - mid) < absf(results[near - 1]["time"] - mid):
 			near = i + 1
 	print("\n중앙값에 가까운 시드: %d (%.1f초)" % [near, results[near - 1]["time"]])
+	return results
 
 
 func _kind_share() -> void:

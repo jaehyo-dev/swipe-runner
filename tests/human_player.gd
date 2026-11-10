@@ -9,6 +9,8 @@ const SEE := 0.55           # 줄을 알아채는 순간 (도착까지 남은 �
 ## speed_lag: 속도 1당 늘어나는 반응 지연(초). 화면이 빨리 흐를수록 장애물을 알아보는 데 오래 걸린다는 가정 (시작 속도 15 기준)
 const NORMAL := {"delay": 0.25, "jitter": 0.08, "late": 0.01, "look": 2, "gap": 0.28, "speed_lag": 0.02}
 const GOOD := {"delay": 0.18, "jitter": 0.05, "late": 0.005, "look": 4, "gap": 0.24, "speed_lag": 0.0165}
+## 욕심쟁이: 잘하는 모델 + 보이는 방울을 최대한 쫓는다 (방울 레인을 고르는 비용 AutoPlayer.ORB_MISS)
+const GREEDY := {"delay": 0.18, "jitter": 0.05, "late": 0.005, "look": 4, "gap": 0.24, "speed_lag": 0.0165, "greedy": true}
 const LAG_FROM_SPEED := 15.0
 const LATE := 0.15
 const CLEAR_AHEAD := 0.05   # 앞 줄을 다 지나기 이만큼 전에 움직이기 시작해도 된다 (레인 이동의 앞부분은 아직 제 레인 안이다)
@@ -35,10 +37,10 @@ func _delay(speed := LAG_FROM_SPEED) -> float:
 
 
 ## 시각 now에 낼 입력 (SwipeDetector.Dir)
-func decide(now: float, items: Array, lane: int, player: PlayerAction, speed: float) -> int:
+func decide(now: float, items: Array, lane: int, player: PlayerAction, speed: float, orbs: Array = []) -> int:
 	if _queue.is_empty():
 		_plan_lane = lane
-	var rows := AutoPlayer.rows_ahead(items, speed)
+	var rows := AutoPlayer.rows_ahead(items, speed, orbs if _model.get("greedy", false) else [])
 	for i in rows.size():
 		var row: Dictionary = rows[i]
 		if row["eta"] > SEE + _model["gap"] * MAX_EXTRA_INPUTS:

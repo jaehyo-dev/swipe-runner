@@ -49,22 +49,25 @@ func is_dropping() -> bool:
 	return _drop_t >= 0.0
 
 
-## 점프. 공중이면 착지 때 쓰도록 저장하고, 슬라이드 중이면 슬라이드를 끊고 뛴다.
-func jump() -> void:
+## 점프. 공중이면 착지 때 쓰도록 저장하고, 슬라이드 중이면 슬라이드를 끊고 뛴다. 지금 동작이 시작됐으면 true (저장만 했으면 false)
+func jump() -> bool:
 	if is_jumping():
 		_store(Buffered.JUMP)
-		return
+		return false
 	_start_jump()
+	return true
 
 
-## 슬라이드. 공중이면 빠르게 떨어져 닿자마자 슬라이드로 이어지고, 이미 슬라이드 중이면 끝날 때 쓰도록 저장한다.
-func slide() -> void:
+## 슬라이드. 공중이면 빠르게 떨어져 닿자마자 슬라이드로 이어지고, 이미 슬라이드 중이면 끝날 때 쓰도록 저장한다. 지금 동작이 시작됐으면 true
+func slide() -> bool:
 	if is_dropping() or is_sliding():
 		_store(Buffered.SLIDE)
-	elif is_jumping():
+		return false
+	if is_jumping():
 		_start_drop()
 	else:
 		_start_slide(false)
+	return true
 
 
 func step(dt: float) -> void:
@@ -179,10 +182,11 @@ const SWEEP_MAX := 6.0
 
 
 ## shortcut: 건너뛴 프레임의 가로 위치·높이는 지금 프레임 값으로 본다. 속도 80, 30fps 한 프레임(2.7)이면 차이가 작다.
-static func swept_dz(item: Dictionary) -> float:
+## half: 판정 폭의 반 (빛 방울은 OrbTrail.PICK_Z)
+static func swept_dz(item: Dictionary, half := HIT_Z) -> float:
 	var z: float = item["z"]
 	var prev: float = item.get("prev_z", z)
-	if prev < -HIT_Z and z > HIT_Z and z - prev <= SWEEP_MAX:
+	if prev < -half and z > half and z - prev <= SWEEP_MAX:
 		return 0.0
 	return z
 

@@ -120,7 +120,7 @@ func test_시간이_가면_거리가_늘고_장애물_노드가_생기고_지나
 	main.advance(12.0)
 	await wait_frames()  # 지워진 노드(queue_free)가 정리될 때까지
 	assert_eq(main.travel, RunLogic.SPEED * 12.0)
-	var label: Label = main.find_child("DistanceLabel", true, false)
+	var label: Label = main.find_child("ScoreLabel", true, false)
 	assert_eq(label.text, "180")
 	assert_eq(main._obstacles.size(), main.field.items.size(), "화면의 장애물 수 = 살아 있는 장애물 수")
 	main.queue_free()
@@ -163,14 +163,16 @@ func _strongest(c: Color) -> String:
 	return "g" if c.g >= c.b else "b"
 
 
-func test_화면에_거리와_버전_안내_글자만_있음() -> void:
+func test_화면에_점수와_버전_안내_글자만_있음() -> void:
 	var main := _make_main()
 	await wait_frames()
 	while not main.prewarmed:
 		await wait_frames()
 	await wait_frames()
 	var labels := main.find_children("*", "Label", true, false)
-	assert_eq(labels.size(), 4, "거리 + 최고 + 버전 + (숨겨진) 다시 시작 안내")
+	assert_eq(labels.size(), 7, "점수 + 최고 + 버전 + (숨겨진) 다시 시작 안내·배수·+50·게임 오버 한 줄")
+	for hidden in ["MultiplierLabel", "PlusLabel", "StatsLabel", "RestartLabel"]:
+		assert_false(main.find_child(hidden, true, false).visible, hidden + " 처음엔 숨김")
 	var version: Label = main.find_child("VersionLabel", true, false)
 	assert_eq(version.text, "v" + str(ProjectSettings.get_setting("application/config/version")))
 	main.queue_free()
@@ -301,7 +303,7 @@ func test_다시_시작은_장면을_유지하고_상태만_초기화() -> void:
 	assert_true(is_instance_valid(main) and main.is_inside_tree(), "장면 그대로")
 	assert_true(main.travel <= 0.0 and main.travel > -2.0, "거리는 0(출력 지연만큼 앞)에서 다시")
 	assert_eq(main.lane, 0, "레인 그대로")
-	assert_eq(main.find_child("DistanceLabel", true, false).text, "0")
+	assert_eq(main.find_child("ScoreLabel", true, false).text, "0")
 	assert_false(main.find_child("RestartLabel", true, false).visible)
 	assert_eq(main.field.items.size(), 0, "앞 판은 지우고, 새 장애물은 안개에서 나온다")
 	assert_eq(main._obstacles.size(), main.field.items.size())
@@ -481,16 +483,20 @@ func test_첫_화면_전에_세_종류와_글자를_가림막_뒤에서_그린�
 	main._sync_pieces()
 	for kind in main._kind_meshes:
 		assert_true(main._kind_meshes[kind]["body"].visible_instance_count > 0, "장애물 %d을 그림" % kind)
-	var cover: ColorRect = main.find_children("*", "ColorRect", true, false)[0]
-	assert_true(cover.get_parent().layer > 1, "화면 맨 위 가림막")
-	assert_eq(main.find_children("*", "Label", true, false).size(), 7, "숫자·안내·최고 글자도 그림")
+	main._sync_orbs()
+	assert_true(main._orbs.visible_instance_count > 0 and main._links.visible_instance_count > 0 and main._ring.visible, "방울·실선·고리 셰이더도 미리 그림")
+	var covers := main.find_children("*", "ColorRect", true, false).filter(func(c): return c.name != "Flash")
+	assert_eq(covers.size(), 1)
+	assert_true(covers[0].get_parent().layer > 1, "화면 맨 위 가림막")
+	assert_eq(main.find_children("*", "Label", true, false).size(), 13, "숫자·안내·최고·배수·한 줄·+50 글자도 그림")
+	assert_true(main._flash.color.a > 0.0, "아슬아슬 화면 밝힘도 그림")
 	var nodes_during: int = _count_nodes(main)
 	while not main.prewarmed:
 		await wait_frames()
 	await wait_frames()
-	assert_eq(main.find_children("*", "ColorRect", true, false).size(), 0, "가림막 사라짐")
+	assert_eq(main.find_children("*", "ColorRect", true, false).size(), 1, "가림막 사라짐 (아슬아슬 화면 밝힘만 남음)")
 	assert_true(_count_nodes(main) < nodes_during, "준비용 노드 정리")
-	assert_eq(main.find_children("*", "Label", true, false).size(), 4)
+	assert_eq(main.find_children("*", "Label", true, false).size(), 7)
 	main.queue_free()
 
 
@@ -515,9 +521,10 @@ func test_다시_시작을_20번_해도_노드와_오브젝트가_쌓이지_않�
 		var objects: int = int(Performance.get_monitor(Performance.OBJECT_COUNT)) - main.field.items.size() * 2
 		if round_no == 0:
 			baseline = nodes
+		if round_no == 2:  # 처음 두 판은 한 번만 만드는 것(첫 방울·아슬아슬 소리, 글자 캐시 등)이 생길 수 있다. 그 뒤로 쌓이지 않으면 된다
 			baseline_objects = objects
 		assert_eq(nodes, baseline, "%d판째 노드 수" % round_no)
-		assert_true(objects <= baseline_objects + 2, "%d판째 오브젝트 %d (처음 %d)" % [round_no, objects, baseline_objects])
+		assert_true(round_no < 2 or objects <= baseline_objects + 2, "%d판째 오브젝트 %d (처음 %d)" % [round_no, objects, baseline_objects])
 	main.queue_free()
 
 
@@ -650,15 +657,15 @@ func test_최고를_넘는_순간_숫자가_커졌다_돌아오고_NEW_BEST로_�
 	assert_true(_best_label(main).visible)
 	_run_past(main, old - 1.0)
 	assert_eq(_best_label(main).text, "BEST %d" % old, "넘기 전")
-	assert_eq(main._distance_label.scale, Vector2.ONE)
+	assert_eq(main._score_label.scale, Vector2.ONE)
 	_run_past(main, old + 1.0)
 	assert_eq(_best_label(main).text, "NEW BEST")
 	assert_eq(FileAccess.get_file_as_string(TEST_BEST).to_int(), main.record.best, "게임이 끝나기 전에 저장")
 	# 실제 시간을 기다리면 느린 CI에서 흔들리므로 트윈을 직접 진행한다
 	main._pop.custom_step(main.POP_UP)
-	assert_true(is_equal_approx(main._distance_label.scale.x, main.POP_SCALE), "말랑 커짐 %f" % main._distance_label.scale.x)
+	assert_true(is_equal_approx(main._score_label.scale.x, main.POP_SCALE), "말랑 커짐 %f" % main._score_label.scale.x)
 	main._pop.custom_step(main.POP_DOWN + 0.01)
-	assert_eq(main._distance_label.scale, Vector2.ONE, "돌아옴")
+	assert_eq(main._score_label.scale, Vector2.ONE, "돌아옴")
 	_place(main, _add_obstacle(main), 0.0)
 	main.advance(0.0)
 	assert_eq(_best_label(main).text, "NEW BEST %d" % main.record.best)
@@ -685,4 +692,92 @@ func test_단계가_오를_때만_난간과_대시가_0_3초_밝아짐() -> void
 	assert_true(absf(glow.call(20.15) - 0.5) < 0.01)
 	assert_eq(glow.call(20.31), 0.0, "0.3초 뒤 끝")
 	AudioManager.ladder = MusicLadder.new(0)
+	main.queue_free()
+
+
+## 주인공 자리 바로 앞에 방울 하나를 놓는다 (박은 이동 거리에서 거꾸로 계산하지 않고 z만 쓴다)
+func _put_orb(main: Node3D, trail: int, z := -0.3, y := 0.4) -> Dictionary:
+	var orb := {"id": 9000 + main.field.orbs.size(), "beat": 0.0, "x": main.runner.position.x, "y": y, "lane": main.lane, "trail": trail, "index": 0, "z": z, "arrive": main.travel - z}
+	main.field.orbs.append(orb)
+	return orb
+
+
+func test_방울을_먹으면_점수와_소리_놓치면_콤보가_끊기고_배수가_떨어짐() -> void:
+	var main := _make_main()
+	await wait_frames()
+	main.field.items.clear()
+	var played: Array = []
+	var log := func(sound: StringName, _pitch: float) -> void: played.append(String(sound))
+	AudioManager.played.connect(log)
+	AudioManager.unblock()  # 앞 테스트의 충돌이 효과음을 막아 두었을 수 있다
+	AudioManager._last_orb = -INF
+	main.score.combo = 9
+	_put_orb(main, 1)
+	main.advance(STEP)
+	assert_eq(main.score.orbs, 1)
+	assert_eq(main.score.points, 20, "10번째 방울은 x2")
+	assert_eq(main._score_label.text, str(int(main.travel) + 20))
+	assert_true(main._mult_label.visible, "x2 표시")
+	assert_eq(main._mult_label.text, "×2")
+	assert_true("orb" in played, "톡")
+	var missed := _put_orb(main, 2, -0.3, 2.5)  # 서 있으면 닿지 않는 높이
+	_run(main, 0.2)
+	assert_true(missed.has("missed"), "지나가면 놓침")
+	assert_eq(main.score.combo, 0)
+	assert_true("combo_break" in played, "툭")
+	_run(main, main.MULT_DROP_TIME + 0.05)
+	main._mult_tween.custom_step(1.0)
+	assert_false(main._mult_label.visible, "배수가 떨어지며 사라짐")
+	AudioManager.played.disconnect(log)
+	main.queue_free()
+
+
+func test_같은_줄_이웃_방울만_빛_실선으로_잇고_먹으면_고리가_퍼졌다_사라짐() -> void:
+	var main := _make_main()
+	while not main.prewarmed:  # 준비 중에는 고리를 미리 그려 둔다
+		await wait_frames()
+	main.field.items.clear()
+	main.field.orbs.clear()
+	var first := _put_orb(main, 7, -0.3)
+	var second := _put_orb(main, 7, -1.3)
+	second["index"] = 1
+	var other := _put_orb(main, 8, -2.3)  # 다른 줄: 잇지 않는다
+	other["index"] = 2
+	main._sync_orbs()
+	assert_eq(main._links.visible_instance_count, 1, "같은 줄 이웃 한 쌍")
+	main.advance(STEP)
+	assert_true(first.has("taken"), "첫 방울 먹음")
+	main._sync_orbs()
+	assert_true(main._ring.visible, "빛 고리")
+	assert_eq(main._links.visible_instance_count, 0, "먹은 방울의 실선은 사라짐")
+	main.field.orbs.clear()  # 남은 방울을 또 먹으면 고리가 다시 시작된다
+	_run(main, main.RING_TIME + 0.02)
+	main._sync_orbs()
+	assert_false(main._ring.visible, "0.15초 뒤 사라짐")
+	main.queue_free()
+
+
+func test_아슬아슬은_보너스와_플러스_글자_게임_오버_한_줄() -> void:
+	var main := _make_main()
+	await wait_frames()
+	main.field.items.clear()
+	var item := _put_in_front(main, ObstacleField.Kind.BLOCK, -2.5)  # 속도 15에서 0.17초 뒤 도착
+	main.apply_swipe(SwipeDetector.Dir.LEFT)
+	for i in 24:  # 레인 이동 트윈도 같은 시간만큼
+		if main.runner._move_tween.is_running():
+			main.runner._move_tween.custom_step(STEP)
+		main.advance(STEP)
+	assert_false(main.dead, "피함")
+	assert_eq(main.score.close, 1, "도착 0.17초 전 이동")
+	assert_true(main._plus_label.visible and main._plus_label.text == "+50")
+	assert_true(item.has("passed"))
+	_put_in_front(main, ObstacleField.Kind.BLOCK)
+	main.advance(STEP)
+	assert_true(main.dead)
+	assert_true(main._stats_label.visible)
+	assert_false(main._mult_label.visible, "게임 오버에는 배수를 숨김")
+	assert_eq(main._stats_label.text, "ORBS 0 · CLOSE 1 · %dm" % int(main.travel))
+	main.restart()
+	assert_false(main._stats_label.visible)
+	assert_eq(main.score.close, 0, "재시작하면 0")
 	main.queue_free()
