@@ -91,11 +91,12 @@ func _run() -> void:
 	quit(1 if failed > 0 or passed == 0 else 0)
 
 
-## tests/ 폴더에서 test_*.gd 파일 목록 (이름순)
+## tests/ 폴더에서 test_*.gd 파일 목록 (이름순). 환경 변수 TEST_FILE=test_orbs 처럼 주면 이름에 그 글자가 든 파일만 (바뀐 부분만 돌릴 때)
 func _test_files() -> PackedStringArray:
 	var result: PackedStringArray = []
+	var only := OS.get_environment("TEST_FILE")
 	for file in DirAccess.get_files_at(TEST_DIR):
-		if file.begins_with("test_") and file.ends_with(".gd") and file != "test_case.gd":
+		if file.begins_with("test_") and file.ends_with(".gd") and file != "test_case.gd" and (only.is_empty() or only in file):
 			result.append(TEST_DIR.path_join(file))
 	result.sort()
 	return result

@@ -6,9 +6,11 @@ extends RefCounted
 ##   동작 줄: 턱·막대 1개 / 혼합 겹줄(기둥+턱, 기둥+막대, 턱+막대, 나머지 한 레인은 빈다) / 벽(세 레인을 다 채운다, 앞을 한 박 비운다)
 ##   특별 줄: 반 박이 입력 간격(0.22초) 이상인 BPM은 반 박 레인 이동 2연속(지그재그), 그보다 빠르면 1박 간격 콤보(압박 단계에 따라 2~4줄)
 ##   흐름 줄: 레인 이동 → 점프·슬라이드 → 레인 이동, 또는 점프 → 2박 뒤 슬라이드
-## 압박 단계는 8마디마다 1씩 끝없이 오르고 확률은 data/difficulty.json의 [단계별 기본, 압박당 증가, 상한]이다. 8마디 중 한 마디는 숨 고르기(기둥 1개, 2박 간격).
+## 압박 단계는 8마디마다 1씩 끝없이 오르고 확률은 data/difficulty.json의 [단계별 기본, 압박당 증가, 상한]이다. 8마디 중 한 마디는 숨 고르기(장애물 1개, 2박 간격).
 ## 공정성: _path는 "이 순서를 풀 수 있는 레인"의 증거다. 줄마다 이 레인에서 한 칸 안에 지나갈 곳을 둔다. 턱·막대가 있는 줄끼리는 2박 이상 벌린다.
 ## 줄 읽기는 열린 줄이 보이는 시간 안에 들어올 때만 낸다 (can_read).
+## 옆 동작(v0.8.1): 콤보·섞인 동작·기둥 둘 줄의 "기둥 둘" 중 하나를 side_big 확률로 턱·막대로 바꾼다. 빈 레인은 그대로라
+## 피할 길은 같고, 기둥 비율만 내려간다(45% 이하). 이 턱·막대는 꼭 해야 하는 동작이 아니라 2박 규칙에서 빠진다 (item["side"]).
 
 const Kind := ObstacleField.Kind
 const SPECIAL_FROM := 12.0  # 이 박 전에는 특별 줄을 내지 않는다: 첫 3마디는 읽을 시간을 준다
@@ -16,8 +18,9 @@ const GAP_AFTER_BIG := 2    # 턱·막대가 있는 줄 사이의 박 수 (160BP
 const MIN_INPUT_GAP := 0.22 # 사람 입력 간격(초)
 const LONGEST_ROWS := 6     # 여러 줄 패턴이 차지하는 가장 긴 박 수 (섞인 동작: 빈 박 1 + 동작 + 2박 + 동작 = 5박 뒤까지)
 const READ_LEAD := 0.66     # 줄 읽기: 첫 가운데 기둥이 이만큼(초) 앞일 때 두 칸 건너기를 시작해야 한다 (입력 간격 두 번 + 레인 이동)
-const BLOCK_ROW_LIMIT := 0.6  # 기둥 비율이 이보다 높으면 기둥 줄을 내지 않는다: 동작 줄 몫을 남긴다
-const WALL_MIXED := 0.7     # 벽 중 기둥+턱+막대 (나머지는 기둥 2개 + 동작)
+const BLOCK_ROW_LIMIT := 0.5  # (v0.8.1: 0.6 → 0.5) 기둥 비율이 이보다 높으면 기둥 줄을 내지 않는다: 동작 줄 몫을 남긴다
+const WALL_MIXED := 1.0     # 벽은 기둥+턱+막대 (v0.8.1: 기둥 비율 45% 이하를 위해 기둥 2개 + 동작은 내지 않음)
+const SINGLE_BIG := 0.7    # 장애물 하나 줄(숨 고르기·기둥 줄)이 기둥 대신 턱·막대일 확률 (v0.8.1, 기둥 비율 45% 이하)
 const MIXED_PAIRS: Array[Array] = [[Kind.BLOCK, Kind.LOW], [Kind.BLOCK, Kind.HIGH], [Kind.LOW, Kind.HIGH]]
 
 ## 다음 줄이 도착할 박
@@ -127,19 +130,23 @@ func _make_row() -> void:
 		beat += 1  # 다음 박이면 동작 줄을 낼 수 있다
 	else:
 		_shape = "기둥 줄"
-		_block_row(stage, level)
-		beat += _gap(stage, level)
+		var gap := _gap(stage, level)
+		_block_row(stage, level, gap)
+		beat += gap
 
 
 func _gap(stage: int, level: int) -> int:
 	return 1 if _rng.randf() < rate("one_beat", stage, level) else 2
 
 
-func _add(at_beat: float, lane: int, kind: Kind) -> void:
-	_queue.append({"beat": at_beat, "lane": lane, "kind": kind, "shape": _shape})
+func _add(at_beat: float, lane: int, kind: Kind, side := false) -> void:
+	var item := {"beat": at_beat, "lane": lane, "kind": kind, "shape": _shape}
+	if side:
+		item["side"] = true
+	_queue.append(item)
 	_total += 1
 	_blocks += 1 if kind == Kind.BLOCK else 0
-	if kind != Kind.BLOCK:
+	if kind != Kind.BLOCK and not side:
 		_last_big = at_beat
 
 
@@ -163,17 +170,20 @@ func _step_aside(lane: int) -> void:
 		_path = _beside(lane)
 
 
-func _block_row(stage: int, level: int) -> void:
+## gap: 다음 줄까지 박 수 (2박 이상이면 어느 레인의 옆 동작에서도 다음 길로 건너갈 수 있다)
+func _block_row(stage: int, level: int, gap: int) -> void:
 	if _rng.randf() < rate("double", stage, level):
-		_pair_row(beat, _near_path(), [Kind.BLOCK, Kind.BLOCK])
+		_wall_pair(beat, _near_path(), -1, gap >= 2)
 	else:
 		_single_block()
 
 
+## 장애물 하나: SINGLE_BIG 확률로 턱·막대(두 레인이 비어 꼭 하지 않아도 되는 옆 동작), 아니면 기둥
 func _single_block() -> void:
 	var lane := _rng.randi_range(0, RunLogic.LANE_COUNT - 1)
-	_add(beat, lane, Kind.BLOCK)
-	_step_aside(lane)
+	var big := _rng.randf() < SINGLE_BIG
+	_add(beat, lane, _random_big() if big else Kind.BLOCK, big)
+	_step_aside(lane)  # 턱·막대여도 풀이 레인은 동작이 필요 없는 옆 레인으로
 
 
 ## can_wall: 벽은 한 박 비운 뒤에 놓이므로 숨 고르기 마디 바로 앞 박에서는 내지 않는다
@@ -196,13 +206,40 @@ func _mixed_pair() -> Array:
 
 
 ## 열린 레인 open 하나만 비우고 나머지 두 레인에 kinds를 무작위 순서로 놓는다
-func _pair_row(at_beat: float, open: int, kinds: Array) -> void:
+func _pair_row(at_beat: float, open: int, kinds: Array, side := false) -> void:
 	var order := kinds if _rng.randf() < 0.5 else [kinds[1], kinds[0]]
 	var used := 0
 	for lane in RunLogic.LANE_COUNT:
 		if lane != open:
-			_add(at_beat, lane, order[used])
+			_add(at_beat, lane, order[used], side)
 			used += 1
+	_path = open
+
+
+## 기둥 둘 줄. side_big 확률로 기둥 하나(또는 둘 다)를 옆 동작(턱·막대)으로 바꾼다.
+## 옆 동작 레인은 다음 풀이 레인에서 한 칸 안이어야 한다: 멀면 거기서 동작하다 1박 뒤 줄(안개 속이라 아직 안 보임)에 갇힌다.
+## next: 다음 줄의 빈 레인(모르면 -1 → 다음 패턴의 풀이 레인은 open에서 한 칸 안 어디든). free: 다음 줄이 2박 이상 뒤라 어느 레인이든 된다
+func _wall_pair(at_beat: float, open: int, next := -1, free := false) -> void:
+	var nexts := [next] if next >= 0 else range(maxi(open - 1, 0), mini(open + 2, RunLogic.LANE_COUNT))
+	var safe := []
+	for lane in RunLogic.LANE_COUNT:
+		if lane != open and (free or nexts.all(func(p): return absi(lane - p) <= 1)):
+			safe.append(lane)
+	var step := MusicLadder.scheduled_step(_start_step, beat)
+	if safe.is_empty() or _rng.randf() >= rate("side_big", MusicLadder.info(step)["stage"], pressure(beat)):
+		_pair_row(at_beat, open, [Kind.BLOCK, Kind.BLOCK])
+		return
+	var both := safe.size() == 2 and _rng.randf() < 0.5
+	var big := _random_big()
+	var pick: int = safe[_rng.randi_range(0, safe.size() - 1)]
+	for lane in RunLogic.LANE_COUNT:
+		if lane == open:
+			continue
+		if both:
+			_add(at_beat, lane, big, true)
+			big = Kind.LOW if big == Kind.HIGH else Kind.HIGH
+		else:
+			_add(at_beat, lane, big if lane == pick else Kind.BLOCK, lane == pick)
 	_path = open
 
 
@@ -236,8 +273,12 @@ func _zigzag_rows() -> void:
 func _combo_rows(count: int) -> void:
 	var open := _near_path()
 	for i in count:
-		_pair_row(beat + i, open, _mixed_pair() if i % 2 == 0 else [Kind.BLOCK, Kind.BLOCK])
-		open = _beside(open)
+		var next := _beside(open)
+		if i % 2 == 0:
+			_pair_row(beat + i, open, _mixed_pair())
+		else:
+			_wall_pair(beat + i, open, next if i < count - 1 else -1)
+		open = next
 	beat += count
 
 
@@ -247,18 +288,19 @@ func _combo_rows(count: int) -> void:
 func _flow_rows() -> void:
 	if _rng.randf() < 0.5:
 		var open := _beside(_path)
-		_pair_row(beat, open, [Kind.BLOCK, Kind.BLOCK])
-		_pair_row(beat + 1, open, [Kind.BLOCK, Kind.BLOCK])
+		var next := _beside(open)
+		_pair_row(beat, open, [Kind.BLOCK, Kind.BLOCK])  # 1박 뒤 이 레인에서 꼭 동작해야 해서 옆 동작을 두지 않는다
+		_wall_pair(beat + 1, open, next)
 		_add(beat + 1, open, _random_big())
-		_pair_row(beat + 2, _beside(open), [Kind.BLOCK, Kind.BLOCK])
+		_wall_pair(beat + 2, next)
 		beat += 3
 	else:
 		beat += 1
 		var open := _near_path()
 		var first := _random_big()
-		_pair_row(beat, open, [Kind.BLOCK, Kind.BLOCK])
+		_wall_pair(beat, open, open)
 		_add(beat, open, first)
-		_pair_row(beat + GAP_AFTER_BIG, open, [Kind.BLOCK, Kind.BLOCK])
+		_wall_pair(beat + GAP_AFTER_BIG, open, -1, true)  # 다음 줄은 2박 뒤
 		_add(beat + GAP_AFTER_BIG, open, Kind.LOW if first == Kind.HIGH else Kind.HIGH)
 		beat += GAP_AFTER_BIG * 2
 

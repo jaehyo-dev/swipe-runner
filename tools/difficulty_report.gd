@@ -1,5 +1,5 @@
 extends SceneTree
-## 사람 모델 두 종류의 난이도 표: 시드 50개로 버틴 시간 분포, 사망 시점의 속도·보이는 시간·압박 단계·패턴 종류. 결과는 표준 출력(markdown).
+## 사람 모델(보통·잘함·욕심쟁이·도전)의 난이도 표: 시드 50개로 버틴 시간 분포, 사망 시점의 속도·보이는 시간·압박 단계·패턴 종류. 결과는 표준 출력(markdown).
 ##   godot --headless --path . -s tools/difficulty_report.gd
 ## 끝에 완벽한 자동 플레이어(지연 0, 입력 간격 0.22초)가 처음부터 10분을 달린 결과를 붙인다.
 
@@ -21,7 +21,8 @@ func _report() -> void:
 	_model("보통 모델", human.NORMAL)
 	var safe := _model("잘하는 모델 (= 안전 모델, 방울 무시)", human.GOOD)
 	var greedy := _model("욕심쟁이 모델 (잘하는 모델 + 방울 쫓기)", human.GREEDY)
-	_compare({"안전": safe, "욕심쟁이": greedy})
+	var dare := _model("도전 모델 (잘하는 모델 + 점프·슬라이드를 늦게)", human.DARE)
+	_compare({"안전": safe, "욕심쟁이": greedy, "도전": dare})
 	_kind_share()
 	print("\n## 완벽한 자동 플레이어 (처음부터 10분)\n")
 	for s in PERFECT_SEEDS:
@@ -47,10 +48,10 @@ func _table(title: String, table: Dictionary, deaths: int) -> int:
 	return top
 
 
-## 두 모델의 버틴 시간·점수·방울·아슬아슬 비교표
+## 모델들의 버틴 시간·점수·방울·PERFECT 비교표
 func _compare(models: Dictionary) -> void:
-	print("\n## 안전 모델 vs 욕심쟁이 (시드 %d개, 중앙값)\n" % SEEDS)
-	print("| 모델 | 버틴 시간 | 점수 | 거리 | 먹은 방울 비율 | 아슬아슬/판 | 25% 점수 | 75% 점수 |\n|---|---|---|---|---|---|---|---|")
+	print("\n## 안전·욕심쟁이·도전 모델 (시드 %d개, 중앙값. PERFECT/판은 평균)\n" % SEEDS)
+	print("| 모델 | 버틴 시간 | 점수 | 거리 | 먹은 방울 비율 | PERFECT/판 | 25% 점수 | 75% 점수 |\n|---|---|---|---|---|---|---|---|")
 	for title in models:
 		var rs: Array = models[title]
 		var mid := func(key: String, q := 0.5) -> float:

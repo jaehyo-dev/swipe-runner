@@ -11,6 +11,8 @@ const NORMAL := {"delay": 0.25, "jitter": 0.08, "late": 0.01, "look": 2, "gap": 
 const GOOD := {"delay": 0.18, "jitter": 0.05, "late": 0.005, "look": 4, "gap": 0.24, "speed_lag": 0.0165}
 ## 욕심쟁이: 잘하는 모델 + 보이는 방울을 최대한 쫓는다 (방울 레인을 고르는 비용 AutoPlayer.ORB_MISS)
 const GREEDY := {"delay": 0.18, "jitter": 0.05, "late": 0.005, "look": 4, "gap": 0.24, "speed_lag": 0.0165, "greedy": true}
+## 도전 모델: 잘하는 모델 + 점프·슬라이드를 도착 dare초 전(± 흔들림 jitter의 반)까지 일부러 기다린다 (PERFECT를 노림). 레인 이동은 늦으면 부딪히므로 평소대로
+const DARE := {"delay": 0.18, "jitter": 0.05, "late": 0.005, "look": 4, "gap": 0.24, "speed_lag": 0.0165, "dare": 0.145}
 const LAG_FROM_SPEED := 15.0
 const LATE := 0.15
 const CLEAR_AHEAD := 0.05   # 앞 줄을 다 지나기 이만큼 전에 움직이기 시작해도 된다 (레인 이동의 앞부분은 아직 제 레인 안이다)
@@ -47,7 +49,7 @@ func decide(now: float, items: Array, lane: int, player: PlayerAction, speed: fl
 			break
 		if _handled.has(row["beat"]):
 			continue
-		var plan := _inputs(rows.slice(i, i + _model["look"]))
+		var plan := _inputs(rows.slice(i, i + _model["look"]), player.busy_left())
 		if row["eta"] > SEE + _model["gap"] * maxi(plan.size() - 1, 0):
 			break
 		_handled[row["beat"]] = true
@@ -55,6 +57,9 @@ func decide(now: float, items: Array, lane: int, player: PlayerAction, speed: fl
 		var wait := 0.0
 		if i > 0 and not plan.is_empty() and plan[0] in [SwipeDetector.Dir.LEFT, SwipeDetector.Dir.RIGHT]:
 			wait = now + rows[i - 1]["eta"] + (PlayerAction.HIT_Z / speed) - CLEAR_AHEAD
+		if _model.has("dare") and not plan.is_empty() and plan[-1] in [SwipeDetector.Dir.UP, SwipeDetector.Dir.DOWN]:
+			var aim: float = _model["dare"] + _rng.randf_range(-0.5, 0.5) * _model["jitter"]
+			wait = maxf(wait, now + row["eta"] - aim - _model["gap"] * (plan.size() - 1))
 		_react(now, plan, speed, wait)
 	if _queue.is_empty() or now < _queue[0]["at"]:
 		return SwipeDetector.Dir.NONE
@@ -69,9 +74,9 @@ func decide(now: float, items: Array, lane: int, player: PlayerAction, speed: fl
 
 
 ## 이 줄을 지나려면 낼 입력들: 설 레인을 정하고, 옮긴 뒤 턱·막대면 동작까지
-func _inputs(rows: Array) -> Array[int]:
+func _inputs(rows: Array, busy := 0.0) -> Array[int]:
 	var lane := _plan_lane
-	var target: int = AutoPlayer.best_path(rows, lane)[0]
+	var target: int = AutoPlayer.best_path(rows, lane, busy)[0]
 	var inputs: Array[int] = []
 	while target != lane:
 		inputs.append(AutoPlayer.move_dir(lane, target))

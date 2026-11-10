@@ -4,9 +4,10 @@ extends RefCounted
 ## v0.8.0부터 점수 기록. v0.7.0까지의 최고 거리(user://best.txt)는 지우지 않고 그대로 두며 화면에는 쓰지 않는다.
 
 const PATH := "user://best_score.txt"
-## 새 기록을 넘은 뒤에는 점수가 계속 오르므로 이만큼 늘 때마다 저장한다 (약 1~3초). 첫 순간과 충돌 때는 바로 저장.
-## 10이면 방울 하나(10점)마다 저장하고, 웹은 저장마다 IndexedDB 동기화를 해 방울 줄을 먹는 동안 프레임이 밀렸다
-const SAVE_STEP := 50
+## 새 기록을 넘은 뒤에는 점수가 계속 오르므로 이 시간(초)마다 한 번만 저장한다. 첫 순간과 충돌 때는 바로 저장.
+## 웹은 저장마다 IndexedDB 동기화를 해, 방울마다 저장하면 방울 줄을 먹는 동안 프레임이 밀렸다 (v0.8.0).
+## v0.8.0은 50점 간격이었지만 v0.8.1에서 방울이 65점 × 배수가 되어 다시 방울마다 저장하게 되므로 시간 간격으로 바꿨다
+const SAVE_EVERY := 2.0
 
 var best := 0
 ## 이번 판 시작 전의 기록. 0이면 첫 판이라 "최고" 줄을 숨긴다.
@@ -16,6 +17,7 @@ var broken := false
 
 var _path: String
 var _saved := 0
+var _saved_at := -INF
 
 
 func _init(path := PATH) -> void:
@@ -31,14 +33,15 @@ func begin_run() -> void:
 	broken = false
 
 
-## 이번 판 점수를 알린다. 예전 기록을 넘은 바로 그 순간에만 true
-func update(distance: int) -> bool:
+## 이번 판 점수를 알린다. 예전 기록을 넘은 바로 그 순간에만 true. now: 지금 시각(초, 테스트에서 넣는다)
+func update(distance: int, now := Time.get_ticks_msec() / 1000.0) -> bool:
 	if distance <= best:
 		return false
 	var first := best == previous
 	best = distance
-	if first or best >= _saved + SAVE_STEP:
+	if first or now - _saved_at >= SAVE_EVERY:
 		save()
+		_saved_at = now
 	if first and previous > 0:
 		broken = true
 		return true

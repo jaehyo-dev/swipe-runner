@@ -170,8 +170,9 @@ func test_화면에_점수와_버전_안내_글자만_있음() -> void:
 		await wait_frames()
 	await wait_frames()
 	var labels := main.find_children("*", "Label", true, false)
-	assert_eq(labels.size(), 7, "점수 + 최고 + 버전 + (숨겨진) 다시 시작 안내·배수·+50·게임 오버 한 줄")
-	for hidden in ["MultiplierLabel", "PlusLabel", "StatsLabel", "RestartLabel"]:
+	assert_eq(labels.size(), 8, "점수 + 최고 + 버전 + (숨겨진) 다시 시작 안내·배수·PERFECT·+점수·게임 오버 한 줄")
+	assert_false(main.find_child("PerfectBox", true, false).visible, "PERFECT 처음엔 숨김")
+	for hidden in ["MultiplierLabel", "StatsLabel", "RestartLabel"]:
 		assert_false(main.find_child(hidden, true, false).visible, hidden + " 처음엔 숨김")
 	var version: Label = main.find_child("VersionLabel", true, false)
 	assert_eq(version.text, "v" + str(ProjectSettings.get_setting("application/config/version")))
@@ -485,18 +486,18 @@ func test_첫_화면_전에_세_종류와_글자를_가림막_뒤에서_그린�
 		assert_true(main._kind_meshes[kind]["body"].visible_instance_count > 0, "장애물 %d을 그림" % kind)
 	main._sync_orbs()
 	assert_true(main._orbs.visible_instance_count > 0 and main._links.visible_instance_count > 0 and main._ring.visible, "방울·실선·고리 셰이더도 미리 그림")
-	var covers := main.find_children("*", "ColorRect", true, false).filter(func(c): return c.name != "Flash")
+	var covers := main.find_children("*", "ColorRect", true, false)
 	assert_eq(covers.size(), 1)
 	assert_true(covers[0].get_parent().layer > 1, "화면 맨 위 가림막")
-	assert_eq(main.find_children("*", "Label", true, false).size(), 13, "숫자·안내·최고·배수·한 줄·+50 글자도 그림")
-	assert_true(main._flash.color.a > 0.0, "아슬아슬 화면 밝힘도 그림")
+	assert_eq(main.find_children("*", "Label", true, false).size(), 15, "숫자·안내·최고·배수·한 줄·PERFECT·+점수 글자도 그림")
+	assert_eq(main.find_children("Flash", "", true, false).size(), 0, "v0.8.1: 화면 깜빡임 없음")
 	var nodes_during: int = _count_nodes(main)
 	while not main.prewarmed:
 		await wait_frames()
 	await wait_frames()
-	assert_eq(main.find_children("*", "ColorRect", true, false).size(), 1, "가림막 사라짐 (아슬아슬 화면 밝힘만 남음)")
+	assert_eq(main.find_children("*", "ColorRect", true, false).size(), 0, "가림막 사라짐")
 	assert_true(_count_nodes(main) < nodes_during, "준비용 노드 정리")
-	assert_eq(main.find_children("*", "Label", true, false).size(), 7)
+	assert_eq(main.find_children("*", "Label", true, false).size(), 8)
 	main.queue_free()
 
 
@@ -715,8 +716,8 @@ func test_방울을_먹으면_점수와_소리_놓치면_콤보가_끊기고_배
 	_put_orb(main, 1)
 	main.advance(STEP)
 	assert_eq(main.score.orbs, 1)
-	assert_eq(main.score.points, 20, "10번째 방울은 x2")
-	assert_eq(main._score_label.text, str(int(main.travel) + 20))
+	assert_eq(main.score.points, 130, "10번째 방울은 x2")
+	assert_eq(main._score_label.text, str(int(main.travel) + 130))
 	assert_true(main._mult_label.visible, "x2 표시")
 	assert_eq(main._mult_label.text, "×2")
 	assert_true("orb" in played, "톡")
@@ -725,6 +726,21 @@ func test_방울을_먹으면_점수와_소리_놓치면_콤보가_끊기고_배
 	assert_true(missed.has("missed"), "지나가면 놓침")
 	assert_eq(main.score.combo, 0)
 	assert_true("combo_break" in played, "툭")
+	# 놓친 방울은 0.1초 안에, 늦어도 z 1.5 전에 작아져 없어진다 (카메라 앞에서 커지지 않게)
+	while not main.prewarmed:  # 준비 중 미리 그리는 방울이 빠진 뒤에 센다
+		await wait_frames()
+	main.field.orbs.assign([missed])
+	missed["missed"] = main._music_t
+	missed["z"] = 1.4
+	main._sync_orbs()
+	assert_eq(main._orbs.visible_instance_count, 1, "z 1.4: 아직 작게")
+	missed["z"] = 1.5
+	main._sync_orbs()
+	assert_eq(main._orbs.visible_instance_count, 0, "z 1.5: 없음")
+	missed["z"] = 0.7
+	missed["missed"] = main._music_t - main.MISS_FADE
+	main._sync_orbs()
+	assert_eq(main._orbs.visible_instance_count, 0, "0.1초 뒤: 없음")
 	_run(main, main.MULT_DROP_TIME + 0.05)
 	main._mult_tween.custom_step(1.0)
 	assert_false(main._mult_label.visible, "배수가 떨어지며 사라짐")
@@ -757,26 +773,43 @@ func test_같은_줄_이웃_방울만_빛_실선으로_잇고_먹으면_고리�
 	main.queue_free()
 
 
-func test_아슬아슬은_보너스와_플러스_글자_게임_오버_한_줄() -> void:
+func test_PERFECT는_점수_아래_글자와_더해진_점수_세어_올라가는_숫자_게임_오버_한_줄() -> void:
 	var main := _make_main()
 	await wait_frames()
 	main.field.items.clear()
-	var item := _put_in_front(main, ObstacleField.Kind.BLOCK, -2.5)  # 속도 15에서 0.17초 뒤 도착
+	var item := _put_in_front(main, ObstacleField.Kind.BLOCK, -2.2)  # 속도 15에서 0.15초 뒤 도착 (판정 0.16초)
 	main.apply_swipe(SwipeDetector.Dir.LEFT)
+	var shown := []
 	for i in 24:  # 레인 이동 트윈도 같은 시간만큼
 		if main.runner._move_tween.is_running():
 			main.runner._move_tween.custom_step(STEP)
 		main.advance(STEP)
+		shown.append(int(main._score_label.text) - int(main.score.total(main.travel)))
 	assert_false(main.dead, "피함")
-	assert_eq(main.score.close, 1, "도착 0.17초 전 이동")
-	assert_true(main._plus_label.visible and main._plus_label.text == "+50")
+	assert_eq(main.score.close, 1, "도착 0.15초 전 이동")
+	assert_true(main._perfect_box.visible)
+	assert_eq(main._perfect_label.text, "PERFECT")
+	assert_eq(main._perfect_points.text, "+100")
+	assert_eq(main._perfect_label.label_settings.font, main.PERFECT_FONT, "Poppins Medium")
+	assert_true(shown.min() < 0 and shown.min() > -100, "점수 숫자가 세어 올라가는 중: %s" % str(shown))
+	_run(main, main.COUNT_TIME)
+	assert_eq(main._score_label.text, str(main.score.total(main.travel)), "0.3초 동안 다 올라감")
 	assert_true(item.has("passed"))
+	main._on_close(item, 200)  # 사라지기 전에 또
+	assert_eq(main._perfect_label.text, "PERFECT ×2", "연속")
+	assert_eq(main._perfect_points.text, "+200")
+	assert_true(main._perfect_box.scale.x > 1.2, "다시 '톡' 1.3배에서")
+	main._perfect_tween.custom_step(main.PERFECT_POP_TIME + main.PERFECT_HOLD + main.PERFECT_FADE + 0.01)
+	assert_false(main._perfect_box.visible, "떠오르며 사라짐")
+	main._on_close(item, 100)
+	assert_eq(main._perfect_label.text, "PERFECT", "사라진 뒤에는 처음부터")
 	_put_in_front(main, ObstacleField.Kind.BLOCK)
 	main.advance(STEP)
 	assert_true(main.dead)
 	assert_true(main._stats_label.visible)
 	assert_false(main._mult_label.visible, "게임 오버에는 배수를 숨김")
-	assert_eq(main._stats_label.text, "ORBS 0 · CLOSE 1 · %dm" % int(main.travel))
+	assert_false(main._perfect_box.visible, "게임 오버에는 PERFECT를 숨김")
+	assert_eq(main._stats_label.text, "ORBS 0 · PERFECT 1 · %dm" % int(main.travel))
 	main.restart()
 	assert_false(main._stats_label.visible)
 	assert_eq(main.score.close, 0, "재시작하면 0")

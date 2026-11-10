@@ -1,7 +1,7 @@
 class_name ScoreBoard
 extends RefCounted
 ## 점수·콤보·배수·아슬아슬 판정 (화면과 분리, 자동 테스트 대상). 값은 data/score.json 한 곳.
-## 점수 = 이동 거리(1m당 1점) + 방울 10점 × 배수 + 아슬아슬 50점 × 배수. 배수는 방울을 먹어 콤보가 오른 뒤의 값으로 곱한다.
+## 점수 = 이동 거리(1m당 1점) + 방울 orb_points × 배수 + PERFECT(아슬아슬) close_points × 배수. 배수는 방울을 먹어 콤보가 오른 뒤의 값으로 곱한다.
 
 const DATA_PATH := "res://data/score.json"
 
@@ -99,7 +99,7 @@ func passed(kind: ObstacleField.Kind, item_lane: int, arrive: float, lane: int) 
 
 
 ## 한 프레임 처리 (화면과 자동 플레이가 같이 쓴다). 부딪힘 판정 뒤에 부른다.
-## 닿은 방울은 먹고(taken = t), 주인공 자리를 지난 방울은 놓친다(missed). 판정 폭을 지난 장애물은 아슬아슬인지 본다(passed).
+## 닿은 방울은 먹고(taken = t), 주인공 자리를 지난 방울은 놓친다(missed = t). 판정 폭을 지난 장애물은 아슬아슬인지 본다(passed).
 ## 결과 {taken: 먹은 방울들, broke: 콤보가 끊겼나, close: [{item, points}]}
 func watch(field: ObstacleField, x: float, height: float, crouch: float, lane: int, t: float, speed: float) -> Dictionary:
 	var taken: Array[Dictionary] = []
@@ -116,7 +116,7 @@ func watch(field: ObstacleField, x: float, height: float, crouch: float, lane: i
 			orb["streak"] = trail_streak
 			taken.append(orb)
 		elif orb["z"] > OrbTrail.PICK_Z:
-			orb["missed"] = true
+			orb["missed"] = t  # 놓친 시각: 화면은 이때부터 작아지며 사라진다
 			broke = miss_orb() or broke
 	var closes: Array[Dictionary] = []
 	for item in field.items:

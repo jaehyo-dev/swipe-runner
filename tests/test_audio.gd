@@ -408,3 +408,13 @@ func test_방울_소리는_0_06초_안이면_하나로_묶이고_동시에_3개�
 	assert_eq(last.volume_db, 0.0, "느린 구간")
 	assert_eq(AudioManager._orb_pool[(AudioManager._orb_next + 1) % 3].volume_db, AudioManager.ORB_FAST_DB, "압박 6 이상")
 	AudioManager._last_orb = -INF
+
+
+func test_PERFECT_슉은_전용_재생기_2개로_매번_반음_안쪽으로_흔들림() -> void:
+	_start_log()
+	for i in 3:
+		AudioManager.play_close()
+	assert_eq(_names(), ["close", "close", "close"])
+	assert_eq(AudioManager._close_pool.size(), 2, "같은 소리는 동시에 2개까지")
+	for entry in _log:
+		assert_true(absf(_semitones(entry[1])) <= AudioManager.JITTER_SEMITONES + 0.001, "±0.5반음")

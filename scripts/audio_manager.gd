@@ -38,6 +38,7 @@ const JITTER_SEMITONES := 0.5   # 반복해도 기계적으로 들리지 않게
 ## 방울 소리가 시끄러워지지 않게 (2026-11-10 사용자): 같은 소리는 동시에 ORB_VOICES개까지, ORB_MERGE초 안에 연달아 먹으면 소리 하나,
 ## 압박 단계 ORB_FAST_PRESSURE 이상에서는 ORB_FAST_DB만큼 더 작게. 방울 파일 자체가 lane보다 6dB 작다 (review/v0.8.0/sounds)
 const ORB_VOICES := 3
+const CLOSE_VOICES := 2        # PERFECT "슉"도 같은 소리는 동시에 2개까지 (v0.8.1)
 const ORB_MERGE := 0.06
 const ORB_FAST_PRESSURE := 6
 const ORB_FAST_DB := -3.0
@@ -82,6 +83,8 @@ var _pool: Array[AudioStreamPlayer] = []
 var _next := 0
 var _orb_pool: Array[AudioStreamPlayer] = []  # 방울 전용: 이 수만큼만 겹친다
 var _orb_next := 0
+var _close_pool: Array[AudioStreamPlayer] = []  # PERFECT 전용
+var _close_next := 0
 var _last_orb := -INF  # 마지막 방울 소리 시각(초)
 var _blocked := false
 var _rng := RandomNumberGenerator.new()
@@ -104,12 +107,8 @@ func _ready() -> void:
 		player.bus = &"SFX"
 		add_child(player)
 		_pool.append(player)
-	for i in ORB_VOICES:
-		var player := AudioStreamPlayer.new()
-		player.bus = &"SFX"
-		player.stream = SFX[&"orb"]
-		add_child(player)
-		_orb_pool.append(player)
+	_orb_pool = _voices(&"orb", ORB_VOICES)
+	_close_pool = _voices(&"close", CLOSE_VOICES)
 	# 웹은 소리를 처음 재생할 때 디코딩해 첫 입력 프레임이 막힌다. 로딩 중에 미리 해 둔다
 	if OS.has_feature("web"):
 		var bpm := int(str(JavaScriptBridge.eval("new URLSearchParams(location.search).get('bpm') || 0")))
@@ -306,8 +305,27 @@ func play_combo_break() -> void:
 	_play(&"combo_break", 0.0)
 
 
+## PERFECT "슉": 매번 ±0.5반음 흔들림, 동시에 CLOSE_VOICES개까지 (가장 오래된 것을 다시 쓴다)
 func play_close() -> void:
-	_play(&"close", _jitter())
+	if _blocked:
+		return
+	var player := _close_pool[_close_next]
+	_close_next = (_close_next + 1) % CLOSE_VOICES
+	player.pitch_scale = pow(2.0, _jitter() / 12.0)
+	player.play()
+	played.emit(&"close", player.pitch_scale)
+
+
+## 한 소리 전용 재생기 count개 (이 수만큼만 겹친다)
+func _voices(sound: StringName, count: int) -> Array[AudioStreamPlayer]:
+	var pool: Array[AudioStreamPlayer] = []
+	for i in count:
+		var player := AudioStreamPlayer.new()
+		player.bus = &"SFX"
+		player.stream = SFX[sound]
+		add_child(player)
+		pool.append(player)
+	return pool
 
 
 ## 충돌: 음악을 잠깐 낮추고, 다시 시작할 때까지 다른 효과음을 막는다.

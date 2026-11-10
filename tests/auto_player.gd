@@ -10,6 +10,7 @@ const SLIDE_LOOK := 0.28
 const MIN_GAP := BeatPattern.MIN_INPUT_GAP  # 사람 기준 입력 간격
 const PLAN_ROWS := 6      # 내다보는 줄 수
 const ORB_MISS := 3.0     # 욕심쟁이: 방울 레인에 없으면 더하는 비용 (레인 이동 3번만큼 방울을 원한다)
+const ACTION_SPACING := 0.7  # 길 위의 두 동작(점프·슬라이드) 사이 최소 시간: 옆 동작 줄(v0.8.1)이 1박마다 와도 연달아 고르지 않는다 (160BPM 2박 0.75초)
 const ACTION_LEAD := 0.3  # 옆으로 옮긴 뒤 뛰거나 미끄러지려면 줄 도착까지 입력 간격 + 이만큼이 있어야 한다 (늦으면 몸이 덜 떠서 부딪힌다)
 
 
@@ -21,7 +22,7 @@ static func decide(items: Array, lane: int, player: PlayerAction, speed: float, 
 	if rows.is_empty():
 		return SwipeDetector.Dir.NONE
 	var row: Dictionary = rows[0]
-	var target: int = best_path(rows.slice(0, PLAN_ROWS), lane)[0]
+	var target: int = best_path(rows.slice(0, PLAN_ROWS), lane, player.busy_left())[0]
 	var kinds: Dictionary = row["lanes"]
 	if target != lane:
 		# 두 칸을 건널 때는 넉넉히 먼저 출발한다 (템포 경계에서 속도가 바뀌면 남은 시간 계산이 한 번 튄다)
@@ -70,9 +71,10 @@ static func rows_ahead(items: Array, speed: float, orbs: Array = []) -> Array[Di
 
 
 ## 줄마다 설 레인을 고른다. 기둥은 못 서고, 움직임과 동작이 적은 쪽을 고른다.
-static func best_path(rows: Array, lane: int) -> Array[int]:
+## busy: 지금 동작이 끝날 때까지 남은 시간. 그 뒤 ACTION_LEAD 안에 도착하는 줄에서는 동작을 고르지 않는다
+static func best_path(rows: Array, lane: int, busy := 0.0) -> Array[int]:
 	var best := {"cost": INF, "path": [] as Array[int]}
-	_search(rows, 0, lane, 0.0, [] as Array[int], best, rows[0]["eta"])
+	_search(rows, 0, lane, 0.0, [] as Array[int], best, rows[0]["eta"], busy + ACTION_LEAD - ACTION_SPACING if busy > 0.0 else -INF)
 	if best["path"].is_empty():  # 이미 늦었다 (사람 모델이 늦게 반응한 경우): 가장 가까운 열린 레인으로 간다
 		var open: int = lane
 		for next in RunLogic.LANE_COUNT:
@@ -83,7 +85,7 @@ static func best_path(rows: Array, lane: int) -> Array[int]:
 	return best["path"]
 
 
-static func _search(rows: Array, i: int, lane: int, cost: float, path: Array[int], best: Dictionary, prev_eta: float) -> void:
+static func _search(rows: Array, i: int, lane: int, cost: float, path: Array[int], best: Dictionary, prev_eta: float, last_act: float) -> void:
 	if cost >= best["cost"]:
 		return
 	if i == rows.size():
@@ -102,7 +104,9 @@ static func _search(rows: Array, i: int, lane: int, cost: float, path: Array[int
 		var time_left: float = row["eta"] if i == 0 else row["eta"] - prev_eta
 		if next != lane and kinds.has(next) and time_left < MIN_GAP * absi(next - lane) + ACTION_LEAD:
 			continue
+		if kinds.has(next) and row["eta"] - last_act < ACTION_SPACING:
+			continue
 		var orb_miss := ORB_MISS if row.has("orbs") and not row["orbs"].has(next) else 0.0
 		path.append(next)
-		_search(rows, i + 1, next, cost + absi(next - lane) + (0.5 if kinds.has(next) else 0.0) + orb_miss, path, best, row["eta"])
+		_search(rows, i + 1, next, cost + absi(next - lane) + (0.5 if kinds.has(next) else 0.0) + orb_miss, path, best, row["eta"], row["eta"] if kinds.has(next) else last_act)
 		path.pop_back()

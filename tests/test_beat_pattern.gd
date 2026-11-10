@@ -48,8 +48,8 @@ func test_처음_8마디부터_1박_간격이_섞이고_첫_장애물은_1마디
 	assert_true(ones >= SEEDS.size(), "1박 간격 %d" % ones)
 
 
-## v0.7.0: 겹줄·콤보·섞인 동작이 모두 기둥 벽을 바탕으로 해 기둥 비율 상한을 45%에서 70%로 올렸다
-func test_겹줄은_기둥만이_아니라_섞여서_나오고_기둥_비율은_70퍼센트_이하() -> void:
+## v0.8.1: 기둥 둘 줄을 옆 동작 줄로 바꿔 기둥 비율을 다시 45% 이하로 (v0.7.0은 70%)
+func test_겹줄은_기둥만이_아니라_섞여서_나오고_기둥_비율은_45퍼센트_이하() -> void:
 	var pairs := {}
 	var blocks := 0
 	var total := 0
@@ -63,7 +63,7 @@ func test_겹줄은_기둥만이_아니라_섞여서_나오고_기둥_비율은_
 			total += kinds.size()
 	for want in [[Kind.BLOCK, Kind.LOW], [Kind.BLOCK, Kind.HIGH], [Kind.LOW, Kind.HIGH], [Kind.BLOCK, Kind.LOW, Kind.HIGH]]:
 		assert_true(pairs.has(str(want)), "조합 %s" % str(want))
-	assert_true(float(blocks) / total <= 0.7, "기둥 비율 %f" % (float(blocks) / total))
+	assert_true(float(blocks) / total <= 0.45, "기둥 비율 %f" % (float(blocks) / total))
 
 
 func test_지그재그는_반_박이_입력_간격_0_22초_이상인_BPM만이고_빠르면_1박_콤보() -> void:
@@ -144,7 +144,7 @@ func test_콤보는_2줄에서_4줄까지_길어지고_확률은_상한에서_�
 		assert_true(BeatPattern.rate(name, 0, 3) >= BeatPattern.rate(name, 0, 0), name + " 오름")
 
 
-func test_숨_고르기_마디는_8마디에_한_마디_기둥_하나씩_2박_간격이고_다른_패턴이_넘어오지_않음() -> void:
+func test_숨_고르기_마디는_8마디에_한_마디_장애물_하나씩_2박_간격이고_다른_패턴이_넘어오지_않음() -> void:
 	var breathers := 0
 	for bar in 64:
 		breathers += 1 if BeatPattern.is_breather(bar * 4.0) else 0
@@ -154,7 +154,7 @@ func test_숨_고르기_마디는_8마디에_한_마디_기둥_하나씩_2박_�
 		for beat: float in rows:
 			if BeatPattern.is_breather(beat):
 				assert_eq(rows[beat][0]["shape"], "숨 고르기", "시드 %d 박 %f: 앞 마디의 여러 줄 패턴이 넘어오지 않음" % [s, beat])
-				assert_eq(rows[beat].size(), 1, "기둥 하나")
+				assert_eq(rows[beat].size(), 1, "기둥 또는 턱·막대 하나")
 				assert_false(rows.has(beat + 1.0) and BeatPattern.is_breather(beat + 1.0), "시드 %d 박 %f: 1박 뒤 줄 없음" % [s, beat])
 	assert_eq(BeatPattern.beats_to_breather(0.0), 28.0, "7번째 마디(0부터)")
 	assert_eq(BeatPattern.beats_to_breather(27.5), 0.5)
@@ -196,7 +196,11 @@ func test_열린_레인이_항상_있고_점프_슬라이드_줄끼리는_2박_�
 					used[item["lane"]] = true
 					blocked += 1 if item["kind"] == Kind.BLOCK else 0
 				assert_true(blocked < RunLogic.LANE_COUNT, "박 %f 세 레인이 모두 막힘" % beat)
-				if _big_of(rows[beat]):
+				# 옆 동작(꼭 하지 않아도 되는 턱·막대)이 있는 줄에는 빈 레인이나 풀이용 동작 레인이 남아 있고, 옆 동작은 2박 규칙에서 빠진다
+				if rows[beat].any(func(item): return item.has("side")):
+					var way: bool = rows[beat].size() < RunLogic.LANE_COUNT or rows[beat].any(func(item): return _is_big(item) and not item.has("side"))
+					assert_true(way, "시드 %d 박 %f: 옆 동작 줄에 풀이 레인" % [s, beat])
+				if _big_of(rows[beat].filter(func(item): return not item.has("side"))):
 					assert_true(beat - last_big >= BeatPattern.GAP_AFTER_BIG, "시드 %d 박 %f 앞 동작 %f" % [s, beat, last_big])
 					last_big = beat
 

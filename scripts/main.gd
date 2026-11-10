@@ -15,6 +15,7 @@ const ORB_HALO_SHADER := preload("res://shaders/orb_halo.gdshader")
 const ORB_LINK_SHADER := preload("res://shaders/orb_link.gdshader")
 const ORB_RING_SHADER := preload("res://shaders/orb_ring.gdshader")
 const FONT := preload("res://assets/fonts/Poppins-ExtraLight.ttf")
+const PERFECT_FONT := preload("res://assets/fonts/Poppins-Medium.ttf")  # PERFECT 글자에만
 ## 장애물 종류별 팔레트 이름 (색은 data/speed_palette.json). 파랑 = 옆으로, 주황 = 위로, 분홍 = 아래로.
 const KINDS := {
 	ObstacleField.Kind.BLOCK: "block",
@@ -63,18 +64,26 @@ const ORB_HALO_SIZE := 1.1     # 빛 번짐 판의 폭 (연보라 바깥 테)
 const ORB_LINK_WIDTH := 0.035  # 한 줄의 방울을 잇는 빛 실선 굵기
 const RING_TIME := 0.15        # 먹을 때 주인공 둘레에 퍼지는 빛 고리 시간
 const ABSORB_TIME := 0.12      # 먹은 방울이 주인공 쪽으로 빨려 들어가며 사라지는 시간
+const MISS_FADE := 0.1         # 놓친 방울이 작아지며 사라지는 시간
+const MISS_GONE_Z := 1.5       # 놓친 방울은 이 z 전에 완전히 없어진다
 const MULT_POP := 1.35         # 배수가 오를 때 커지는 배율
 const MULT_DROP := 60.0        # 콤보가 끊기면 배수 글자가 떨어지는 거리(px)
 const MULT_DROP_TIME := 0.35
 const MULT_TOP := 262.0        # 글자 위치(px, 720x1280 기준): 점수 아래 배수, 그 아래 BEST, 게임 오버 한 줄
 const BEST_TOP := 330.0
 const STATS_TOP := 384.0
-const PLUS_TOP := 150.0
-const PLUS_RISE := 40.0        # "+50"이 떠오르는 거리(px)
-const PLUS_TIME := 0.6
-const FLASH_ALPHA := 0.08      # 아슬아슬 순간 화면이 밝아지는 정도 (과하지 않게)
-const FLASH_TIME := 0.1
-const SWISH_TIME := 0.18       # 주인공 옆을 스치는 흰 빛 줄기
+## PERFECT (ART_BIBLE.md 13): BEST 줄 아래에 "PERFECT", 그 아래 더해진 점수. '톡' 자리 잡고 머문 뒤 떠오르며 사라진다
+const PERFECT_TOP := 392.0
+const PERFECT_POINTS_GAP := 70.0  # PERFECT 줄과 "+300" 줄 사이(px)
+const PERFECT_POP := 1.3
+const PERFECT_POP_TIME := 0.12
+const PERFECT_HOLD := 0.6
+const PERFECT_RISE := 30.0
+const PERFECT_FADE := 0.25
+const PERFECT_GLOW := Color(0.788, 0.722, 1.0, 0.75)  # 연보라 #C9B8FF 빛 (민트 금지)
+const COUNT_TIME := 0.3        # PERFECT 점수만큼 점수 숫자가 세어 올라가는 시간
+const SWISH_ALPHA := 0.35      # 주인공 옆을 스치는 흰 빛 줄기 세기. 0이면 끈다 (v0.8.1: 0.9 → 짧고 옅게)
+const SWISH_TIME := 0.1
 const SWISH_SIZE := Vector3(0.03, 0.03, 2.2)
 const SWISH_FROM := -2.5
 const SWISH_TO := 2.5
@@ -153,10 +162,14 @@ var _orb_prewarm := false  # 가림막 뒤에서 방울 재질을 한 번 그린
 var _mult_label: Label
 var _mult_shown := 1       # 화면에 보이는 배수
 var _mult_tween: Tween
-var _plus_label: Label
-var _plus_tween: Tween
+var _perfect_box: Control       # PERFECT 글자와 "+점수" 줄
+var _perfect_label: Label
+var _perfect_points: Label
+var _perfect_tween: Tween
+var _perfect_chain := 0          # 앞 PERFECT가 사라지기 전에 이어진 수
+var _count_lag := 0.0            # 아직 숫자에 안 올라간 PERFECT 점수
+var _count_rate := 0.0           # 초당 올라가는 점수
 var _stats_label: Label
-var _flash: ColorRect
 var _swish: MeshInstance3D
 var _swish_material: StandardMaterial3D
 
@@ -267,17 +280,19 @@ func advance(delta: float, music_t := NAN) -> void:
 	for item in field.items:
 		var dx := runner.position.x - RunLogic.lane_x(item["lane"])
 		if not item.has("cleared") and PlayerAction.hits(item["kind"], dx, PlayerAction.swept_dz(item), player.height(), player.is_ducking()):
+			_count_lag = 0.0  # 게임 오버 숫자는 바로 최종 점수
 			_show_score()
 			_game_over(item)
 			return
 	_on_watch(score.watch(field, runner.position.x, player.height(), player.crouch(), lane, _music_t, speed))
-	_show_score()
+	_show_score(delta)
 
 
-## 점수 숫자와 최고 기록
-func _show_score() -> void:
+## 점수 숫자와 최고 기록. PERFECT 점수는 COUNT_TIME 동안 세어 올라간다 (기록은 바로 반영)
+func _show_score(delta := 0.0) -> void:
+	_count_lag = maxf(_count_lag - _count_rate * delta, 0.0)
 	var total := score.total(travel)
-	_score_label.text = str(total)
+	_score_label.text = str(total - ceili(_count_lag))
 	if record.update(total):
 		_on_new_record()
 
@@ -329,27 +344,42 @@ func _reset_multiplier() -> void:
 	_mult_label.position.y = MULT_TOP
 
 
-## 아슬아슬: 주인공 옆을 스치는 흰 빛 줄기, 화면 살짝 밝아짐, 점수 옆 "+50"
+## PERFECT(아슬아슬): 주인공 옆을 스치는 짧고 옅은 빛 줄기, 점수 아래 "PERFECT"와 더해진 점수.
+## 앞 PERFECT가 사라지기 전에 또 나오면 "PERFECT ×2", "×3"… 숫자만 바뀌고 다시 '톡'
 func _on_close(item: Dictionary, points: int) -> void:
-	var side := signf(RunLogic.lane_x(item["lane"]) - runner.position.x)
-	_swish.position = Vector3(runner.position.x + (side if side != 0.0 else -1.0) * SWISH_SIDE, 0.45 + player.height(), SWISH_FROM)
-	_swish.visible = true
-	var swish := create_tween().set_parallel()
-	swish.tween_property(_swish, "position:z", SWISH_TO, SWISH_TIME)
-	swish.tween_property(_swish_material, "albedo_color:a", 0.0, SWISH_TIME).from(0.9)
-	swish.chain().tween_callback(_swish.hide)
-	create_tween().tween_property(_flash, "color:a", 0.0, FLASH_TIME).from(FLASH_ALPHA)
-	if _plus_tween:
-		_plus_tween.kill()
-	var settings := _score_label.label_settings
-	var half := settings.font.get_string_size(_score_label.text, HORIZONTAL_ALIGNMENT_LEFT, -1, settings.font_size).x * 0.5
-	_plus_label.text = "+%d" % points
-	_plus_label.position = Vector2(_score_label.size.x * 0.5 + half + 12.0, PLUS_TOP)
-	_plus_label.modulate.a = 1.0
-	_plus_label.visible = true
-	_plus_tween = create_tween().set_parallel()
-	_plus_tween.tween_property(_plus_label, "position:y", PLUS_TOP - PLUS_RISE, PLUS_TIME).set_trans(Tween.TRANS_SINE).set_ease(Tween.EASE_OUT)
-	_plus_tween.tween_property(_plus_label, "modulate:a", 0.0, PLUS_TIME).set_trans(Tween.TRANS_QUAD).set_ease(Tween.EASE_IN)
+	if SWISH_ALPHA > 0.0:
+		var side := signf(RunLogic.lane_x(item["lane"]) - runner.position.x)
+		_swish.position = Vector3(runner.position.x + (side if side != 0.0 else -1.0) * SWISH_SIDE, 0.45 + player.height(), SWISH_FROM)
+		_swish.visible = true
+		var swish := create_tween().set_parallel()
+		swish.tween_property(_swish, "position:z", SWISH_TO, SWISH_TIME)
+		swish.tween_property(_swish_material, "albedo_color:a", 0.0, SWISH_TIME).from(SWISH_ALPHA)
+		swish.chain().tween_callback(_swish.hide)
+	_count_lag += points
+	_count_rate = _count_lag / COUNT_TIME
+	_perfect_chain = _perfect_chain + 1 if _perfect_box.visible else 1
+	_perfect_label.text = "PERFECT" if _perfect_chain == 1 else "PERFECT ×%d" % _perfect_chain
+	_perfect_points.text = "+%d" % points
+	if _perfect_tween:
+		_perfect_tween.kill()
+	_perfect_box.visible = true
+	_perfect_box.modulate.a = 1.0
+	_perfect_box.position.y = PERFECT_TOP
+	_perfect_box.pivot_offset = _perfect_box.size * 0.5
+	_perfect_box.scale = Vector2.ONE * PERFECT_POP
+	_perfect_tween = create_tween()
+	_perfect_tween.tween_property(_perfect_box, "scale", Vector2.ONE, PERFECT_POP_TIME).set_trans(Tween.TRANS_BACK).set_ease(Tween.EASE_OUT)
+	_perfect_tween.tween_interval(PERFECT_HOLD)
+	_perfect_tween.tween_property(_perfect_box, "position:y", PERFECT_TOP - PERFECT_RISE, PERFECT_FADE).set_trans(Tween.TRANS_SINE).set_ease(Tween.EASE_OUT)
+	_perfect_tween.parallel().tween_property(_perfect_box, "modulate:a", 0.0, PERFECT_FADE).set_trans(Tween.TRANS_QUAD).set_ease(Tween.EASE_IN)
+	_perfect_tween.tween_callback(_perfect_box.hide)
+
+
+func _hide_perfect() -> void:
+	if _perfect_tween:
+		_perfect_tween.kill()
+	_perfect_box.visible = false
+	_count_lag = 0.0
 
 
 ## 방울 MultiMesh를 다시 쓴다 (많아야 수십 개). 먹은 방울은 ABSORB_TIME 동안 주인공 가운데로 빨려 들며 작아진다.
@@ -369,6 +399,11 @@ func _sync_orbs() -> void:
 			if k >= 1.0:
 				continue
 			at = at.lerp(center, ease(k, 0.5))
+			size = 1.0 - k
+		elif orb.has("missed"):  # 놓친 방울: MISS_FADE초 안에, 늦어도 z MISS_GONE_Z 전에 작아져 없어진다 (카메라 앞에서 커지지 않게)
+			var k := maxf((_music_t - orb["missed"]) / MISS_FADE, (orb["z"] - OrbTrail.PICK_Z) / (MISS_GONE_Z - OrbTrail.PICK_Z))
+			if k >= 1.0:
+				continue
 			size = 1.0 - k
 		_put_orb(used, at, size)
 		used += 1
@@ -621,11 +656,12 @@ func _game_over(item: Dictionary) -> void:
 	record.save()
 	_best_label.visible = true
 	_best_label.text = ("NEW BEST %d" if record.broken else "BEST %d") % record.best
-	_stats_label.text = "ORBS %d · CLOSE %d · %dm" % [score.orbs, score.close, int(travel)]
+	_stats_label.text = "ORBS %d · PERFECT %d · %dm" % [score.orbs, score.close, int(travel)]
 	_stats_label.visible = true
 	if _mult_tween:  # 게임 오버 화면은 점수·BEST·한 줄만
 		_mult_tween.kill()
 	_reset_multiplier()
+	_hide_perfect()
 	_orb_material.set_shader_parameter("pulse", 0.0)
 	_halo_material.set_shader_parameter("pulse", 0.0)
 	# 느려지는 동안 장애물이 조금 더 다가오므로 그만큼 앞으로 간 면에 붙는다
@@ -674,6 +710,7 @@ func restart() -> void:
 	if _mult_tween:
 		_mult_tween.kill()
 	_reset_multiplier()
+	_hide_perfect()
 	_score_label.text = "0"
 	record.begin_run()
 	_show_best()
@@ -826,14 +863,13 @@ func _prewarm() -> void:
 	_pieces_dirty = true
 	_orb_prewarm = true
 	_swish.visible = true
-	_flash.color.a = 0.01  # 아슬아슬 화면 밝힘도 가림막 뒤에서 한 번 그린다 (첫 아슬아슬에 멈칫하지 않게)
 	var drop: MeshInstance3D = runner.make_prewarm_drop()
 	drop.position = Vector3(0.0, 1.0, -3.0)
 	world.add_child(drop)
 	var cover := CanvasLayer.new()
 	cover.layer = 100
 	add_child(cover)
-	for pair in [["0123456789", _score_label], [_restart_label.text, _restart_label], ["NEW BEST 0123456789", _best_label], ["×+0123456789", _mult_label], ["ORBS CLOSE · m0123456789", _stats_label], ["+0123456789", _plus_label]]:  # 글자 그림도 미리 만든다
+	for pair in [["0123456789", _score_label], [_restart_label.text, _restart_label], ["NEW BEST 0123456789", _best_label], ["×+0123456789", _mult_label], ["ORBS PERFECT · m0123456789", _stats_label], ["PERFECT ×0123456789", _perfect_label], ["+0123456789", _perfect_points]]:  # 글자 그림도 미리 만든다
 		var label := Label.new()
 		label.text = pair[0]
 		label.label_settings = pair[1].label_settings
@@ -858,7 +894,6 @@ func _prewarm() -> void:
 	_pieces_dirty = true
 	_orb_prewarm = false
 	_swish.visible = false
-	_flash.color.a = 0.0
 	prewarmed = true
 	if OS.has_feature("web"):
 		JavaScriptBridge.eval("window.gameReady = performance.now()")  # 첫 화면이 드러난 시각: 프레임 측정의 시작점
@@ -1090,7 +1125,7 @@ func _build_orbs() -> void:
 	_swish_material.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
 	_swish_material.transparency = BaseMaterial3D.TRANSPARENCY_ALPHA
 	_swish_material.blend_mode = BaseMaterial3D.BLEND_MODE_ADD
-	_swish_material.albedo_color = Color(1, 1, 1, 0.9)
+	_swish_material.albedo_color = Color(1, 1, 1, SWISH_ALPHA)
 	var bar := BoxMesh.new()
 	bar.size = SWISH_SIZE
 	_swish = MeshInstance3D.new()
@@ -1122,29 +1157,27 @@ func _build_ui() -> void:
 	_mult_label = _small_label("MultiplierLabel", MULT_TOP, 52, Color(1, 1, 1, 0.9))
 	_mult_label.visible = false
 	layer.add_child(_mult_label)
-	# 아슬아슬 "+50": 점수 숫자 오른쪽에 떠올랐다 사라진다 (자리는 _on_close)
-	_plus_label = Label.new()
-	_plus_label.name = "PlusLabel"
-	_plus_label.mouse_filter = Control.MOUSE_FILTER_IGNORE
-	var ps := LabelSettings.new()
-	ps.font = FONT
-	ps.font_size = 44
-	ps.font_color = Color(1, 1, 1, 0.85)
-	_plus_label.label_settings = ps
-	_plus_label.visible = false
-	layer.add_child(_plus_label)
-	# 게임 오버 한 줄: 먹은 방울, 아슬아슬, 거리
+	# 게임 오버 한 줄: 먹은 방울, PERFECT, 거리
 	_stats_label = _small_label("StatsLabel", STATS_TOP, 30, Color(1, 1, 1, 0.6))
 	_stats_label.visible = false
 	layer.add_child(_stats_label)
-	# 아슬아슬 순간 화면이 살짝 밝아진다 (글자보다 아래)
-	_flash = ColorRect.new()
-	_flash.name = "Flash"
-	_flash.color = Color(1, 1, 1, 0)
-	_flash.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
-	_flash.mouse_filter = Control.MOUSE_FILTER_IGNORE
-	layer.add_child(_flash)
-	layer.move_child(_flash, 0)
+	# PERFECT: 흰 글자 + 연보라 빛(그림자를 번지게), 그 아래 더해진 점수. 둘을 한 상자로 움직인다 (_on_close)
+	_perfect_box = Control.new()
+	_perfect_box.name = "PerfectBox"
+	_perfect_box.set_anchors_and_offsets_preset(Control.PRESET_TOP_WIDE)
+	_perfect_box.offset_top = PERFECT_TOP
+	_perfect_box.offset_bottom = PERFECT_TOP + PERFECT_POINTS_GAP + 60.0
+	_perfect_box.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	_perfect_box.visible = false
+	layer.add_child(_perfect_box)
+	_perfect_label = _small_label("PerfectLabel", 0.0, 60, Color.WHITE)
+	_perfect_label.label_settings.font = PERFECT_FONT
+	_perfect_label.label_settings.shadow_color = PERFECT_GLOW
+	_perfect_label.label_settings.shadow_size = 14
+	_perfect_label.label_settings.shadow_offset = Vector2.ZERO
+	_perfect_box.add_child(_perfect_label)
+	_perfect_points = _small_label("PerfectPoints", PERFECT_POINTS_GAP, 44, Color(1, 1, 1, 0.9))
+	_perfect_box.add_child(_perfect_points)
 
 	# 최고 기록: 점수 숫자 아래에 작게 (Poppins에 한글이 없어 영문)
 	_best_label = Label.new()

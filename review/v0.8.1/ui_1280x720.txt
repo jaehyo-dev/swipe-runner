@@ -1,0 +1,1 @@
+ui: 죽음 false, 점수 2157, PERFECT ×3 +300, 배수 ×3, BEST 보임 true

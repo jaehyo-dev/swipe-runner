@@ -49,6 +49,15 @@ func is_dropping() -> bool:
 	return _drop_t >= 0.0
 
 
+## 지금 점프·슬라이드가 끝날 때까지 남은 시간(초). 자동 플레이어가 다음 동작을 고를 때 쓴다 (떨어지는 중은 대략값)
+func busy_left() -> float:
+	if is_sliding():
+		return SLIDE_TIME - _slide_t
+	if is_jumping():
+		return JUMP_TIME - _jump_t
+	return 0.0
+
+
 ## 점프. 공중이면 착지 때 쓰도록 저장하고, 슬라이드 중이면 슬라이드를 끊고 뛴다. 지금 동작이 시작됐으면 true (저장만 했으면 false)
 func jump() -> bool:
 	if is_jumping():
