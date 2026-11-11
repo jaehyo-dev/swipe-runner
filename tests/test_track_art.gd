@@ -209,7 +209,7 @@ func test_기둥에만_접지_그림자() -> void:
 func test_기둥은_먼_것부터_그림() -> void:
 	var main := _make_main()
 	await wait_frames()
-	while not main.prewarmed:
+	while not main.warmed:
 		await wait_frames()
 	main.clear_pieces()
 	for z in [-10.0, -30.0, -20.0, -40.0]:  # 일부러 뒤섞어 넣는다
@@ -238,7 +238,7 @@ func test_연속_블록의_뒤쪽만_흐림() -> void:
 func test_장애물은_종류별_MultiMesh_하나이고_바뀔_때만_다시_씀() -> void:
 	var main := _make_main()
 	await wait_frames()
-	while not main.prewarmed:  # 미리 준비용 장애물이 사라질 때까지
+	while not main.warmed:  # 미리 준비용 장애물이 사라질 때까지
 		await wait_frames()
 	main.clear_pieces()
 	for i in 5:
@@ -585,7 +585,7 @@ func _passing(main: Node3D, id: int, kind: K, lane: int, ahead := 0.01) -> Dicti
 func test_지나간_장애물은_그대로_뒤로_지나가_z6에서_사라짐() -> void:
 	AudioManager.unblock()
 	var main := _make_main()
-	while not main.prewarmed:
+	while not main.warmed:
 		await wait_frames()
 	main.field.items.clear()
 	main.clear_pieces()
@@ -605,7 +605,7 @@ func test_지나간_장애물은_그대로_뒤로_지나가_z6에서_사라짐()
 func test_z0을_지난_직후_판정_범위에서_부딪힘() -> void:
 	AudioManager.unblock()
 	var main := _make_main()
-	while not main.prewarmed:
+	while not main.warmed:
 		await wait_frames()
 	main.field.items.clear()
 	main.clear_pieces()

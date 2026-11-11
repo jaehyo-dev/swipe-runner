@@ -1,6 +1,6 @@
 class_name TitleScreen
 extends Control
-## 메인 화면 글자 (ART_BIBLE.md 14): 위에 "SWIPE / PULSE", 그 아래 BEST, 처음 몇 판만 조작 안내, 아래쪽 "SWIPE TO START", 오른쪽 위 소리 버튼.
+## 메인 화면 글자 (ART_BIBLE.md 14): 위에 "SWIPE / PULSE", 그 아래 BEST, 처음 몇 판만 조작 안내, 아래쪽 "SWIPE TO START", 오른쪽 위 소리 버튼과 그 왼쪽 설정 톱니.
 ## 글자는 모두 Poppins ExtraLight(점수 숫자와 같은 계열). 무대·젤리·음악은 main이 맡고 여기서는 글자만 보이고 감춘다.
 
 const FONT := preload("res://assets/fonts/Poppins-ExtraLight.ttf")
@@ -29,6 +29,7 @@ var best_label: Label
 var guide: VBoxContainer
 var start_label: Label
 var sound: UiIcon
+var gear: UiIcon  # 설정 (소리 버튼 왼쪽)
 
 
 func _init() -> void:
@@ -54,6 +55,12 @@ func _init() -> void:
 	sound.name = "SoundButton"
 	corner(sound, true)
 	add_child(sound)
+	gear = UiIcon.new(UiIcon.Kind.GEAR, Color(1, 1, 1, 0.7), SOUND_SIDE)
+	gear.name = "SettingsButton"
+	corner(gear, true)
+	gear.offset_left -= SOUND_SIDE
+	gear.offset_right -= SOUND_SIDE
+	add_child(gear)
 
 
 ## 아이콘을 화면 위 모서리(right면 오른쪽, 아니면 왼쪽)에 둔다. 게임 오버의 집 버튼도 같은 자리 규칙을 쓴다
@@ -123,6 +130,11 @@ func _build_guide() -> void:
 
 
 func _label(node_name: String, text: String, font_size: int, color: Color) -> Label:
+	return text_label(node_name, text, font_size, color)
+
+
+## 메인 화면 글자 모양(Poppins ExtraLight, 가운데 정렬, 누름은 받지 않음). 일시정지·설정 화면도 같은 모양을 쓴다
+static func text_label(node_name: String, text: String, font_size: int, color: Color) -> Label:
 	var label := Label.new()
 	if not node_name.is_empty():
 		label.name = node_name

@@ -43,7 +43,9 @@ jobs:
           set -euo pipefail
           mkdir -p build/web
           godot --headless --path . --export-release "Web" "$PWD/build/web/index.html"
-          for f in index.html index.js index.wasm index.pck; do test -s "build/web/$f"; done
+          # 첫 곡 뒤의 음악은 .pck에 없고 메인 화면이 뜬 뒤 music/에서 받는다 (v0.9.1)
+          mkdir -p build/web/music && cp assets/audio/music/*.ogg build/web/music/
+          for f in index.html index.js index.wasm index.pck music/bgm_160_b.ogg; do test -s "build/web/$f"; done
 
       # 작업 브랜치에서도 웹 빌드를 내려받아 실제 화면(PC·휴대폰 크기)을 확인할 수 있게 올려 둔다
       - name: 웹 빌드 올리기 (화면 확인용)
@@ -132,6 +134,8 @@ jobs:
           godot --headless --path . --import
           godot --headless --path . --export-release "Web" "$site/index.html"
           test -s "$site/index.wasm"
+          # 첫 곡 뒤의 음악은 .pck에 없고 메인 화면이 뜬 뒤 music/에서 받는다 (v0.9.1부터)
+          mkdir -p "$site/music" && cp assets/audio/music/*.ogg "$site/music/"
 
           # 라이선스 문구 (Godot 엔진 + 서드파티 에셋)
           mkdir -p "$site/licenses"
@@ -158,6 +162,9 @@ jobs:
             mkdir -p "$site/versions/$tag"
             godot --headless --path "$dir" --export-release "Web" "$site/versions/$tag/index.html"
             test -s "$site/versions/$tag/index.wasm"
+            if [ -d "$dir/web" ]; then  # v0.9.1부터: 나중에 받는 음악
+              mkdir -p "$site/versions/$tag/music" && cp "$dir"/assets/audio/music/*.ogg "$site/versions/$tag/music/"
+            fi
             older+=("$version")
           done
           python3 tools/versions_page.py "$site/versions/index.html" "$current" "${older[@]}"

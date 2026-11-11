@@ -1,0 +1,196 @@
+<!DOCTYPE html>
+<html lang="en">
+<!-- SWIPE PULSE 웹 셸 (export_presets.cfg html/custom_html_shell). Godot 기본 셸에 로딩 화면을 더했다.
+     로딩 화면: 엔진을 받기 전에 바로 보이도록 글꼴 조각(tools/make_loading_font.py)과 모양을 이 파일 안에 둔다.
+     막대: 받는 중 0~70% (받은 바이트) → 엔진 켜는 중 70~78% → 준비 중 78~100% (게임이 window.gamePrep으로 알림).
+     각 구간 안에서 실제 진행이 멈춰 있어도 막대가 아주 천천히 다음 구간 쪽으로 움직여 멈춘 것처럼 보이지 않는다.
+     게임이 첫 화면을 그리면(window.gameReady) 0.3초 동안 사라진다. -->
+	<head>
+		<meta charset="utf-8">
+		<meta name="viewport" content="width=device-width, user-scalable=no, initial-scale=1.0">
+		<title>$GODOT_PROJECT_NAME</title>
+		<style>
+@font-face {
+	font-family: 'PoppinsXL';
+	font-weight: 200;
+	font-display: block;
+	src: /*FONT*/url(data:font/woff;base64,d09GRgABAAAAAAT0AAwAAAAABWQABAEGAAAAAAAAAAAAAAAAAAAAAAAAAABHUE9TAAAEpAAAACAAAAAgRHZMdUdTVUIAAATEAAAALgAAADAfSCdrT1MvMgAAAZQAAABKAAAAYFj0Wy1jbWFwAAACBAAAAE0AAABsAZgBjmdseWYAAAJoAAABiAAAAagmPxBZaGVhZAAAARwAAAA2AAAANiJ7VMVoaGVhAAABVAAAACAAAAAkCCICYWhtdHgAAAHgAAAAJAAAACQR1QHrbG9jYQAAAlQAAAAUAAAAFAEvAbhtYXhwAAABdAAAAB8AAAAgAHgATm5hbWUAAAPwAAAAoAAAAP4VqB/9cG9zdAAABJAAAAATAAAAIP+4ADIAAQAAAAQBBqbsLAZfDzz1AAMD6AAAAADYpKm3AAAAAOcaZmYAH//5A4MCxQAAAAcAAgAAAAAAAHicY2BkYGCR+reIIYV5IYM8gwhzMwNQBAVwAgBdGgOLeJxjYGRgYOBk0GdgYgABRiAtx8AGZKWA+QwACqoAxwB4nGNgYXZhFGZgZWBg6mKKYGBg8IbQjHEMRoyuQD4DMwMcMDIgAc8QN3+GAwwKDOEsUv8WMaSw5DMVw9QwyTHtAVIKDCwAp8cJzQAAAfQAAAEaAAAB6wBSANIAUgGYAFICIgBSAioANgKFAE4DoQAfeJxjYGBgYmBgYAZiESDJCKZZGCKAtBCDAFCEiUGBwZXBk8GHIYAhmCGUIfz/f6Achtj/h//3/t/1f8f/rf83/9/0fyPYJDQAAINZFxcAAAAAAAAAAAAAGAAlADQAVACYALYA1HicY2BkCGJgYNzKtI+Bm4FBWFBRVBGK6xkl/r1gNPs3lzGZaca/22r/bqox7VNjAKtnqAeqZwapVxas12Xa99cJyIeY1AJksTIwmIMMMa5nZP13TlcNqJGBCSz7G8jiYhACmsCmrAzUbGwkJspmaqIG5Bgz/i4pmqZ7uKRINyJx2jTG2en/zjDty46eM8c38N8xoOlm/38yfmU6yqDHwCCmpqZuLCZmbGRmBtSspq7HZGpiZgY0TFxZj0lZiU1URExMXI5JVISNTflmmiWLPkd4pImvlqGnnUuwpWmSQ2wRtwGbpreJW4KRp51roKVRoiu7QZCReZiak4axjZygkIq3o1GwQYyztIWqr4OxrbyAsLK3g36IKdALDH7/fzKZA/0hCPK/CMgRpoLGgiJsykpqpoLVObExWbot+fntTPv+eZbn51Uwbv/n1dnW3sG4DahXnoGBuRmolwdoELMyMxAZCwsDEXPzIcMDh/X3G6w4aLR/JThAK/52AOlGpvq/tUzNDACmCmt8eJxljr0KwlAMRk/VxcVn6OCgDiqObiJuDiK+gL+3FbXlthfs6/gwPpdfowgiISQ5yZcEaDKQR6028IBPHtFV9c4bdHgyJyOnwpPiSCiJmTA2j9mIHBVXNpVr5kZhtRc5q7c3xYygmIh56/dsUylFwZSRzElbTwR2DKXKuIrW7KQ8aO9B2krs91b/7/aCu1SeLcvvz2t94rTlIupf/jwpsnicY2BmAIP/WxmMGLAAACzCAeoAAAEAAAAKABwAHgABREZMVAAIAAQAAAAA//8AAAAAAAB4nGNgZGBg4GLQYdBjYHZx8wlhEElJLTNikAOSiQxyDCxAWYb//xngAAClPAb2AAA=) format('woff');
+}
+
+html, body, #canvas {
+	margin: 0;
+	padding: 0;
+	border: 0;
+}
+
+body {
+	color: white;
+	background-color: #05040d;
+	overflow: hidden;
+	touch-action: none;
+}
+
+#canvas {
+	display: block;
+}
+
+#canvas:focus {
+	outline: none;
+}
+
+/* 로딩 화면: 게임의 메인 화면과 같은 자리·크기의 제목 (720x1280 기준 단위 × --s) */
+#loading {
+	--s: min(calc(100vw / 720), calc(100vh / 1280));
+	position: absolute;
+	inset: 0;
+	background-color: #05040d;
+	transition: opacity 0.3s ease-out;
+	z-index: 1;
+}
+
+#loading-title {
+	position: absolute;
+	left: 0;
+	right: 0;
+	top: calc(130 * var(--s));
+	margin: 0;
+	text-align: center;
+	font-family: 'PoppinsXL', sans-serif;
+	font-weight: 200;
+	font-size: calc(190 * var(--s));
+	line-height: 0.93;
+	padding-top: calc(36 * var(--s));
+	color: #ede6ff;
+	text-shadow: 0 0 calc(18 * var(--s)) rgba(201, 184, 255, 0.45);
+}
+
+#loading-bar {
+	position: absolute;
+	left: 50%;
+	top: calc(575 * var(--s));
+	width: calc(260 * var(--s));
+	height: 2px;
+	transform: translateX(-50%);
+	background-color: rgba(255, 255, 255, 0.12);
+	border-radius: 1px;
+	overflow: hidden;
+}
+
+#loading-fill {
+	width: 100%;
+	height: 100%;
+	background-color: #c9b8ff;
+	box-shadow: 0 0 6px rgba(201, 184, 255, 0.8);
+	transform-origin: left;
+	transform: scaleX(0);
+}
+
+#status-notice {
+	display: none;
+	position: absolute;
+	left: 2rem;
+	right: 2rem;
+	top: 40%;
+	background-color: #5b3943;
+	border-radius: 0.5rem;
+	border: 1px solid #9b3943;
+	color: #e0e0e0;
+	font-family: 'Noto Sans', 'Droid Sans', Arial, sans-serif;
+	line-height: 1.3;
+	padding: 1rem;
+	text-align: center;
+	z-index: 2;
+}
+		</style>
+		$GODOT_HEAD_INCLUDE
+	</head>
+	<body>
+		<canvas id="canvas">
+			Your browser does not support the canvas tag.
+		</canvas>
+
+		<noscript>
+			Your browser does not support JavaScript.
+		</noscript>
+
+		<div id="loading">
+			<p id="loading-title">SWIPE<br>PULSE</p>
+			<div id="loading-bar"><div id="loading-fill"></div></div>
+		</div>
+		<div id="status-notice"></div>
+
+		<script>
+// 로딩 막대. 엔진 스크립트보다 먼저 돌아 첫 화면부터 보인다
+(function () {
+	const loading = document.getElementById('loading');
+	const fill = document.getElementById('loading-fill');
+	// 구간: [시작, 끝]. 실제 진행(0~1)을 구간 안에 놓는다
+	const PHASES = { download: [0, 0.7], start: [0.7, 0.78], prep: [0.78, 1] };
+	const CREEP = 0.004;  // 진행이 멈춰 있을 때 구간 끝까지 남은 거리의 이 비율씩 (프레임마다) 다가간다
+	let phase = 'download', real = 0, shown = 0;
+	window.loadingSet = (name, k) => { phase = name; real = Math.max(real, Math.min(1, Math.max(0, k))); };
+	window.loadingPhase = (name) => { phase = name; real = 0; };
+	const tick = () => {
+		const [a, b] = PHASES[phase];
+		const prep = phase === 'prep' ? (window.gamePrep || 0) : real;
+		const target = a + (b - a) * prep;
+		// 실제 진행이 앞서면 따라가고, 멈춰 있으면 구간 끝 쪽으로 아주 천천히 (끝에는 닿지 않는다)
+		shown = Math.max(shown + (target - shown) * 0.25, shown + (b - shown) * CREEP);
+		shown = Math.min(shown, b - 0.002);
+		if (window.gameReady) {
+			fill.style.transform = 'scaleX(1)';
+			loading.style.opacity = '0';
+			setTimeout(() => loading.remove(), 320);
+			return;
+		}
+		fill.style.transform = `scaleX(${shown})`;
+		requestAnimationFrame(tick);
+	};
+	// 로딩 화면이 처음 그려진 시각 (측정용): 글꼴이 준비된 다음 프레임
+	document.fonts.load("200 10px 'PoppinsXL'").finally(() => requestAnimationFrame(() => { window.loadingShown = performance.now(); }));
+	requestAnimationFrame(tick);
+}());
+		</script>
+		<script src="$GODOT_URL"></script>
+		<script>
+const GODOT_CONFIG = $GODOT_CONFIG;
+const GODOT_THREADS_ENABLED = $GODOT_THREADS_ENABLED;
+const engine = new Engine(GODOT_CONFIG);
+
+(function () {
+	const statusNotice = document.getElementById('status-notice');
+
+	function displayFailureNotice(err) {
+		console.error(err);
+		const text = err instanceof Error ? err.message : (typeof err === 'string' ? err : 'An unknown error occurred.');
+		text.split('\n').forEach((line) => {
+			statusNotice.appendChild(document.createTextNode(line));
+			statusNotice.appendChild(document.createElement('br'));
+		});
+		statusNotice.style.display = 'block';
+	}
+
+	const missing = Engine.getMissingFeatures({
+		threads: GODOT_THREADS_ENABLED,
+	});
+
+	if (missing.length !== 0) {
+		displayFailureNotice('Error\nThe following features required to run Godot projects on the Web are missing:\n' + missing.join('\n'));
+		return;
+	}
+	engine.startGame({
+		'onProgress': function (current, total) {
+			if (current > 0 && total > 0) {
+				window.loadingSet('download', current / total);
+				if (current >= total) {
+					window.loadingPhase('start');
+				}
+			}
+		},
+	}).then(() => {
+		window.loadingPhase('prep');  // 엔진이 돌기 시작했다: 이제 게임이 준비 진행을 알린다
+	}, displayFailureNotice);
+}());
+		</script>
+	</body>
+</html>

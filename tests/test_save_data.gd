@@ -76,3 +76,47 @@ func test_옛_폴더는_같은_곳의_옛_이름() -> void:
 	assert_eq(SaveData.old_user_dir().get_file(), "스와이프 러너")
 	assert_eq(SaveData.old_user_dir().get_base_dir(), OS.get_user_data_dir().get_base_dir())
 	assert_eq(ProjectSettings.get_setting("application/config/name"), "SWIPE PULSE")
+
+
+func test_설정은_처음에_음악_효과음_최대_진동_켬이고_다시_열어도_그대로() -> void:
+	_clean()
+	var data := SaveData.new(PATH)
+	assert_eq(data.music, 1.0)
+	assert_eq(data.sfx, 1.0)
+	assert_true(data.vibration)
+	data.music = 0.3
+	data.sfx = 0.0
+	data.vibration = false
+	data.save()
+	var again := SaveData.new(PATH)
+	assert_eq(again.music, 0.3)
+	assert_eq(again.sfx, 0.0)
+	assert_false(again.vibration)
+	_clean()
+
+
+func test_엉뚱한_설정값은_처음_값이나_범위_안으로() -> void:
+	_clean()
+	var file := FileAccess.open(PATH, FileAccess.WRITE)
+	file.store_string("[sound]\nmusic=\"loud\"\nsfx=7.5\n[play]\nvibration=1\nguide_left=99\n")
+	file.close()
+	var data := SaveData.new(PATH)
+	assert_eq(data.music, 1.0)
+	assert_eq(data.sfx, 1.0, "범위 밖은 1로 자름")
+	assert_true(data.vibration)
+	assert_eq(data.guide_left, SaveData.GUIDE_RUNS)
+	_clean()
+
+
+func test_안내_다시_보기는_다음_3판_동안만() -> void:
+	_clean()
+	var data := SaveData.new(PATH)
+	data.plays = 10
+	assert_false(data.shows_guide())
+	data.replay_guide()
+	for i in SaveData.GUIDE_RUNS:
+		assert_true(SaveData.new(PATH).shows_guide(), "다시 열어도 %d판째 안내" % (i + 1))
+		data.count_play()
+	assert_false(data.shows_guide(), "3판 뒤 숨김")
+	assert_eq(data.plays, 13, "판 수는 그대로 센다")
+	_clean()

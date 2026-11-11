@@ -36,6 +36,9 @@ const POP_TIME := 0.25       # 다시 시작할 때 대시 격자가 '퐁' 나�
 const PREWARM_FRAMES := 3    # 가림막 뒤에서 이만큼 연달아 빠른 프레임이 나오면 준비 끝 (셰이더는 그래픽 쪽에서 늦게 끝날 수 있다)
 const PREWARM_FAST_MS := 50
 const PREWARM_MAX_FRAMES := 120  # 아주 느린 기기도 언젠가는 화면을 연다
+const PREWARM_TINY := 0.002     # 메인 화면 뒤에서 미리 그릴 때의 크기: 그리기는 하지만 한 화소도 안 된다
+const DRIFT_TIME := 3.0
+const RESUME_WAIT_FRAMES := 20   # 이어 할 때 소리가 다시 돌기를 기다리는 최대 프레임 (못 돌아도 게임은 이어진다)
 const STAGE_GLOW_TIME := 0.3  # 음악 단계가 오를 때 난간과 빛 대시가 밝아지는 시간(초)
 ## 무대 (ART_BIBLE.md 10). 밝기 순서: 주인공 > 장애물 기호 > 테두리·파란 기둥 > 난간 > 빛 줄기 > 바닥·하늘
 const ROAD_PEAK_MAX := StageLight.ROAD_PEAK  # 평소 대시의 가장 센 채널이 이보다 밝아지지 않는다
@@ -121,6 +124,11 @@ var dead := false
 var started := false
 ## 셰이더 미리 준비가 끝났는가. 첫 화면은 이때 드러난다.
 var prewarmed := false
+## 메인 화면이 뜬 뒤 장애물·방울·효과 셰이더까지 다 준비했다
+var warmed := false
+## 일시정지 중 (숫자 세는 동안 포함)
+var paused := false
+var haptics := Haptics.new()
 
 var _swipe := SwipeDetector.new()
 var _obstacles := {}  # id -> Piece
@@ -154,6 +162,11 @@ var _effect_level := 0  # 지금 적용된 효과 단계
 var _title: TitleScreen
 var _hud: Control          # 게임 중 글자(점수·BEST·배수·PERFECT·게임 오버). 메인 화면에서는 숨는다
 var _home: UiIcon          # 게임 오버 왼쪽 위 집 버튼
+var _pause_btn: UiIcon     # 플레이 중 왼쪽 위 ‖ (게임 오버·메인 화면에서는 숨김)
+var _pause_menu: PauseMenu
+var _settings: SettingsPanel
+var _begin_waiting := false  # 준비가 끝나기 전에 시작을 눌렀다: 남은 것을 그리고 시작한다
+var _page_callback: JavaScriptObject  # 웹 탭 가림 알림 (붙들고 있어야 사라지지 않는다)
 var _fade: ColorRect       # 게임 오버 → 메인 화면 페이드
 var _going_home := false
 var _menu_t := 0.0         # 메인 화면에서 흐른 시간 (음악이 없을 때의 박, 대시 흐름)
@@ -218,6 +231,9 @@ func _ready() -> void:
 	record = BestRecord.new(best_path)
 	save = SaveData.new(SaveData.PATH if best_path == BestRecord.PATH else best_path.get_basename() + "_settings.cfg")
 	AudioManager.set_muted(save.muted)
+	AudioManager.set_volumes(save.music, save.sfx)
+	haptics = Haptics.detect()
+	haptics.enabled = save.vibration
 	_new_field()
 	_build_environment()
 	_build_camera()
@@ -238,6 +254,7 @@ func _ready() -> void:
 	_title.show_menu(record.best, save.shows_guide(), save.muted)
 	if OS.has_feature("web"):
 		JavaScriptBridge.eval(FRAMES_JS, true)
+		_watch_page()
 	_prewarm()
 
 
@@ -245,7 +262,7 @@ func _process(delta: float) -> void:
 	advance(delta, AudioManager.music_time)
 	_sync_pieces()
 	_sync_orbs()
-	if OS.has_feature("web") and prewarmed:
+	if OS.has_feature("web") and warmed:
 		_watch_frames()
 
 
@@ -283,6 +300,8 @@ func _fit_render_scale() -> void:
 ## 첫 실행은 이 입력이 오디오를 켠다(브라우저 정책). 메인 화면 음악이 흐르고 있었으면 첫 곡 0초로 겹치며 넘어간다
 func begin() -> void:
 	started = true
+	if OS.has_feature("web"):
+		JavaScriptBridge.eval("window.gameStarted = performance.now()")  # 첫 판 프레임 측정의 시작점
 	_quality.hold()
 	save.count_play()
 	if AudioManager.is_music_on():
@@ -294,6 +313,7 @@ func begin() -> void:
 	field.ladder = AudioManager.ladder  # 음악과 함께 시작한 사다리: 경계가 여기에 쌓인다
 	_music_t = AudioManager.music_time
 	runner.running = true
+	_pause_btn.visible = true
 	var t := _tint
 	_tint = -1.0
 	_apply_tint(t)  # 메인 화면에서 줄인 빛 줄기 수를 되돌린다
@@ -434,6 +454,7 @@ func _on_close(item: Dictionary, points: int) -> void:
 		swish.chain().tween_callback(_swish.hide)
 	_count_lag += points
 	_count_rate = _count_lag / COUNT_TIME
+	haptics.fire(Haptics.Event.PERFECT)
 	_perfect_chain = _perfect_chain + 1 if _perfect_label.visible else 1
 	_perfect_label.text = ("PERFECT" if _perfect_chain == 1 else "PERFECT ×%d" % _perfect_chain) + "  +%d" % points
 	if _perfect_tween:
@@ -461,7 +482,7 @@ func _sync_orbs() -> void:
 	var used := 0
 	var center := runner.position + Vector3(0.0, player.height() + OrbTrail.body_height(player.crouch()) * 0.5, 0.0)
 	if _orb_prewarm:
-		_put_orb(0, Vector3(0.0, 0.6, -5.0), 1.0)
+		_put_orb(0, Vector3(0.0, 0.6, -5.0), PREWARM_TINY)
 		used = 1
 	for orb: Dictionary in field.orbs:
 		if used >= ORB_MAX:
@@ -497,12 +518,13 @@ func _sync_orbs() -> void:
 			links += 1
 		prev = orb
 	if _orb_prewarm:  # 실선 셰이더도 가림막 뒤에서 한 번 그려 첫 줄에서 멈칫하지 않게
-		_links.set_instance_transform(0, Transform3D(Basis.IDENTITY, Vector3(0.0, 0.6, -5.5)))
+		_links.set_instance_transform(0, Transform3D(Basis.from_scale(Vector3.ONE * PREWARM_TINY), Vector3(0.0, 0.6, -5.5)))
 		links = maxi(links, 1)
 	_links.visible_instance_count = links
 	# 먹은 순간 주인공 둘레에 작은 빛 고리가 퍼졌다 사라진다 (RING_TIME). 연달아 먹으면 처음부터 다시
 	var age := (_music_t - _ring_from) / RING_TIME
 	_ring.visible = _orb_prewarm or (age >= 0.0 and age < 1.0)
+	_ring.scale = Vector3.ONE * (PREWARM_TINY if _orb_prewarm else 1.0)
 	if _ring.visible:
 		_ring.position = center
 		_ring_material.set_shader_parameter("age", 0.0 if _orb_prewarm else age)
@@ -724,6 +746,8 @@ func _advance_dead(delta: float) -> void:
 func _game_over(item: Dictionary) -> void:
 	dead = true
 	_dead_time = 0.0
+	_pause_btn.visible = false
+	haptics.fire(Haptics.Event.CRASH)
 	AudioManager.play_crash()
 	_set_stage_glow(0.0)
 	_dash_material.set_shader_parameter("pulse", 0.0)
@@ -777,6 +801,7 @@ func restart() -> void:
 	record.begin_run()
 	_show_best()
 	runner.reform(lane)
+	_pause_btn.visible = true
 
 
 ## 대시 격자가 장애물과 같은 '퐁'으로 나타난다
@@ -808,7 +833,7 @@ func _reset_round() -> void:
 func go_home() -> void:
 	_going_home = true
 	_fade.visible = true
-	var fade := create_tween()
+	var fade := create_tween().set_pause_mode(Tween.TWEEN_PAUSE_PROCESS)  # 일시정지 화면의 HOME: 멈춘 세상 위로 어두워진다
 	fade.tween_property(_fade, "color:a", 1.0, HOME_FADE * 0.5)
 	fade.tween_callback(_enter_menu)
 	fade.tween_property(_fade, "color:a", 0.0, HOME_FADE * 0.5)
@@ -819,6 +844,9 @@ func go_home() -> void:
 
 ## 페이드로 가려진 사이에 메인 화면 상태로: 앞 판을 지우고, 젤리는 가운데 레인에 모이고, 첫 곡이 6dB 작게 흐른다
 func _enter_menu() -> void:
+	if paused:  # 일시정지에서 왔다: 화면이 가려진 지금 멈춘 것을 푼다
+		_pause_menu.hide()
+		_unpause()
 	dead = false
 	started = false
 	_dead_time = 0.0
@@ -844,9 +872,96 @@ func _enter_menu() -> void:
 	_menu_beat = -1
 	_set_view(1.0)
 	_hud.modulate.a = 0.0
+	_pause_btn.visible = false
 	_title.show_menu(record.best, save.shows_guide(), save.muted)
 	_sync_pieces()  # 페이드가 걷히기 전 프레임부터 앞 판 장애물이 보이지 않게
 	_sync_orbs()
+
+
+## 일시정지 (‖ 버튼, Esc·P, 탭 가림·창 포커스 잃음·앱이 뒤로 감). 플레이 중에만.
+## 트리를 멈춰 세상·판정·트윈이 서고, 음악은 그 표본에서 선다. 숫자 세는 중에 다시 가려지면 일시정지 화면으로 돌아간다
+func pause() -> void:
+	if paused:
+		if _pause_menu.counting:
+			AudioManager.set_held(true)
+			_pause_menu.open()
+		return
+	if not started or dead or not prewarmed or _going_home:
+		return
+	paused = true
+	AudioManager.set_held(true)
+	get_tree().paused = true
+	_swipe = SwipeDetector.new()  # 누르던 손가락은 잊는다: 이어 한 뒤 반쯤 민 스와이프가 동작이 되지 않게
+	_pause_btn.visible = false
+	_pause_menu.open()
+
+
+## RESUME: 지금 박 길이로 3·2·1을 센다. 멈춘 자리가 박 사이였으면 음악 박이 숫자 박에 이어지게 맞춘다
+func _on_resume_pressed() -> void:
+	var t := AudioManager.music_time
+	var step: int = AudioManager.ladder.segment_at(t)["step"]
+	_pause_menu.count(PauseCountdown.new(MusicLadder.beat_time(step), AudioManager.ladder.beat_at(t)))
+
+
+## 숫자가 끝났다: 소리를 먼저 다시 돌리고(웹은 몇 ms 걸린다) 돌기 시작하면 세상을 푼다
+func _on_resumed() -> void:
+	AudioManager.set_held(false)
+	_pause_menu.hide()
+	for i in RESUME_WAIT_FRAMES:
+		if AudioManager.is_running():
+			break
+		await get_tree().process_frame
+	if paused and not _pause_menu.visible:  # 기다리는 사이 다시 일시정지되지 않았으면
+		_unpause()
+		_report_drift()
+
+
+## 이어 한 뒤 DRIFT_TIME초 동안 화면의 음악 시간과 들리는 소리의 차이 중 가장 큰 값을 남긴다 (박자 오차 확인용 한 줄)
+func _report_drift() -> void:
+	var worst := 0.0
+	var end := Time.get_ticks_msec() + DRIFT_TIME * 1000.0
+	while Time.get_ticks_msec() < end and AudioManager.is_music_on() and not paused:
+		worst = maxf(worst, absf(AudioManager.drift()))
+		await get_tree().process_frame
+	print("PAUSE 이어 한 뒤 %.0f초 박자 오차 최대 %.1fms" % [DRIFT_TIME, worst * 1000.0])
+
+
+func _unpause() -> void:
+	AudioManager.set_held(false)
+	get_tree().paused = false
+	paused = false
+	_pause_btn.visible = started and not dead
+
+
+func _on_pause_home() -> void:
+	record.save()  # 이번 판에 넘은 기록은 남긴다
+	go_home()
+
+
+## 설정 (메인 화면 톱니, 일시정지의 SETTINGS)
+func open_settings() -> void:
+	_pause_menu.blocked = true
+	_settings.open(save, haptics)
+
+
+func _on_settings_closed() -> void:
+	_pause_menu.blocked = false
+
+
+func _notification(what: int) -> void:
+	if what in [NOTIFICATION_APPLICATION_FOCUS_OUT, NOTIFICATION_APPLICATION_PAUSED, NOTIFICATION_WM_WINDOW_FOCUS_OUT]:
+		pause()
+
+
+## 웹: 탭이 가려지거나 창이 포커스를 잃으면 바로 소리를 멈춘다 (가려진 탭은 프레임이 오지 않아 엔진 알림을 기다리면 음악만 흘러간다)
+func _watch_page() -> void:
+	_page_callback = JavaScriptBridge.create_callback(func(_args: Array) -> void: pause())
+	JavaScriptBridge.get_interface("window").gamePause = _page_callback
+	JavaScriptBridge.eval("""
+		document.addEventListener('visibilitychange', () => { if (document.hidden) window.gamePause(); });
+		window.addEventListener('blur', () => window.gamePause());
+		window.addEventListener('pagehide', () => window.gamePause());
+	""", true)
 
 
 ## 메인 화면 소리 버튼: 음악·효과음 모두. 상태는 저장한다
@@ -865,6 +980,7 @@ func _show_best() -> void:
 ## 예전 기록을 넘은 순간: 숫자가 한 번 말랑하게 커졌다 돌아온다. 소리는 내지 않는다.
 func _on_new_record() -> void:
 	_best_label.text = "NEW BEST"
+	haptics.fire(Haptics.Event.NEW_BEST)
 	_score_label.pivot_offset = _score_label.size * 0.5
 	_pop = create_tween()
 	_pop.tween_property(_score_label, "scale", Vector2.ONE * POP_SCALE, POP_UP).set_trans(Tween.TRANS_SINE).set_ease(Tween.EASE_OUT)
@@ -872,7 +988,7 @@ func _on_new_record() -> void:
 
 
 func _input(event: InputEvent) -> void:
-	if (not started and not prewarmed) or _going_home:  # 가림막·페이드 뒤의 입력은 받지 않는다
+	if (not started and not prewarmed) or _going_home or paused or _settings.visible:  # 가림막·페이드·일시정지·설정 뒤의 입력은 받지 않는다
 		return
 	var pressed: bool = (event is InputEventScreenTouch or event is InputEventKey) and event.pressed
 	if not started:
@@ -880,6 +996,10 @@ func _input(event: InputEvent) -> void:
 			return
 		if event is InputEventScreenTouch and _title.sound.hit(event.position):
 			toggle_sound()
+		elif event is InputEventScreenTouch and _title.gear.hit(event.position):
+			open_settings()
+		elif not warmed:  # 장애물 셰이더를 아직 준비하는 중: 남은 것을 한꺼번에 그리고 시작한다
+			_begin_waiting = true
 		else:
 			begin()  # 탭이든 어느 방향 스와이프든 시작만 한다. 게임 동작으로는 처리하지 않는다
 		return
@@ -891,6 +1011,9 @@ func _input(event: InputEvent) -> void:
 			restart()
 			if event is InputEventScreenTouch:  # 다시 시작한 손가락 그대로 밀어도 스와이프가 된다
 				_swipe.press(event.position, event.index)
+		return
+	if pressed and ((event is InputEventScreenTouch and _pause_btn.hit(event.position)) or (event is InputEventKey and event.keycode in [KEY_ESCAPE, KEY_P])):
+		pause()
 		return
 	if event is InputEventScreenTouch:
 		if event.pressed:
@@ -996,56 +1119,119 @@ func clear_pieces() -> void:
 	_pieces_dirty = true
 
 
-## 웹은 재질이 처음 그려질 때 셰이더를 만들어 그 프레임이 막힌다. 첫 화면 전에 가림막 뒤에서 모두 한 번씩 그려 둔다.
-## 같은 뷰포트에서 그려야 안개·글로우까지 같은 셰이더 조합이 준비된다.
+## 웹은 재질이 처음 그려질 때 셰이더를 만들어 그 프레임이 막힌다. 같은 뷰포트에서 그려야 안개·글로우까지 같은 셰이더 조합이 준비된다.
+## 1단계(가림막 뒤): 메인 화면에 보이는 젤리·길·하늘·제목만 그린 뒤 첫 화면을 연다.
+## 2단계(메인 화면 뒤): 장애물·방울·효과·게임 글자를 아주 작게(PREWARM_TINY, 화면에 안 보임) 한 묶음씩 그린다.
+## 시작을 누를 때까지 다 못 끝냈으면 남은 것을 한꺼번에 그리고 나서 시작한다 (첫 판에서 셰이더 때문에 멈칫하지 않게).
 func _prewarm() -> void:
-	var world := Node3D.new()
-	add_child(world)
-	var samples: Array[Piece] = []
-	for kind in _kind_meshes:  # 모든 종류의 재질을 한 번씩 그린다
-		var sample := Piece.new()
-		sample.kind = kind
-		sample.position = Vector3(RunLogic.lane_x(kind), 0.0, -6.0)
-		samples.append(sample)
-		_leaving.append(sample)
-	_pieces_dirty = true
-	_orb_prewarm = true
-	_swish.visible = true
-	var drop: MeshInstance3D = runner.make_prewarm_drop()
-	drop.position = Vector3(0.0, 1.0, -3.0)
-	world.add_child(drop)
 	var cover := CanvasLayer.new()
 	cover.layer = 100
 	add_child(cover)
-	for pair in [["0123456789", _score_label], [_restart_label.text, _restart_label], ["NEW BEST 0123456789", _best_label], ["×+0123456789", _mult_label], ["ORBS PERFECT · m0123456789", _stats_label], ["PERFECT ×+0123456789", _perfect_label]]:  # 글자 그림도 미리 만든다
-		var label := Label.new()
-		label.text = pair[0]
-		label.label_settings = pair[1].label_settings
-		cover.add_child(label)
 	var curtain := ColorRect.new()
 	curtain.color = BOOT_COLOR
 	curtain.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
 	curtain.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	cover.add_child(curtain)
+	_load_progress(0.0)
+	while not AudioManager.first_ready():  # 개발용 ?bpm: 시작 곡을 받아 풀 때까지
+		await get_tree().process_frame
+	await _settle(0.0, 1.0)
+	cover.queue_free()
+	prewarmed = true
+	if OS.has_feature("web"):
+		# 가림막 뒤의 느린 프레임은 자동 낮춤 판단에 넣지 않는다. gameReady: 첫 화면이 드러난 시각 (프레임 측정의 시작점)
+		JavaScriptBridge.eval("window.gameFrames.length = 0; window.gameReady = performance.now()")
+	AudioManager.fetch_rest()
+	await _warm_rest()
+
+
+## 셰이더가 다 준비될 때까지 프레임을 돌린다: PREWARM_FRAMES번 연달아 빠른 프레임이 나오면 끝. 로딩 막대를 from → to로 채운다
+func _settle(from: float, to: float) -> void:
 	var fast := 0
 	var last := Time.get_ticks_msec()
 	for i in PREWARM_MAX_FRAMES:
 		await get_tree().process_frame
 		fast = fast + 1 if Time.get_ticks_msec() - last < PREWARM_FAST_MS else 0
 		last = Time.get_ticks_msec()
+		_load_progress(lerpf(from, to, 1.0 - pow(0.85, i + 1)))  # 끝을 모르므로 점점 느려지며 다가간다
 		if fast >= PREWARM_FRAMES:
 			break
-	world.queue_free()
-	cover.queue_free()
-	for sample in samples:
-		_leaving.erase(sample)
-	_pieces_dirty = true
-	_orb_prewarm = false
-	_swish.visible = false
-	prewarmed = true
+	_load_progress(to)
+
+
+## 웹 로딩 화면의 "준비 중" 막대 (index.html 셸이 읽는다)
+func _load_progress(k: float) -> void:
+	if OS.has_feature("web") and not prewarmed:
+		JavaScriptBridge.eval("window.gamePrep = %.3f" % k)
+
+
+## 2단계: 묶음마다 아주 작게 그리고 프레임이 빨라지면 다음 묶음
+func _warm_rest() -> void:
+	var groups: Array = _kind_meshes.keys().map(func(kind: int) -> Callable: return _warm_piece.bind(kind))
+	groups.append_array([_warm_orbs, _warm_swish, _warm_drop, _warm_labels])
+	while not groups.is_empty():
+		var batch: Array = groups.duplicate() if _begin_waiting else [groups[0]]
+		var undo: Array[Callable] = []
+		for warm: Callable in batch:
+			undo.append(warm.call())
+		await _settle(1.0, 1.0)
+		for done: Callable in undo:
+			done.call()
+		groups = groups.slice(batch.size())
+	warmed = true
 	if OS.has_feature("web"):
-		# 가림막 뒤의 느린 프레임은 자동 낮춤 판단에 넣지 않는다. gameReady: 첫 화면이 드러난 시각 (프레임 측정의 시작점)
-		JavaScriptBridge.eval("window.gameFrames.length = 0; window.gameReady = performance.now()")
+		JavaScriptBridge.eval("window.gameFrames.length = 0")  # 준비하며 느렸던 프레임으로 효과를 낮추지 않게
+	if _begin_waiting:
+		_begin_waiting = false
+		begin()
+
+
+## 각 _warm_*: 그 재질을 아주 작게 보이고, 되돌리는 함수를 돌려준다
+func _warm_piece(kind: int) -> Callable:
+	var sample := Piece.new()
+	sample.kind = kind
+	sample.position = Vector3(RunLogic.lane_x(kind % 3), 0.5, -6.0)
+	sample.scale = Vector3.ONE * PREWARM_TINY
+	_leaving.append(sample)
+	_pieces_dirty = true
+	return func() -> void:
+		_leaving.erase(sample)
+		_pieces_dirty = true
+
+
+func _warm_orbs() -> Callable:
+	_orb_prewarm = true
+	return func() -> void: _orb_prewarm = false
+
+
+func _warm_swish() -> Callable:
+	_swish.scale = Vector3.ONE * PREWARM_TINY
+	_swish.position = Vector3(0.0, 0.6, -5.0)
+	_swish.visible = true
+	return func() -> void:
+		_swish.visible = false
+		_swish.scale = Vector3.ONE
+
+
+func _warm_drop() -> Callable:
+	var drop: MeshInstance3D = runner.make_prewarm_drop()
+	drop.position = Vector3(0.0, 1.0, -3.0)
+	drop.scale = Vector3.ONE * PREWARM_TINY
+	add_child(drop)
+	return drop.queue_free
+
+
+## 게임 글자(점수 170px 등)의 글자 그림을 미리 만든다
+func _warm_labels() -> Callable:
+	var cover := CanvasLayer.new()
+	add_child(cover)
+	for pair in [["0123456789", _score_label], [_restart_label.text, _restart_label], ["NEW BEST 0123456789", _best_label], ["×+0123456789", _mult_label], ["ORBS PERFECT · m0123456789", _stats_label], ["PERFECT ×+0123456789", _perfect_label]]:
+		var label := Label.new()
+		label.text = pair[0]
+		label.label_settings = pair[1].label_settings
+		label.scale = Vector2.ONE * PREWARM_TINY
+		cover.add_child(label)
+	return cover.queue_free
 
 
 # ---------- 장면 만들기 ----------
@@ -1360,6 +1546,11 @@ func _build_ui() -> void:
 	TitleScreen.corner(_home, false)
 	_home.visible = false
 	layer.add_child(_home)
+	_pause_btn = UiIcon.new(UiIcon.Kind.PAUSE, Color(1, 1, 1, 0.6), TitleScreen.SOUND_SIDE)
+	_pause_btn.name = "PauseButton"
+	TitleScreen.corner(_pause_btn, false)
+	_pause_btn.visible = false
+	layer.add_child(_pause_btn)
 
 	# 아주 흐린 버전 표시 (project.godot 버전을 읽음)
 	var version := Label.new()
@@ -1375,6 +1566,15 @@ func _build_ui() -> void:
 	vs.font_color = Color(1, 1, 1, 0.4)
 	version.label_settings = vs
 	root.add_child(version)  # 메인 화면에서도 보인다
+	_pause_menu = PauseMenu.new()
+	_pause_menu.resume_pressed.connect(_on_resume_pressed)
+	_pause_menu.resumed.connect(_on_resumed)
+	_pause_menu.home_pressed.connect(_on_pause_home)
+	_pause_menu.settings_pressed.connect(open_settings)
+	root.add_child(_pause_menu)
+	_settings = SettingsPanel.new()
+	_settings.closed.connect(_on_settings_closed)
+	root.add_child(_settings)
 	var top := CanvasLayer.new()
 	top.layer = 50
 	add_child(top)

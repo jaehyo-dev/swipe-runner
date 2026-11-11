@@ -1,6 +1,6 @@
 class_name SaveData
 extends RefCounted
-## 플레이 횟수·소리 켜기/끄기 저장 (자동 테스트 대상). 최고 점수는 BestRecord가 따로 저장한다.
+## 플레이 횟수·소리 켜기/끄기·설정(음악·효과음 크기, 진동, 안내 다시 보기) 저장 (자동 테스트 대상). 최고 점수는 BestRecord가 따로 저장한다.
 ## v0.9.0에서 이름이 "스와이프 러너" → "SWIPE PULSE"로 바뀌며 user:// 폴더도 바뀐다(데스크톱·웹 모두 이름을 따른다). 옛 폴더의 파일을 복사해 온다 (migrate).
 
 const PATH := "user://settings.cfg"
@@ -9,6 +9,10 @@ const GUIDE_RUNS := 3              # 조작 안내는 처음 이만큼의 판에
 
 var plays := 0
 var muted := false
+var music := 1.0       # 음악 크기 0~1 (설정 슬라이더)
+var sfx := 1.0         # 효과음 크기 0~1
+var vibration := true  # 진동 (기본 켬)
+var guide_left := 0    # 설정의 SHOW GUIDE: 앞으로 이만큼의 판에 조작 안내를 다시 보인다
 
 var _path: String
 
@@ -20,17 +24,36 @@ func _init(path := PATH) -> void:
 		return
 	var count: Variant = file.get_value("play", "plays", 0)
 	plays = maxi(count, 0) if count is int else 0
-	muted = file.get_value("sound", "muted", false) is bool and file.get_value("sound", "muted")
+	var mute: Variant = file.get_value("sound", "muted", false)
+	muted = mute is bool and mute
+	music = _unit(file.get_value("sound", "music", 1.0))
+	sfx = _unit(file.get_value("sound", "sfx", 1.0))
+	var buzz: Variant = file.get_value("play", "vibration", true)
+	vibration = buzz if buzz is bool else true
+	var left: Variant = file.get_value("play", "guide_left", 0)
+	guide_left = clampi(left, 0, GUIDE_RUNS) if left is int else 0
+
+
+## 0~1 크기 값. 숫자가 아니면 처음 값(1)
+static func _unit(value: Variant) -> float:
+	return clampf(float(value), 0.0, 1.0) if (value is float or value is int) else 1.0
 
 
 ## 다음 판 전에 조작 안내를 보일까
 func shows_guide() -> bool:
-	return plays < GUIDE_RUNS
+	return plays < GUIDE_RUNS or guide_left > 0
+
+
+## 설정의 SHOW GUIDE: 다음 GUIDE_RUNS판 동안 안내를 다시 보인다
+func replay_guide() -> void:
+	guide_left = GUIDE_RUNS
+	save()
 
 
 ## 한 판을 시작했다
 func count_play() -> void:
 	plays += 1
+	guide_left = maxi(guide_left - 1, 0)
 	save()
 
 
@@ -43,6 +66,10 @@ func save() -> void:
 	var file := ConfigFile.new()
 	file.set_value("play", "plays", plays)
 	file.set_value("sound", "muted", muted)
+	file.set_value("sound", "music", music)
+	file.set_value("sound", "sfx", sfx)
+	file.set_value("play", "vibration", vibration)
+	file.set_value("play", "guide_left", guide_left)
 	file.save(_path)  # 저장소가 막힌 브라우저(시크릿 창 등)에서도 게임은 계속된다
 
 

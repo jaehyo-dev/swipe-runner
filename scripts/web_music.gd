@@ -16,7 +16,11 @@ const JS := """
 window.gameMusic = (() => {
   const c = window.gameAudioCtx, out = c.createGain(), bufs = {}, ends = {}, filled = {};
   out.connect(c.destination);
-  let run = null, t0 = 0, cur = null;
+  // 일시정지 동안에는 엔진이 입력마다 부르는 resume(소리 켜기)을 막는다: 버튼을 누르는 순간 음악 시계가 흐르면 안 된다
+  const resume = c.resume.bind(c);
+  let held = false;
+  c.resume = () => held ? Promise.resolve() : resume();
+  let run = null, t0 = 0, cur = null, unloops = [];
   const source = (i, gain) => {
     const s = c.createBufferSource();
     s.buffer = bufs[i]; s.loop = true; s.loopEnd = ends[i]; s.fader = c.createGain();
@@ -59,7 +63,8 @@ window.gameMusic = (() => {
     schedule(i, at, blend, offset) {
       const next = source(i, run.gain), t = t0 + at, leaving = cur;
       // 마지막 바퀴의 가운데에서 반복을 끈다: 경계가 미뤄졌으면 지금 끄면 첫 바퀴에서 소리가 끝난다. 끄고 나면 구간 뒤 꼬리로 이어진다
-      setTimeout(() => { leaving.loop = false; }, Math.max(0, t - leaving.loopEnd * 0.5 - c.currentTime) * 1000);
+      // 오디오 시계로 잰다 (setTimeout은 일시정지 동안에도 흘러 너무 일찍 끈다): tick이 프레임마다 확인한다
+      unloops.push({ s: leaving, at: t - leaving.loopEnd * 0.5 });
       cur.fader.gain.setValueAtTime(1, t);
       cur.fader.gain.linearRampToValueAtTime(0, t + blend);
       next.fader.gain.setValueAtTime(0, t);
@@ -70,7 +75,11 @@ window.gameMusic = (() => {
       run.sources.push(next);
       cur = next;
     },
+    tick() { unloops = unloops.filter(u => { if (c.currentTime < u.at) return true; u.s.loop = false; return false; }); },
     position() { return c.currentTime - t0 - c.baseLatency - (c.outputLatency || 0); },
+    // 일시정지: AudioContext를 멈춰 음악·효과음과 시계(currentTime)를 함께 세운다. 예약해 둔 곡 경계도 같은 시계라 그대로 맞는다
+    hold(on) { held = on; return on ? c.suspend() : resume(); },
+    running() { return !held && c.state === 'running'; },
     setDb(db) { out.gain.setTargetAtTime(Math.pow(10, db / 20), c.currentTime, 0.01); },
   };
 })();
@@ -90,8 +99,8 @@ func _init(start_step: int) -> void:
 	_js = JavaScriptBridge.get_interface("gameMusic")
 	_first = start_step
 	want(start_step, 0.0)
-	# 첫 곡은 첫 입력에 바로 나와야 하므로 가림막 뒤(로딩 중)에 끝낸다
-	for i in CHUNKS_MAX:  # 횟수 제한: 안에서 오류가 나도 페이지가 멈추지 않게
+	# 첫 곡은 첫 입력에 바로 나와야 하므로 가림막 뒤(로딩 중)에 끝낸다. 아직 받지 못한 곡(개발용 ?bpm)은 받은 뒤 프레임마다 푼다
+	for i in (CHUNKS_MAX if _playback else 0):  # 횟수 제한: 안에서 오류가 나도 페이지가 멈추지 않게
 		if is_ready(start_step, 0.0):
 			break
 		decode_slice()
@@ -112,6 +121,8 @@ func is_ready(step: int, from: float) -> bool:
 
 ## 이 곡의 from초 위치 구간을 풀어 둔다. 첫 곡이 아닌 다른 곡은 버린다.
 func want(step: int, from: float) -> void:
+	if not AudioManager.has_track(step):  # 아직 받는 중: 받으면 다음 프레임에 다시 불린다
+		return
 	if is_ready(step, from) or (_job_step == step and is_equal_approx(_job_from, _key(step, from))):
 		return
 	for held: int in _have.keys():
@@ -126,11 +137,12 @@ func want(step: int, from: float) -> void:
 	_js.alloc(step, _left, rate, 0.0 if _is_top(step) else span)
 	_job_step = step
 	_job_from = _key(step, from)
-	_playback = AudioManager.open_track(AudioManager.TRACKS[step], _job_from)
+	_playback = AudioManager.open_track(AudioManager.tracks[step], _job_from)
 
 
 ## 프레임마다 부른다. 지금 곡을 budget 마이크로초만큼 디코딩한다.
 func decode_slice(budget := SLICE_USEC) -> void:
+	_js.tick()
 	var from := Time.get_ticks_usec()
 	while _playback != null and Time.get_ticks_usec() - from < budget:
 		var n := mini(CHUNK_FRAMES, _left)
@@ -153,6 +165,14 @@ func schedule(step: int, at: float, from: float) -> void:
 
 func position() -> float:
 	return float(_js.position())
+
+
+func hold(on: bool) -> void:
+	_js.hold(on)
+
+
+func running() -> bool:
+	return bool(_js.running())
 
 
 func set_db(db: float) -> void:

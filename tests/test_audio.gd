@@ -61,9 +61,9 @@ func test_소리_파일_길이와_음악_반복_설정() -> void:
 	for sound in want:
 		var stream: AudioStreamWAV = AudioManager.SFX[sound]
 		assert_true(absf(stream.get_length() - want[sound]) < 0.02, "%s %f" % [sound, stream.get_length()])
-	assert_eq(AudioManager.TRACKS.size(), MusicLadder.STEPS.size())
-	for i in AudioManager.TRACKS.size():
-		var bgm: AudioStreamOggVorbis = AudioManager.TRACKS[i]
+	assert_eq(AudioManager.tracks.size(), MusicLadder.STEPS.size())
+	for i in AudioManager.tracks.size():
+		var bgm: AudioStreamOggVorbis = AudioManager.tracks[i]
 		assert_true(bgm.resource_path.ends_with(MusicLadder.STEPS[i]["file"] + ".ogg"), bgm.resource_path)
 		assert_true(bgm.loop, "반복")
 		assert_true(absf(bgm.get_length() - MusicLadder.lap_time(i)) < 0.001, "길이 %f" % bgm.get_length())
@@ -71,9 +71,9 @@ func test_소리_파일_길이와_음악_반복_설정() -> void:
 
 ## 반복 이음매에 틈이 없으려면 곡을 읽은 표본이 한 바퀴 뒤에도 똑같아야 한다 (mix_audio 앞머리 빈 표본을 버린 결과)
 func test_곡을_표본_단위로_읽으면_첫_표본부터_소리가_있고_한_바퀴_뒤_그대로_이어짐() -> void:
-	for i in AudioManager.TRACKS.size():
+	for i in AudioManager.tracks.size():
 		var frames := roundi(MusicLadder.lap_time(i) * AudioServer.get_mix_rate())
-		var playback: AudioStreamPlayback = AudioManager.open_track(AudioManager.TRACKS[i])
+		var playback: AudioStreamPlayback = AudioManager.open_track(AudioManager.tracks[i])
 		var head := playback.mix_audio(1.0, 64)
 		assert_true(head[0] != Vector2.ZERO, "곡 %d 첫 표본" % i)
 		var left := frames - 64
@@ -92,12 +92,12 @@ func test_곡을_4마디_위치에서_열면_처음부터_읽은_표본과_같�
 	var rate := AudioServer.get_mix_rate()
 	for i in [0, 3, 6]:
 		var from := MusicLadder.span_time(i)
-		var playback: AudioStreamPlayback = AudioManager.open_track(AudioManager.TRACKS[i])
+		var playback: AudioStreamPlayback = AudioManager.open_track(AudioManager.tracks[i])
 		var left := roundi(from * rate)
 		while left > 0:
 			left -= playback.mix_audio(1.0, mini(left, 4096)).size()
 		var want := playback.mix_audio(1.0, 64)
-		var got: PackedVector2Array = AudioManager.open_track(AudioManager.TRACKS[i], from).mix_audio(1.0, 64)
+		var got: PackedVector2Array = AudioManager.open_track(AudioManager.tracks[i], from).mix_audio(1.0, 64)
 		var worst := 0.0
 		for k in 64:
 			worst = maxf(worst, (got[k] - want[k]).length())
@@ -238,7 +238,7 @@ func test_충돌_소리_뒤_막혔다가_다시_시작하면_풀림_음악은_�
 func test_첫_입력_전에는_세상이_멈춰_있고_첫_입력은_음악과_게임을_시작만_함() -> void:
 	AudioManager.music.stop()
 	var main := _make_main(false)
-	while not main.prewarmed:
+	while not main.warmed:
 		await wait_frames()
 	_start_log()
 	var scroll: float = main._scroll
@@ -270,7 +270,7 @@ func test_첫_입력_전에는_세상이_멈춰_있고_첫_입력은_음악과_�
 func test_첫_터치로_시작하고_그대로_밀어도_동작하지_않음() -> void:
 	AudioManager.music.stop()
 	var main := _make_main(false)
-	while not main.prewarmed:
+	while not main.warmed:
 		await wait_frames()
 	_start_log()
 	var touch := InputEventScreenTouch.new()
@@ -406,3 +406,14 @@ func test_PERFECT_슉은_전용_재생기_2개로_매번_반음_안쪽으로_흔
 	assert_eq(AudioManager._close_pool.size(), 2, "같은 소리는 동시에 2개까지")
 	for entry in _log:
 		assert_true(absf(_semitones(entry[1])) <= AudioManager.JITTER_SEMITONES + 0.001, "±0.5반음")
+
+
+func test_웹_빌드는_첫_곡만_pck에_넣고_나머지는_뒤에서_받는다() -> void:
+	var presets := ConfigFile.new()
+	assert_eq(presets.load("res://export_presets.cfg"), OK)
+	var excluded: PackedStringArray = str(presets.get_value("preset.0", "exclude_filter")).split(", ")
+	assert_false(excluded.has(AudioManager.track_path(0).trim_prefix("res://")), "첫 곡은 pck에")
+	assert_eq(AudioManager.FIRST_TRACK.resource_path, AudioManager.track_path(0))
+	for step in range(1, MusicLadder.STEPS.size()):
+		assert_true(excluded.has(AudioManager.track_path(step).trim_prefix("res://")), "곡 %d은 pck에서 빼고 music/에서 받음" % step)
+	assert_eq(presets.get_value("preset.0.options", "html/custom_html_shell"), "res://web/shell.html", "로딩 화면 셸")

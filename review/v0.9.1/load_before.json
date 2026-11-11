@@ -1,0 +1,92 @@
+[
+ {
+  "renderer": "ANGLE (Microsoft Corporation, D3D12 (NVIDIA GeForce RTX 4060), OpenGL 4.6)",
+  "loading_s": null,
+  "main_s": 21.75,
+  "files": [
+   {
+    "file": "(page)",
+    "kb": 2,
+    "done_s": 0.17
+   },
+   {
+    "file": "index.png",
+    "kb": 21,
+    "done_s": 0.39
+   },
+   {
+    "file": "index.js",
+    "kb": 68,
+    "done_s": 0.43
+   },
+   {
+    "file": "index.icon.png",
+    "kb": 4,
+    "done_s": 0.63
+   },
+   {
+    "file": "index.pck",
+    "kb": 5484,
+    "done_s": 11.71
+   },
+   {
+    "file": "index.wasm",
+    "kb": 9947,
+    "done_s": 16.22
+   },
+   {
+    "file": "d6c4012a-c0a3-4f50-8b75-4715eb047980",
+    "kb": 0,
+    "done_s": 21.72
+   }
+  ],
+  "total_kb_before_main": 15526,
+  "later_files": [],
+  "errors": []
+ },
+ {
+  "renderer": "ANGLE (Microsoft Corporation, D3D12 (NVIDIA GeForce RTX 4060), OpenGL 4.6)",
+  "loading_s": null,
+  "main_s": 20.63,
+  "files": [
+   {
+    "file": "(page)",
+    "kb": 2,
+    "done_s": 0.17
+   },
+   {
+    "file": "index.png",
+    "kb": 21,
+    "done_s": 0.38
+   },
+   {
+    "file": "index.js",
+    "kb": 68,
+    "done_s": 0.43
+   },
+   {
+    "file": "index.icon.png",
+    "kb": 4,
+    "done_s": 0.63
+   },
+   {
+    "file": "index.pck",
+    "kb": 5484,
+    "done_s": 11.71
+   },
+   {
+    "file": "index.wasm",
+    "kb": 9947,
+    "done_s": 16.22
+   },
+   {
+    "file": "12f01fb4-d4b1-4aa7-a9d2-44e5213b62f5",
+    "kb": 0,
+    "done_s": 20.6
+   }
+  ],
+  "total_kb_before_main": 15526,
+  "later_files": [],
+  "errors": []
+ }
+]

@@ -11,22 +11,11 @@ const SFX := {
 	&"combo_break": preload("res://assets/audio/sfx/combo_break.wav"),
 	&"close": preload("res://assets/audio/sfx/close.wav"),
 }
-## MusicLadder.STEPS와 같은 순서 (맨 위 곡 뒤의 단계는 MusicLadder.track으로 마지막 곡)
-const TRACKS: Array[AudioStreamOggVorbis] = [
-	preload("res://assets/audio/music/bgm_100_orig.ogg"),
-	preload("res://assets/audio/music/bgm_105_orig.ogg"),
-	preload("res://assets/audio/music/bgm_110_a.ogg"),
-	preload("res://assets/audio/music/bgm_115_a.ogg"),
-	preload("res://assets/audio/music/bgm_120_b.ogg"),
-	preload("res://assets/audio/music/bgm_125_b.ogg"),
-	preload("res://assets/audio/music/bgm_130_b.ogg"),
-	preload("res://assets/audio/music/bgm_135_b.ogg"),
-	preload("res://assets/audio/music/bgm_140_b.ogg"),
-	preload("res://assets/audio/music/bgm_145_b.ogg"),
-	preload("res://assets/audio/music/bgm_150_b.ogg"),
-	preload("res://assets/audio/music/bgm_155_b.ogg"),
-	preload("res://assets/audio/music/bgm_160_b.ogg"),
-]
+## 첫 곡만 게임 파일(.pck)에 넣는다. 나머지 12곡은 웹에서 메인 화면이 뜬 뒤 뒤에서 받는다 (첫 로딩을 줄이려고, v0.9.1).
+## 웹 빌드는 export_presets.cfg가 나머지 곡을 .pck에서 빼고, 배포 워크플로가 원본 .ogg를 사이트의 music/에 둔다.
+const FIRST_TRACK := preload("res://assets/audio/music/bgm_100_orig.ogg")
+const MUSIC_DIR := "res://assets/audio/music/"
+const FETCH_RETRY := 2.0  # 곡을 못 받았으면 이만큼 뒤 다시 (받기 전에는 지금 곡 구간이 한 번 더 돈다)
 const POOL_SIZE := 6
 ## 소리 균형은 여기서만 바꾼다 (dB). 음악의 A 가중 크기가 효과음(lane·jump·slide 평균)보다 2~3dB 작게.
 ## 음악 파일은 저음이 많아 A 가중으로 효과음보다 16dB 작다. 음악만 올리면 피크가 넘치므로(웹 샘플 재생엔 리미터도 없다) 효과음을 함께 내렸다.
@@ -71,7 +60,13 @@ var music: AudioStreamPlayer
 ## 소리 끔 (메인 화면 버튼): 음악·효과음 모두
 var muted := false
 
+## MusicLadder.STEPS와 같은 순서의 곡. 아직 받지 못한 곡은 null (맨 위 곡 뒤의 단계는 MusicLadder.track으로 마지막 곡)
+var tracks: Array[AudioStreamOggVorbis] = []
+
 var _web: WebMusic
+var _fetch: HTTPRequest   # 웹: 곡을 하나씩 받는다
+var _fetch_queue: Array[int] = []
+var _fetch_base := ""     # 사이트의 music/ 주소
 var _web_playing := false
 var _players: Array[AudioStreamPlayer] = []
 var _gen: AudioStreamGeneratorPlayback
@@ -93,13 +88,20 @@ var _blocked := false
 var _rng := RandomNumberGenerator.new()
 var _music_bus := AudioServer.get_bus_index(&"Music")
 var _duck: Tween
+var _music_db := MUSIC_DB  # 게임이 정한 음악 크기 (메인 화면·충돌 낮춤 포함). 설정의 크기는 그 위에 더한다
+var _music_user_db := 0.0   # 설정 MUSIC 슬라이더 (dB)
+var _sfx_user_db := 0.0     # 설정 SFX 슬라이더 (dB)
+var _held := false          # 일시정지로 소리를 멈췄다
 var _fades := {}  # 음악 플레이어 -> 볼륨 트윈 (플레이어마다 하나만)
 
 
 func _ready() -> void:
 	AudioServer.set_bus_volume_db(AudioServer.get_bus_index(&"SFX"), SFX_DB)
-	for track in TRACKS:
-		track.loop = true
+	tracks.resize(MusicLadder.STEPS.size())
+	_set_track(0, FIRST_TRACK)
+	if not OS.has_feature("web"):  # 데스크톱·테스트는 모든 곡이 프로젝트 안에 있다
+		for i in range(1, tracks.size()):
+			_set_track(i, load(track_path(i)))
 	for i in 2:  # 재시작 때 두 곡이 겹치므로 두 개
 		var player := AudioStreamPlayer.new()
 		player.bus = &"Music"
@@ -118,10 +120,64 @@ func _ready() -> void:
 		var bpm := int(str(JavaScriptBridge.eval("new URLSearchParams(location.search).get('bpm') || 0")))
 		start_step = maxi(MusicLadder.step_of_bpm(bpm), 0)
 		ladder = MusicLadder.new(start_step)
+		_fetch = HTTPRequest.new()
+		_fetch.request_completed.connect(_on_track_fetched)
+		add_child(_fetch)
+		_fetch_base = str(JavaScriptBridge.eval("new URL('music/', location.href).href"))
+		if start_step != 0:  # 개발용 ?bpm: 시작 곡을 먼저 받는다 (main이 받을 때까지 가림막을 둔다)
+			fetch_rest()
 		_web = WebMusic.new(start_step)
 		for sound in SFX:
 			AudioServer.register_stream_as_sample(SFX[sound])
 	_set_music_db(MUSIC_DB)
+
+
+func track_path(step: int) -> String:
+	return MUSIC_DIR + MusicLadder.STEPS[step]["file"] + ".ogg"
+
+
+func _set_track(step: int, track: AudioStreamOggVorbis) -> void:
+	track.loop = true
+	tracks[step] = track
+
+
+## 메인 화면이 뜬 뒤 부른다 (웹): 받지 못한 곡을 시작 곡 → 낮은 단계부터 하나씩 받는다
+func fetch_rest() -> void:
+	if _fetch == null or not _fetch_queue.is_empty():
+		return
+	for step in [start_step] + range(tracks.size()):
+		if tracks[step] == null and not _fetch_queue.has(step):
+			_fetch_queue.append(step)
+	_fetch_next()
+
+
+func _fetch_next() -> void:
+	if _fetch_queue.is_empty() or _fetch.get_http_client_status() != HTTPClient.STATUS_DISCONNECTED:
+		return
+	if _fetch.request(_fetch_base + track_path(_fetch_queue[0]).get_file()) != OK:
+		get_tree().create_timer(FETCH_RETRY).timeout.connect(_fetch_next)
+
+
+func _on_track_fetched(result: int, code: int, _headers: PackedStringArray, body: PackedByteArray) -> void:
+	var step: int = _fetch_queue[0]
+	var track: AudioStreamOggVorbis = AudioStreamOggVorbis.load_from_buffer(body) if result == HTTPRequest.RESULT_SUCCESS and code == 200 else null
+	if track == null:  # 끊긴 연결 등: 잠깐 뒤 같은 곡을 다시 받는다
+		print("MUSIC 곡 %d 받기 실패 (결과 %d, 코드 %d)" % [step, result, code])
+		get_tree().create_timer(FETCH_RETRY).timeout.connect(_fetch_next)
+		return
+	_set_track(step, track)
+	_fetch_queue.pop_front()
+	_fetch_next.call_deferred()  # 요청이 끝난 같은 프레임에는 새 요청을 받지 않는다
+
+
+## 이 단계의 곡을 받았는가 (데스크톱은 늘 참)
+func has_track(step: int) -> bool:
+	return tracks[MusicLadder.track(step)] != null
+
+
+## 시작 곡을 풀어 첫 입력에 바로 틀 수 있는가 (가림막을 걷는 조건)
+func first_ready() -> bool:
+	return _web == null or _web.is_ready(start_step, 0.0)
 
 
 func _process(delta: float) -> void:
@@ -180,6 +236,11 @@ func _next_track_ready() -> bool:
 	return not edge["switch"] or _web.is_ready(edge["step"], edge["from"])
 
 
+## 화면이 쓰는 음악 시간과 실제로 들리는 위치의 차이(초). 장애물 도착과 박이 얼마나 어긋났나 (일시정지 뒤 측정)
+func drift() -> float:
+	return music_time - (_raw_position() + _clock.offset)
+
+
 ## 지금 귀에 들리는 음악 위치 (판 시작 기준)
 func _raw_position() -> float:
 	if _web:
@@ -214,7 +275,7 @@ func _pump_generator() -> void:
 			var blend := roundi(SWITCH_BLEND * AudioServer.get_mix_rate())
 			if room < blend:
 				return
-			var next := open_track(TRACKS[_switch_step], _switch_from)
+			var next := open_track(tracks[_switch_step], _switch_from)
 			var old_part := _feed.mix_audio(1.0, blend)
 			var new_part := next.mix_audio(1.0, blend)
 			for i in blend:
@@ -250,7 +311,7 @@ func _begin_music(fade: float) -> void:
 			music.volume_db = FADE_FLOOR_DB
 			_volume_tween(music).tween_property(music, "volume_db", 0.0, fade)
 		_gen = music.get_stream_playback()
-		_feed = open_track(TRACKS[start_step])
+		_feed = open_track(tracks[start_step])
 		_pushed = 0
 		_switch_frame = -1
 		_waiting_switches.clear()
@@ -352,7 +413,7 @@ func play_crash() -> void:
 	if _duck:
 		_duck.kill()
 	_duck = create_tween()
-	_duck.tween_method(_set_music_db, AudioServer.get_bus_volume_db(_music_bus), MUSIC_DB + DUCK_DB, DUCK_FADE)
+	_duck.tween_method(_set_music_db, _music_db, MUSIC_DB + DUCK_DB, DUCK_FADE)
 	_duck.tween_interval(DUCK_TIME - DUCK_FADE * 2.0)
 	_duck.tween_method(_set_music_db, MUSIC_DB + DUCK_DB, MUSIC_DB, DUCK_FADE)
 
@@ -379,13 +440,40 @@ func _music_level(db: float) -> void:
 func set_muted(on: bool) -> void:
 	muted = on
 	AudioServer.set_bus_mute(0, on)
-	_set_music_db(AudioServer.get_bus_volume_db(_music_bus))
+	_set_music_db(_music_db)
+
+
+## 설정의 음악·효과음 크기 (0~1). 0이면 소리 없음
+func set_volumes(music_level: float, sfx_level: float) -> void:
+	_music_user_db = linear_to_db(music_level) if music_level > 0.0 else -80.0
+	_sfx_user_db = linear_to_db(sfx_level) if sfx_level > 0.0 else -80.0
+	AudioServer.set_bus_volume_db(AudioServer.get_bus_index(&"SFX"), SFX_DB + _sfx_user_db)
+	_set_music_db(_music_db)
+
+
+## 일시정지: 음악·효과음을 그 자리에서 멈추고 음악 시계도 멈춘다. 풀면 멈췄던 표본부터 이어진다.
+## 웹은 AudioContext를 멈춘다 (시계 currentTime이 서고, 예약해 둔 곡 경계도 같이 밀린다).
+## 데스크톱은 플레이어를 멈춘다 (트리 일시정지만으로는 제너레이터 버퍼가 비는 동안 위치가 흐를 수 있어 직접 멈춘다).
+func set_held(on: bool) -> void:
+	_held = on
+	if _web:
+		_web.hold(on)
+		return
+	for player in _players + _pool + _orb_pool + _close_pool:
+		player.stream_paused = on
+
+
+## 일시정지를 푼 뒤 소리가 실제로 다시 흐르는가 (웹 AudioContext는 몇 ms 늦게 다시 돈다)
+func is_running() -> bool:
+	return not _held and (_web == null or _web.running())
 
 
 func _set_music_db(db: float) -> void:
-	AudioServer.set_bus_volume_db(_music_bus, db)
+	_music_db = db
+	var heard := db + _music_user_db
+	AudioServer.set_bus_volume_db(_music_bus, heard)
 	if _web:  # 웹 음악은 엔진 버스를 거치지 않고 바로 나가므로 소리 끔도 여기서
-		_web.set_db(-120.0 if muted else db)
+		_web.set_db(-120.0 if muted or _music_user_db <= -80.0 else heard)
 
 
 func _jitter() -> float:

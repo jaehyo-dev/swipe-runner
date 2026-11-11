@@ -183,7 +183,7 @@ func _process(delta: float) -> void:
 	frame += 1
 	t += delta
 	_deltas.append(delta)
-	if delta > 0.033 and main.prewarmed:
+	if delta > 0.033 and main.warmed:
 		_slow_frames += 1
 	_max_time = maxf(_max_time, AudioManager.music_time)
 	if _force_slip:

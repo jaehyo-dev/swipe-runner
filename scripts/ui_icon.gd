@@ -1,9 +1,9 @@
 class_name UiIcon
 extends Control
-## 기호를 가는 선으로 그린다: 조작 안내 ‹ › ↑ ↓(↑↓는 Poppins에 없고, ‹ ›는 글자로는 너무 작아 같은 굵기로 그린다), 소리 켜기/끄기, 집. 텍스처 그림은 쓰지 않는다.
+## 기호를 가는 선으로 그린다: 조작 안내 ‹ › ↑ ↓(↑↓는 Poppins에 없고, ‹ ›는 글자로는 너무 작아 같은 굵기로 그린다), 소리 켜기/끄기, 집, 일시정지 ‖, 설정 톱니. 텍스처 그림은 쓰지 않는다.
 ## 그림은 크기(size)의 가운데 정사각형 안에 art 비율로 그린다. 크기를 넉넉히 두면 누르는 자리가 넓어진다.
 
-enum Kind { LEFT_RIGHT, UP, DOWN, SOUND_ON, SOUND_OFF, HOME }
+enum Kind { LEFT_RIGHT, UP, DOWN, SOUND_ON, SOUND_OFF, HOME, PAUSE, GEAR }
 
 var kind := Kind.UP:
 	set(value):
@@ -45,6 +45,15 @@ func _draw() -> void:
 		Kind.HOME:
 			draw_polyline(PackedVector2Array([p.call(-0.9, -0.05), p.call(0, -0.85), p.call(0.9, -0.05)]), color, width, true)
 			draw_polyline(PackedVector2Array([p.call(-0.65, -0.25), p.call(-0.65, 0.85), p.call(0.65, 0.85), p.call(0.65, -0.25)]), color, width, true)
+		Kind.PAUSE:
+			for x in [-0.35, 0.35]:
+				draw_line(p.call(x, -0.75), p.call(x, 0.75), color, width, true)
+		Kind.GEAR:  # 고리 + 톱니 8개
+			draw_arc(c, u * 0.55, 0.0, TAU, 32, color, width, true)
+			draw_arc(c, u * 0.2, 0.0, TAU, 16, color, width, true)
+			for i in 8:
+				var dir := Vector2.from_angle(TAU * i / 8.0)
+				draw_line(c + dir * u * 0.55, c + dir * u * 0.9, color, width, true)
 
 
 ## 화면 좌표 point가 이 아이콘의 누르는 자리 안인가

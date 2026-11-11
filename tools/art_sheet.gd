@@ -14,7 +14,7 @@ func _ready() -> void:
 	_main.seed_value = 143
 	_main.best_path = "user://art_sheet_best.txt"
 	add_child(_main)
-	while not _main.prewarmed:
+	while not _main.warmed:
 		await get_tree().process_frame
 	_main.clear_pieces()
 	_main.field.items.clear()

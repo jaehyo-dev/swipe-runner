@@ -114,7 +114,7 @@ func test_피하면_계속_달림() -> void:
 func test_시간이_가면_거리가_늘고_장애물_노드가_생기고_지나가면_사라짐() -> void:
 	var main := _make_main()
 	await wait_frames()
-	while not main.prewarmed:  # 미리 준비용 장애물이 사라질 때까지
+	while not main.warmed:  # 미리 준비용 장애물이 사라질 때까지
 		await wait_frames()
 	await wait_frames()
 	assert_eq(main.field.items.size(), 0, "첫 장애물(1마디 뒤)은 아직 안개 너머")
@@ -167,13 +167,16 @@ func _strongest(c: Color) -> String:
 func test_화면에_점수와_버전_안내_글자만_있음() -> void:
 	var main := _make_main()
 	await wait_frames()
-	while not main.prewarmed:
+	while not main.warmed:
 		await wait_frames()
 	await wait_frames()
 	var labels: Array = main._hud.find_children("*", "Label", true, false)
 	assert_eq(labels.size(), 6, "점수 + 최고 + (숨겨진) 다시 시작 안내·배수·PERFECT 한 줄·게임 오버 한 줄")
 	assert_eq(main._title.find_children("*", "Label", true, false).size(), 6, "메인 화면: 제목 + BEST + 안내 세 줄(기호는 선으로 그림) + 시작 안내")
-	assert_eq(main.find_children("*", "Label", true, false).size(), 13, "+ 버전")
+	assert_eq(main._pause_menu.find_children("*", "Label", true, false).size(), 5, "일시정지: PAUSED + 버튼 셋 + 숫자")
+	assert_eq(main._settings.find_children("*", "Label", true, false).size(), 8, "설정: 제목 + 줄 이름 넷 + 값 둘 + DONE")
+	assert_eq(main.find_children("*", "Label", true, false).size(), 13 + 5 + 8, "+ 버전")
+	assert_false(main._pause_menu.visible or main._settings.visible, "일시정지·설정은 처음엔 숨김")
 	for hidden in ["MultiplierLabel", "StatsLabel", "RestartLabel", "PerfectLabel"]:
 		assert_false(main.find_child(hidden, true, false).visible, hidden + " 처음엔 숨김")
 	var version: Label = main.find_child("VersionLabel", true, false)
@@ -472,7 +475,19 @@ func test_재시작_뒤_0_82초_동안_어떤_장애물도_닿을_수_없음() -
 	main.queue_free()
 
 
-func test_첫_화면_전에_세_종류와_글자를_가림막_뒤에서_그린다() -> void:
+## 지금 그려지는 장애물 종류와 그 장애물의 크기 (헤드리스는 MultiMesh 변환을 돌려주지 않아 장애물 값으로 본다)
+func _drawn_kinds(main: Node3D) -> Dictionary:
+	main._sync_pieces()
+	var drawn := {}
+	for kind in main._kind_meshes:
+		if main._kind_meshes[kind]["body"].visible_instance_count > 0:
+			drawn[kind] = 1.0
+	for piece in main._obstacles.values() + main._leaving:
+		drawn[piece.kind] = minf(drawn.get(piece.kind, 1.0), piece.scale.x)
+	return drawn
+
+
+func test_첫_화면_전에는_메인_화면만_그리고_장애물_방울_글자는_화면_뒤에서_하나씩_작게() -> void:
 	var main: Node3D = load("res://scenes/main.tscn").instantiate()
 	main.seed_value = 1234
 	add_child(main)
@@ -483,23 +498,62 @@ func test_첫_화면_전에_세_종류와_글자를_가림막_뒤에서_그린�
 	main._input(key)
 	assert_false(main.started, "가림막 뒤 입력으로는 시작하지 않음")
 	assert_eq(main.lane, 1, "동작도 하지 않음")
-	main._sync_pieces()
-	for kind in main._kind_meshes:
-		assert_true(main._kind_meshes[kind]["body"].visible_instance_count > 0, "장애물 %d을 그림" % kind)
-	main._sync_orbs()
-	assert_true(main._orbs.visible_instance_count > 0 and main._links.visible_instance_count > 0 and main._ring.visible, "방울·실선·고리 셰이더도 미리 그림")
-	var covers := main.find_children("*", "ColorRect", true, false).filter(func(c: ColorRect) -> bool: return c.visible)
+	assert_eq(_drawn_kinds(main), {}, "1단계: 장애물은 그리지 않는다 (메인 화면에 보이는 것만)")
+	var covers := main.find_children("*", "ColorRect", true, false).filter(func(c: ColorRect) -> bool: return c.is_visible_in_tree())
 	assert_eq(covers.size(), 1)
 	assert_true(covers[0].get_parent().layer > main._fade.get_parent().layer, "화면 맨 위 가림막")
-	assert_eq(main.find_children("*", "Label", true, false).size(), 19, "숫자·안내·최고·배수·한 줄·PERFECT 글자도 그림 (메인 화면 글자는 그대로 보여 그려진다)")
 	assert_eq(main.find_children("Flash", "", true, false).size(), 0, "v0.8.1: 화면 깜빡임 없음")
-	var nodes_during: int = _count_nodes(main)
 	while not main.prewarmed:
 		await wait_frames()
+	await wait_frames()  # 가림막이 지워질 때까지
+	var nodes_shown: int = _count_nodes(main)
+	var labels_shown: int = main.find_children("*", "Label", true, false).size()
+	var seen := {}
+	var orbs_seen := false
+	while not main.warmed:
+		var drawn := _drawn_kinds(main)
+		assert_true(drawn.size() <= 1, "2단계: 한 번에 한 묶음 %s" % drawn)
+		for kind in drawn:
+			assert_true(drawn[kind] < 0.01, "화면에 안 보이게 아주 작게 %s" % drawn)
+			seen[kind] = true
+		main._sync_orbs()
+		if main._orbs.visible_instance_count > 0:
+			orbs_seen = true
+			assert_true(main._ring.scale.x < 0.01, "방울 고리도 아주 작게")
+			assert_true(main._links.visible_instance_count > 0 and main._ring.visible, "실선·고리 셰이더도 그림")
+		assert_eq(main.find_children("*", "ColorRect", true, false).filter(func(c: ColorRect) -> bool: return c.is_visible_in_tree()).size(), 0, "가림막 없이 메인 화면이 보인다")
+		await wait_frames()
+	assert_eq(seen.size(), main._kind_meshes.size(), "세 종류 모두 그림")
+	assert_true(orbs_seen)
 	await wait_frames()
-	assert_eq(main.find_children("*", "ColorRect", true, false), [main._fade], "가림막 사라짐 (페이드 판만 남음)")
-	assert_true(_count_nodes(main) < nodes_during, "준비용 노드 정리")
-	assert_eq(main.find_children("*", "Label", true, false).size(), 13, "가림막 글자는 지움")
+	assert_eq(_drawn_kinds(main), {}, "다 그린 뒤 치움")
+	assert_eq(_count_nodes(main), nodes_shown, "준비용 노드 정리")
+	assert_eq(main.find_children("*", "Label", true, false).size(), labels_shown, "글자 그림용 글자는 지움")
+	main.queue_free()
+
+
+func test_준비가_끝나기_전에_시작을_누르면_남은_것을_한꺼번에_그리고_시작한다() -> void:
+	var main: Node3D = load("res://scenes/main.tscn").instantiate()
+	main.seed_value = 1234
+	add_child(main)
+	while not main.prewarmed:
+		await wait_frames()
+	var key := InputEventKey.new()
+	key.pressed = true
+	key.keycode = KEY_LEFT
+	main._input(key)
+	assert_false(main.started, "아직 준비 중: 기다린다")
+	await wait_frames()
+	var drawn := _drawn_kinds(main)
+	while drawn.size() < 2 and not main.warmed:  # 지금 그리던 묶음이 끝나면 남은 것이 한꺼번에
+		await wait_frames()
+		drawn = _drawn_kinds(main)
+	assert_true(drawn.size() >= 2 or main.warmed, "남은 묶음을 한꺼번에 그림")
+	while not main.warmed:
+		await wait_frames()
+	assert_true(main.started, "다 그리고 시작")
+	assert_eq(main.lane, 1, "시작 입력은 동작이 아님")
+	AudioManager.music.stop()
 	main.queue_free()
 
 
@@ -729,7 +783,7 @@ func test_방울을_먹으면_점수와_소리_놓치면_콤보가_끊기고_배
 	assert_eq(main.score.combo, 0)
 	assert_true("combo_break" in played, "툭")
 	# 놓친 방울은 0.1초 안에, 늦어도 z 1.5 전에 작아져 없어진다 (카메라 앞에서 커지지 않게)
-	while not main.prewarmed:  # 준비 중 미리 그리는 방울이 빠진 뒤에 센다
+	while not main.warmed:  # 준비 중 미리 그리는 방울이 빠진 뒤에 센다
 		await wait_frames()
 	main.field.orbs.assign([missed])
 	missed["missed"] = main._music_t
@@ -752,7 +806,7 @@ func test_방울을_먹으면_점수와_소리_놓치면_콤보가_끊기고_배
 
 func test_같은_줄_이웃_방울만_빛_실선으로_잇고_먹으면_고리가_퍼졌다_사라짐() -> void:
 	var main := _make_main()
-	while not main.prewarmed:  # 준비 중에는 고리를 미리 그려 둔다
+	while not main.warmed:  # 준비 중에는 고리를 미리 그려 둔다
 		await wait_frames()
 	main.field.items.clear()
 	main.field.orbs.clear()
@@ -828,7 +882,7 @@ func _make_menu() -> Node3D:
 	AudioManager.music.stop()
 	var main := _make_main()
 	main.started = false
-	while not main.prewarmed:
+	while not main.warmed:
 		await wait_frames()
 	main.advance(STEP)
 	return main
