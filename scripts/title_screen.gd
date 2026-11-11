@@ -37,18 +37,18 @@ func _init() -> void:
 	name = "TitleScreen"
 	set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
 	mouse_filter = Control.MOUSE_FILTER_IGNORE
-	var title := _label("TitleLabel", "SWIPE\nPULSE", TITLE_SIZE, TITLE_COLOR)
+	var title := text_label("TitleLabel", "SWIPE\nPULSE", TITLE_SIZE, TITLE_COLOR)
 	title.label_settings.line_spacing = TITLE_LINE
 	title.label_settings.shadow_color = TITLE_GLOW
 	title.label_settings.shadow_size = 18
 	title.label_settings.shadow_offset = Vector2.ZERO
 	title.offset_top = TITLE_TOP
 	add_child(title)
-	best_label = _label("MenuBestLabel", "", LINE_SIZE, Color(1, 1, 1, 0.7))
+	best_label = text_label("MenuBestLabel", "", LINE_SIZE, Color(1, 1, 1, 0.7))
 	best_label.offset_top = BEST_TOP
 	add_child(best_label)
 	_build_guide()
-	start_label = _label("StartLabel", "SWIPE TO START", LINE_SIZE, Color.WHITE)
+	start_label = text_label("StartLabel", "SWIPE TO START", LINE_SIZE, Color.WHITE)
 	start_label.set_anchors_and_offsets_preset(Control.PRESET_BOTTOM_WIDE)
 	add_child(start_label)
 	place_start(0.0, 1280.0)
@@ -124,16 +124,12 @@ func _build_guide() -> void:
 		mark.custom_minimum_size.x = ICON_COLUMN
 		mark.size_flags_vertical = Control.SIZE_SHRINK_CENTER
 		line.add_child(mark)
-		var word := _label("", row[1], LINE_SIZE, Color(1, 1, 1, 0.7))
+		var word := text_label("", row[1], LINE_SIZE, Color(1, 1, 1, 0.7))
 		word.horizontal_alignment = HORIZONTAL_ALIGNMENT_LEFT
 		word.custom_minimum_size.x = TEXT_COLUMN
 		word.size_flags_vertical = Control.SIZE_SHRINK_CENTER
 		line.add_child(word)
 		guide.add_child(line)
-
-
-func _label(node_name: String, text: String, font_size: int, color: Color) -> Label:
-	return text_label(node_name, text, font_size, color)
 
 
 ## 메인 화면 글자 모양(Poppins ExtraLight, 가운데 정렬, 누름은 받지 않음). 일시정지·설정 화면도 같은 모양을 쓴다

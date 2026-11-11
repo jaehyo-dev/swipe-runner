@@ -956,6 +956,7 @@ func _on_pause_home() -> void:
 
 ## 설정 (메인 화면 톱니, 일시정지의 SETTINGS)
 func open_settings() -> void:
+	_begin_waiting = false  # 준비 중에 눌러 둔 시작은 취소한다: 설정 뒤에서 게임이 시작되면 조작할 수 없다
 	_pause_menu.blocked = true
 	_settings.open(save, haptics)
 

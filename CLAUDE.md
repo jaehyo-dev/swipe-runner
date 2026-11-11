@@ -10,7 +10,7 @@ SWIPE PULSE(v0.8.2까지 가칭 "스와이프 러너", 저장소 이름은 swipe
 - 저장소: https://github.com/jaehyo-dev/swipe-runner
 - 배포 주소: https://jaehyo-dev.github.io/swipe-runner/ (이전 버전: /versions/)
 - 테스트: `godot --headless --path . --import` 후 `bash tests/run_tests.sh` (종료 코드 확인), 파일 하나만은 `TEST_FILE=test_orbs bash tests/run_tests.sh`, 도구 테스트 `python3 -m unittest discover -s tools -p "test_*.py"`, 난이도 표 `godot --headless --path . -s tools/difficulty_report.gd`
-- 웹 내보내기: `godot --headless --path . --export-release "Web" "$PWD/build/web/index.html"` (Compatibility 렌더러, 스레드 없음)
+- 웹 내보내기: `godot --headless --path . --export-release "Web" "$PWD/build/web/index.html"` (Compatibility 렌더러, 스레드 없음) 뒤 `mkdir -p build/web/music && cp assets/audio/music/*.ogg build/web/music/` (v0.9.1부터 첫 곡 뒤 음악은 .pck에 없음). 로딩 화면은 `web/shell.html`, 제목 글꼴 조각은 `tools/make_loading_font.py`(fonttools)
 - 구조: 계산은 `scripts/logic/`(화면과 분리, 자동 테스트), 색 값은 `data/speed_palette.json`, 난이도 값은 `data/difficulty.json`, 화면은 `scripts/main.gd`·`runner.gd`·`art_meshes.gd`·`shaders/`, 소리는 오토로드 `scripts/audio_manager.gd`와 `scripts/web_music.gd`(효과음은 `tools/make_final_sounds.py`, 음악은 `tools/make_ladder_music.py`로 재현). 텍스처 그림은 쓰지 않는다.
 
 ## 진행 방식
@@ -55,3 +55,7 @@ SWIPE PULSE(v0.8.2까지 가칭 "스와이프 러너", 저장소 이름은 swipe
 | v0.8.1 | 아슬아슬 → PERFECT 글자(깜빡임 삭제), 판정 0.16초·보너스 100·방울 65, 놓친 방울 사라짐, 기둥 45% 이하(옆 동작), 세 모델 비교 | 완료 |
 | v0.8.2 | PERFECT를 BEST와 같은 글자로 한 줄, 제자리 흐려짐, Poppins Medium 삭제 | 완료 |
 | v0.9.0 | 이름 SWIPE PULSE, 메인 화면(조작 안내·소리 버튼·집 버튼), 자동 낮춤 오작동·테스트 메모리 경고·^ 기호 정리 | 완료 |
+| v0.9.1 | 기본기(일시정지·진동·설정), 첫 로딩 화면(셸·음악 나중에 받기·예열 2단계), 시작 글자 위치 | 완료 |
+| v0.10.0 | 오늘의 판: 하루 동안 모두 같은 배치, 오늘 최고 점수 따로 | 다음 |
+| v0.11.0 | 젤리 스킨 + 미션 (스킨 시안을 먼저 사용자와 고름) | 예정 |
+| 나중에 | 온라인 순위표, 곡 선택, 이어하기, (웹 정식 배포 때) 엔진 직접 빌드 | — |

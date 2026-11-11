@@ -182,7 +182,9 @@ func first_ready() -> bool:
 
 func _process(delta: float) -> void:
 	if _web:
-		if not _blocked:  # 게임 오버 화면에서는 경계가 계속 밀리므로 곡을 다시 풀지 않는다
+		if not first_ready():  # 개발용 ?bpm: 시작 곡을 다 받은 뒤 풀기 시작한다
+			_web.want(start_step, 0.0)
+		elif not _blocked:  # 게임 오버 화면에서는 경계가 계속 밀리므로 곡을 다시 풀지 않는다
 			_want_next_track()
 		_web.decode_slice()
 	if not is_music_on():

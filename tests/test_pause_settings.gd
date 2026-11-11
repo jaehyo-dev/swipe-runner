@@ -205,3 +205,19 @@ func test_숫자가_끝나고_소리를_기다리는_사이_가려져도_다시_
 	assert_true(main.paused and get_tree().paused)
 	assert_false(AudioManager.is_running(), "소리도 다시 멈춤")
 	_done(main)
+
+
+func test_준비_중에_시작을_눌러_두고_설정을_열면_시작을_취소한다() -> void:
+	var main: Node3D = load("res://scenes/main.tscn").instantiate()
+	main.seed_value = 1234
+	main.best_path = TEST_BEST
+	add_child(main)
+	while not main.prewarmed:
+		await wait_frames()
+	main._begin_waiting = true  # 준비가 끝나기 전에 시작을 누름
+	main.open_settings()
+	while not main.warmed:
+		await wait_frames()
+	assert_false(main.started, "설정 뒤에서 시작하지 않음")
+	main._settings.close()
+	_done(main)
