@@ -222,6 +222,14 @@
 - 기록 저장 50점 간격 → 2초 간격 (방울 65점이면 다시 방울마다 저장되어 웹 끊김이 돌아올 수 있었음)
 - 기록 review/v0.8.1/
 
-## v0.8.2 PERFECT를 BEST와 같은 글자로 (진행 중, 브랜치 wip/v0.8.2)
-- 끝: 코드(PERFECT 한 줄 "PERFECT ×3  +300", BEST의 LabelSettings 공유, 398px = BEST + 68px, 1.1배 0.1초 '톡', 0.6초 뒤 제자리 흐려짐), Poppins Medium·CREDITS 삭제, ART_BIBLE·CHANGELOG·버전 0.8.2, test_main_scene 35/35 통과
-- 남음: `bash review/v0.8.2/capture.sh <임시 폴더>`(PW·CHROME 필요)로 GIF·휴대폰/PC 캡처·웹 콘솔, PERFECT 줄이 지평선 띠와 안 겹치는지 확인 → 전체 테스트 → final-reviewer → main 푸시
+## v0.8.2 PERFECT를 BEST와 같은 글자로
+- PERFECT 한 줄 "PERFECT ×3  +300", BEST의 글자 설정 공유(Poppins ExtraLight 40px, 흰색 70%), 398px = BEST + 68px
+- 1.1배 → 1.0배 0.1초 '톡', 0.6초 뒤 제자리에서 0.25초 흐려짐, 점수 세어 오름 0.3초 유지. Poppins Medium·CREDITS 항목 삭제
+- 캡처: 맥에서 시작, 윈도우(WSL)에서 마무리. capture.sh에 리눅스 분기(xvfb + 소프트웨어 OpenGL, ffmpeg 없으면 PIL로 GIF)
+- 지평선: 휴대폰 25~29%, PC 31~36%로 밝은 지평선 선(약 44%) 위. PC는 BEST처럼 보라 안개 위에 걸침
+- 테스트 293/0, 도구 9, 웹 콘솔 오류 0. final-reviewer 통과. 기록 review/v0.8.2/
+
+## 이어서 할 일
+- 윈도우 데스크탑(WSL)에서 v0.8.2를 main에 올림. 다음 단계는 단계 표에 아직 없음 — 사용자와 v0.8.3/v0.9.0 내용을 정할 것
+- 미확인: 아이폰·실제 크롬 전체 화면에서 PERFECT 글자 체감(가늘어서 잘 보이는지)
+- 캡처는 `bash review/v0.8.2/capture.sh <임시 폴더>` (맥·리눅스 둘 다, 웹 단계는 PW·CHROME 필요)
