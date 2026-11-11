@@ -456,6 +456,8 @@ func set_volumes(music_level: float, sfx_level: float) -> void:
 ## 데스크톱은 플레이어를 멈춘다 (트리 일시정지만으로는 제너레이터 버퍼가 비는 동안 위치가 흐를 수 있어 직접 멈춘다).
 func set_held(on: bool) -> void:
 	_held = on
+	if not on:
+		_clock.rehear()
 	if _web:
 		_web.hold(on)
 		return

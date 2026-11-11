@@ -897,7 +897,11 @@ func _touch(main: Node3D, at: Vector2) -> void:
 
 func test_메인_화면은_장애물_없이_젤리가_박마다_숨_쉬고_제목과_안내가_보임() -> void:
 	var main: Node3D = await _make_menu()
-	assert_true(main._camera.position.is_equal_approx(main.MENU_CAM), "메인 화면 카메라")
+	assert_true(main._camera.position.is_equal_approx(main._menu_cam), "메인 화면 카메라")
+	var size: Vector2 = main.get_viewport().get_visible_rect().size
+	var pool: float = main._camera.unproject_position(Vector3(0.0, 0.0, main.POOL_FRONT_Z)).y
+	assert_true(main._title.start_label.get_global_rect().position.y >= pool, "SWIPE TO START는 젤리 빛 웅덩이 아래 (%.0f, 웅덩이 %.0f)" % [main._title.start_label.get_global_rect().position.y, pool])
+	assert_true(main._title.start_label.get_global_rect().end.y <= size.y - TitleScreen.START_FLOOR + 0.5, "화면 안 (버전 글자 위)")
 	assert_eq(main._hud.modulate.a, 0.0, "점수 글자는 숨김")
 	assert_true(main._title.visible)
 	assert_false(main._title.best_label.visible, "기록이 없으면 BEST 숨김")
@@ -913,7 +917,8 @@ func test_메인_화면은_장애물_없이_젤리가_박마다_숨_쉬고_제�
 		main.runner._process(STEP)
 		alphas.append(main._title.start_label.modulate.a)
 	assert_eq(glows, 3, "3박에 3번 부풂")
-	assert_true(alphas.max() - alphas.min() > 0.4, "SWIPE TO START가 밝아졌다 흐려짐")
+	assert_true(alphas.max() - alphas.min() > (TitleScreen.START_HIGH - TitleScreen.START_LOW) * 0.9, "SWIPE TO START가 밝아졌다 흐려짐")
+	assert_true(alphas.max() < main._title.best_label.label_settings.font_color.a, "가장 밝을 때도 BEST 줄보다 살짝 어둡게")
 	assert_true(main.field.items.is_empty() and main.travel == 0.0, "장애물 없음, 제자리")
 	assert_true(main._streaks.visible_instance_count <= main.MENU_STREAKS, "빛 줄기는 아주 적게")
 	main.queue_free()

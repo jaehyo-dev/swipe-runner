@@ -51,6 +51,13 @@ func update(raw: float, delta: float, beat := 0.6) -> float:
 	return time
 
 
+## 일시정지를 풀 때: 첫 소리를 기다릴 때처럼 다룬다. 소리가 다시 흐를 때까지 화면 시간이 프레임 시간으로 앞서 나가지 않는다
+## (오디오는 다시 켠 뒤 몇 ms~수십 ms 늦게 흐른다. 앞서 나가면 장애물이 박보다 먼저 온다)
+func rehear() -> void:
+	_heard = false
+	_held = 0.0
+
+
 ## update 뒤에 부른다. 프레임 시간 delta로 잇고 time과의 차이를 조금씩 메운 시간을 돌려준다.
 func smoothed(delta: float) -> float:
 	var ahead := smooth + delta

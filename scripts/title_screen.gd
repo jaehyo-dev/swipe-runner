@@ -17,10 +17,11 @@ const GUIDE_ROW := 64.0
 const ICON_COLUMN := 96.0  # 조작 안내 기호 칸 폭
 const GUIDE_ART := 0.7     # 조작 안내 기호 크기 (글자 높이에 맞춘다)
 const TEXT_COLUMN := 150.0
-const START_BOTTOM := 190.0  # 화면 아래에서 "SWIPE TO START"까지 (세로 화면: 젤리 아래 길 위)
-const START_BOTTOM_WIDE := 130.0  # 가로 화면(PC)은 젤리가 크고 낮아 더 아래로
-const START_LOW := 0.25    # 박에 맞춰 이 밝기와 START_HIGH 사이를 천천히 오간다
-const START_HIGH := 0.85
+const START_GAP := 40.0     # 젤리 빛 웅덩이 앞 끝에서 "SWIPE TO START"까지 (v0.9.1: 빛 바깥 아래)
+const START_BOTTOM := 190.0  # 화면 아래에서 "SWIPE TO START"까지 가장 높은 자리 (세로 화면: 길 위 가운데쯤)
+const START_FLOOR := 64.0    # 화면 아래에서 이만큼은 비운다 (버전 글자 자리)
+const START_LOW := 0.4     # 박에 맞춰 이 밝기와 START_HIGH 사이를 천천히 오간다 (v0.9.1: 더 밝게, BEST 0.7보다 살짝 어둡게)
+const START_HIGH := 0.62
 const START_BEATS := 2.0   # 한 번 밝아졌다 흐려지는 데 걸리는 박 수
 const SOUND_SIDE := 96.0   # 소리 버튼 누르는 자리(px). 그림은 그 절반
 const SOUND_MARGIN := 20.0
@@ -50,7 +51,7 @@ func _init() -> void:
 	start_label = _label("StartLabel", "SWIPE TO START", LINE_SIZE, Color.WHITE)
 	start_label.set_anchors_and_offsets_preset(Control.PRESET_BOTTOM_WIDE)
 	add_child(start_label)
-	fit(true)
+	place_start(0.0, 1280.0)
 	sound = UiIcon.new(UiIcon.Kind.SOUND_ON, Color(1, 1, 1, 0.7), SOUND_SIDE)
 	sound.name = "SoundButton"
 	corner(sound, true)
@@ -73,11 +74,13 @@ static func corner(icon: Control, right: bool) -> void:
 	icon.offset_bottom = SOUND_MARGIN + side
 
 
-## 화면 방향에 맞춰 "SWIPE TO START" 높이를 정한다 (main._fit_camera가 부른다)
-func fit(tall: bool) -> void:
-	var bottom := START_BOTTOM if tall else START_BOTTOM_WIDE
-	start_label.offset_top = -bottom
-	start_label.offset_bottom = -bottom + LINE_SIZE * 1.6
+## "SWIPE TO START"를 젤리 빛 웅덩이(pool: 화면 y) 아래에 둔다. 화면이 짧으면 아래 끝까지만 (main._fit_camera가 부른다)
+func place_start(pool: float, height: float) -> void:
+	var line := LINE_SIZE * 1.6
+	var top := clampf(pool + START_GAP, height - START_BOTTOM, height - START_FLOOR - line)
+	start_label.set_anchors_preset(Control.PRESET_TOP_WIDE)
+	start_label.offset_top = top
+	start_label.offset_bottom = top + line
 
 
 ## 메인 화면을 다시 보일 때: 기록(없으면 숨김), 조작 안내, 소리 상태

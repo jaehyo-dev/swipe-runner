@@ -1,0 +1,142 @@
+[
+ {
+  "renderer": "ANGLE (Microsoft Corporation, D3D12 (NVIDIA GeForce RTX 4060), OpenGL 4.6)",
+  "loading_s": 0.21,
+  "main_s": 3.42,
+  "kb_before_main": 1,
+  "kb_after_main": 410,
+  "files": [
+   {
+    "file": "(page)",
+    "kb": 0,
+    "cached": true,
+    "done_s": 0
+   },
+   {
+    "file": "index.js",
+    "kb": 0,
+    "cached": true,
+    "done_s": 0.01
+   },
+   {
+    "file": "xngAAClPAb2AAA=",
+    "kb": 1,
+    "cached": false,
+    "done_s": 0.01
+   },
+   {
+    "file": "index.pck",
+    "kb": 0,
+    "cached": true,
+    "done_s": 0.22
+   },
+   {
+    "file": "index.icon.png",
+    "kb": 0,
+    "cached": true,
+    "done_s": 0.41
+   },
+   {
+    "file": "index.wasm",
+    "kb": 0,
+    "cached": true,
+    "done_s": 0.43
+   },
+   {
+    "file": "7e15cc87-4c7e-4c91-95bb-d808cdd95ad4",
+    "kb": 0,
+    "cached": false,
+    "done_s": 3.4
+   },
+   {
+    "file": "bgm_105_orig.ogg",
+    "kb": 0,
+    "cached": true,
+    "done_s": 4.01
+   },
+   {
+    "file": "bgm_110_a.ogg",
+    "kb": 0,
+    "cached": true,
+    "done_s": 5.15
+   },
+   {
+    "file": "bgm_115_a.ogg",
+    "kb": 410,
+    "cached": false,
+    "done_s": 5.6
+   }
+  ],
+  "errors": []
+ },
+ {
+  "renderer": "ANGLE (Microsoft Corporation, D3D12 (NVIDIA GeForce RTX 4060), OpenGL 4.6)",
+  "loading_s": 0.21,
+  "main_s": 4.12,
+  "kb_before_main": 1,
+  "kb_after_main": 410,
+  "files": [
+   {
+    "file": "(page)",
+    "kb": 0,
+    "cached": true,
+    "done_s": 0
+   },
+   {
+    "file": "index.js",
+    "kb": 0,
+    "cached": true,
+    "done_s": 0.01
+   },
+   {
+    "file": "xngAAClPAb2AAA=",
+    "kb": 1,
+    "cached": false,
+    "done_s": 0.01
+   },
+   {
+    "file": "index.pck",
+    "kb": 0,
+    "cached": true,
+    "done_s": 0.22
+   },
+   {
+    "file": "index.icon.png",
+    "kb": 0,
+    "cached": true,
+    "done_s": 0.38
+   },
+   {
+    "file": "index.wasm",
+    "kb": 0,
+    "cached": true,
+    "done_s": 0.41
+   },
+   {
+    "file": "a813a02c-f1e8-49d0-9fa1-de4b72b1089d",
+    "kb": 0,
+    "cached": false,
+    "done_s": 4.08
+   },
+   {
+    "file": "bgm_105_orig.ogg",
+    "kb": 0,
+    "cached": true,
+    "done_s": 4.85
+   },
+   {
+    "file": "bgm_110_a.ogg",
+    "kb": 0,
+    "cached": true,
+    "done_s": 6.19
+   },
+   {
+    "file": "bgm_115_a.ogg",
+    "kb": 410,
+    "cached": false,
+    "done_s": 6.67
+   }
+  ],
+  "errors": []
+ }
+]

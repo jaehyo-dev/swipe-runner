@@ -13,8 +13,8 @@ const TOP := 150.0          # 패널 위에서 첫 줄까지
 const SIDE := 48.0          # 패널 안쪽 여백
 const LABEL_SIZE := 40
 const TITLE_SIZE := 64
-const PANEL_COLOR := Color(0.02, 0.016, 0.051, 0.86)  # 무대 바탕색(BOOT_COLOR) 반투명
-const DIM := Color(0.02, 0.016, 0.051, 0.35)
+const PANEL_COLOR := Color(0.02, 0.016, 0.051, 0.93)  # 무대 바탕색(BOOT_COLOR) 반투명
+const DIM := Color(0.02, 0.016, 0.051, 0.55)
 
 var save: SaveData
 var haptics: Haptics

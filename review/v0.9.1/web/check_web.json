@@ -1,0 +1,15 @@
+{
+ "errors": [],
+ "logs": [
+  "390x844: SAVE /userfs/godot/app_userdata/SWIPE PULSE (옛 폴더에서 옮긴 파일 0개)",
+  "1280x720: SAVE /userfs/godot/app_userdata/SWIPE PULSE (옛 폴더에서 옮긴 파일 0개)",
+  "800x900: SAVE /userfs/godot/app_userdata/SWIPE PULSE (옛 폴더에서 옮긴 파일 0개)",
+  "390x844: SAVE /userfs/godot/app_userdata/SWIPE PULSE (옛 폴더에서 옮긴 파일 0개)",
+  "390x844: SETTINGS 음악 0.30 효과음 0.60 진동 true 안내 3판",
+  "390x844: SAVE /userfs/godot/app_userdata/SWIPE PULSE (옛 폴더에서 옮긴 파일 0개)",
+  "390x844: SETTINGS 음악 0.30 효과음 0.60 진동 true 안내 3판",
+  "390x844: PAUSE 이어 한 뒤 3초 박자 오차 평균 -80.2ms (-190.8 ~ -61.6, 38프레임)",
+  "390x844: QUALITY 1 24.9 99% 프레임 100.0, 83.4, 83.3 ms가 3초 연속 20ms 초과"
+ ],
+ "audio_state_after_hide": "suspended"
+}

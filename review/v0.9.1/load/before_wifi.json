@@ -1,0 +1,106 @@
+[
+ {
+  "renderer": "ANGLE (Microsoft Corporation, D3D12 (NVIDIA GeForce RTX 4060), OpenGL 4.6)",
+  "loading_s": null,
+  "main_s": 12.77,
+  "kb_before_main": 15526,
+  "kb_after_main": 0,
+  "files": [
+   {
+    "file": "(page)",
+    "kb": 2,
+    "cached": false,
+    "done_s": 0.03
+   },
+   {
+    "file": "index.png",
+    "kb": 21,
+    "cached": false,
+    "done_s": 0.07
+   },
+   {
+    "file": "index.js",
+    "kb": 68,
+    "cached": false,
+    "done_s": 0.09
+   },
+   {
+    "file": "index.icon.png",
+    "kb": 4,
+    "cached": false,
+    "done_s": 0.66
+   },
+   {
+    "file": "index.pck",
+    "kb": 5484,
+    "cached": false,
+    "done_s": 5.26
+   },
+   {
+    "file": "index.wasm",
+    "kb": 9947,
+    "cached": false,
+    "done_s": 7.12
+   },
+   {
+    "file": "2e4b61a1-a2c4-4f15-8f58-278f5c617c18",
+    "kb": 0,
+    "cached": false,
+    "done_s": 12.73
+   }
+  ],
+  "errors": []
+ },
+ {
+  "renderer": "ANGLE (Microsoft Corporation, D3D12 (NVIDIA GeForce RTX 4060), OpenGL 4.6)",
+  "loading_s": null,
+  "main_s": 10.91,
+  "kb_before_main": 15526,
+  "kb_after_main": 0,
+  "files": [
+   {
+    "file": "(page)",
+    "kb": 2,
+    "cached": false,
+    "done_s": 0.02
+   },
+   {
+    "file": "index.png",
+    "kb": 21,
+    "cached": false,
+    "done_s": 0.07
+   },
+   {
+    "file": "index.js",
+    "kb": 68,
+    "cached": false,
+    "done_s": 0.09
+   },
+   {
+    "file": "index.icon.png",
+    "kb": 4,
+    "cached": false,
+    "done_s": 0.17
+   },
+   {
+    "file": "index.pck",
+    "kb": 5484,
+    "cached": false,
+    "done_s": 4.76
+   },
+   {
+    "file": "index.wasm",
+    "kb": 9947,
+    "cached": false,
+    "done_s": 6.63
+   },
+   {
+    "file": "a27006ad-b82f-4133-b8bf-24fde9c54dc7",
+    "kb": 0,
+    "cached": false,
+    "done_s": 10.88
+   }
+  ],
+  "errors": []
+ }
+]

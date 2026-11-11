@@ -1,0 +1,154 @@
+[
+ {
+  "renderer": "ANGLE (Microsoft Corporation, D3D12 (NVIDIA GeForce RTX 4060), OpenGL 4.6)",
+  "loading_s": 0.3,
+  "main_s": 15.42,
+  "kb_before_main": 10974,
+  "kb_after_main": 1666,
+  "files": [
+   {
+    "file": "(page)",
+    "kb": 5,
+    "cached": false,
+    "done_s": 0.17
+   },
+   {
+    "file": "xngAAClPAb2AAA=",
+    "kb": 1,
+    "cached": false,
+    "done_s": 0.18
+   },
+   {
+    "file": "index.js",
+    "kb": 68,
+    "cached": false,
+    "done_s": 0.41
+   },
+   {
+    "file": "index.icon.png",
+    "kb": 4,
+    "cached": false,
+    "done_s": 0.81
+   },
+   {
+    "file": "index.pck",
+    "kb": 949,
+    "cached": false,
+    "done_s": 2.72
+   },
+   {
+    "file": "index.wasm",
+    "kb": 9947,
+    "cached": false,
+    "done_s": 11.82
+   },
+   {
+    "file": "a0fae4c6-86af-49e9-adf6-5d66a1152f91",
+    "kb": 0,
+    "cached": false,
+    "done_s": 15.39
+   },
+   {
+    "file": "bgm_105_orig.ogg",
+    "kb": 412,
+    "cached": false,
+    "done_s": 16.8
+   },
+   {
+    "file": "bgm_110_a.ogg",
+    "kb": 438,
+    "cached": false,
+    "done_s": 18.24
+   },
+   {
+    "file": "bgm_115_a.ogg",
+    "kb": 410,
+    "cached": false,
+    "done_s": 20.51
+   },
+   {
+    "file": "bgm_120_b.ogg",
+    "kb": 406,
+    "cached": false,
+    "done_s": 22.75
+   }
+  ],
+  "errors": []
+ },
+ {
+  "renderer": "ANGLE (Microsoft Corporation, D3D12 (NVIDIA GeForce RTX 4060), OpenGL 4.6)",
+  "loading_s": 0.18,
+  "main_s": 14.74,
+  "kb_before_main": 10974,
+  "kb_after_main": 1666,
+  "files": [
+   {
+    "file": "(page)",
+    "kb": 5,
+    "cached": false,
+    "done_s": 0.17
+   },
+   {
+    "file": "xngAAClPAb2AAA=",
+    "kb": 1,
+    "cached": false,
+    "done_s": 0.18
+   },
+   {
+    "file": "index.js",
+    "kb": 68,
+    "cached": false,
+    "done_s": 0.41
+   },
+   {
+    "file": "index.icon.png",
+    "kb": 4,
+    "cached": false,
+    "done_s": 0.61
+   },
+   {
+    "file": "index.pck",
+    "kb": 949,
+    "cached": false,
+    "done_s": 2.51
+   },
+   {
+    "file": "index.wasm",
+    "kb": 9947,
+    "cached": false,
+    "done_s": 11.63
+   },
+   {
+    "file": "75445598-f579-436b-85d6-b1be585e1a24",
+    "kb": 0,
+    "cached": false,
+    "done_s": 14.71
+   },
+   {
+    "file": "bgm_105_orig.ogg",
+    "kb": 412,
+    "cached": false,
+    "done_s": 15.93
+   },
+   {
+    "file": "bgm_110_a.ogg",
+    "kb": 438,
+    "cached": false,
+    "done_s": 17.56
+   },
+   {
+    "file": "bgm_115_a.ogg",
+    "kb": 410,
+    "cached": false,
+    "done_s": 20.16
+   },
+   {
+    "file": "bgm_120_b.ogg",
+    "kb": 406,
+    "cached": false,
+    "done_s": 23.02
+   }
+  ],
+  "errors": []
+ }
+]

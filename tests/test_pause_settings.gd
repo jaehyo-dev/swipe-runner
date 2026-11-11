@@ -193,3 +193,15 @@ func test_진동은_충돌_PERFECT_새_기록에만() -> void:
 	main._game_over({"kind": ObstacleField.Kind.BLOCK, "lane": 1, "z": 0.0})
 	assert_eq(_events(main), [Haptics.Event.PERFECT, Haptics.Event.NEW_BEST, Haptics.Event.CRASH])
 	_done(main)
+
+
+func test_숫자가_끝나고_소리를_기다리는_사이_가려져도_다시_일시정지() -> void:
+	var main: Node3D = await _make_main()
+	main.begin()
+	main.pause()
+	main._pause_menu.hide()  # 숫자가 끝난 순간 (_on_resumed가 소리를 기다리는 중)
+	main.pause()
+	assert_true(main._pause_menu.visible, "일시정지 화면이 다시 보임")
+	assert_true(main.paused and get_tree().paused)
+	assert_false(AudioManager.is_running(), "소리도 다시 멈춤")
+	_done(main)

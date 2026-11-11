@@ -114,3 +114,20 @@ func test_240Hz에서도_오디오가_돌아온_것을_알아챔() -> void:
 		clock.update(position, dt)
 	var beats := (clock.time - position) / 0.6
 	assert_true(absf(beats - roundf(beats)) < 0.000001, "다시 재생 위치를 따름 %f" % beats)
+
+
+func test_일시정지를_풀면_소리가_다시_흐를_때까지_앞서_나가지_않음() -> void:
+	var clock := BeatClock.new()
+	var t := 0.0
+	for i in 60:  # 1초 동안 정상 재생
+		t += 1.0 / 60.0
+		clock.update(t, 1.0 / 60.0)
+		clock.smoothed(1.0 / 60.0)
+	var paused_at := clock.smooth
+	clock.rehear()
+	for i in 3:  # 다시 켰지만 소리가 아직 흐르지 않는 3프레임
+		clock.update(t, 1.0 / 60.0)
+		assert_eq(clock.smoothed(1.0 / 60.0), paused_at, "%d프레임: 소리를 기다린다" % i)
+	t += 0.01
+	clock.update(t, 1.0 / 60.0)
+	assert_true(absf(clock.smoothed(1.0 / 60.0) - t) < 0.008, "소리가 흐르면 그 자리 근처 (한 프레임 안)")

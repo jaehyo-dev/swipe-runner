@@ -36,6 +36,7 @@ const POP_TIME := 0.25       # 다시 시작할 때 대시 격자가 '퐁' 나�
 const PREWARM_FRAMES := 3    # 가림막 뒤에서 이만큼 연달아 빠른 프레임이 나오면 준비 끝 (셰이더는 그래픽 쪽에서 늦게 끝날 수 있다)
 const PREWARM_FAST_MS := 50
 const PREWARM_MAX_FRAMES := 120  # 아주 느린 기기도 언젠가는 화면을 연다
+const WARM_MAX_FRAMES := 20      # 2단계 한 묶음에 쓰는 최대 프레임: 셰이더는 첫 프레임에 만들어지고, 느린 기기도 시작을 오래 기다리지 않게
 const PREWARM_TINY := 0.002     # 메인 화면 뒤에서 미리 그릴 때의 크기: 그리기는 하지만 한 화소도 안 된다
 const DRIFT_TIME := 3.0
 const RESUME_WAIT_FRAMES := 20   # 이어 할 때 소리가 다시 돌기를 기다리는 최대 프레임 (못 돌아도 게임은 이어진다)
@@ -93,6 +94,11 @@ const GAME_CAM := Vector3(0.0, 3.3, 5.4)
 const GAME_LOOK := Vector3(0.0, 0.7, -8.0)
 const MENU_CAM := Vector3(0.0, 2.0, 4.6)    # 낮고 가깝게: 젤리가 크게, 위쪽 하늘에 제목 자리
 const MENU_LOOK := Vector3(0.0, 1.5, -8.0)
+## 짧은 창(세로/가로 MENU_SHORT 미만: PC, 거의 정사각형 창)은 젤리가 화면 아래를 채워 SWIPE TO START 자리가 없다: 조금 멀리서 본다
+const MENU_SHORT := 1.75
+const MENU_CAM_SHORT := Vector3(0.0, 2.2, 7.2)
+const MENU_LOOK_SHORT := Vector3(0.0, 2.0, -8.0)
+const POOL_FRONT_Z := 1.25   # 젤리 빛 웅덩이·반사의 앞(화면 아래) 끝. SWIPE TO START는 이 아래에 둔다
 const TITLE_FADE := 0.3      # 시작할 때 제목·안내가 흐려지는 시간 (점수 글자는 같은 시간에 나타난다)
 const CAMERA_IN := 0.6       # 시작할 때 카메라가 게임 자리로 들어가는 시간
 const HOME_FADE := 0.4       # 게임 오버 → 메인 화면 페이드 (반은 어두워지고 반은 밝아진다)
@@ -171,6 +177,8 @@ var _fade: ColorRect       # 게임 오버 → 메인 화면 페이드
 var _going_home := false
 var _menu_t := 0.0         # 메인 화면에서 흐른 시간 (음악이 없을 때의 박, 대시 흐름)
 var _menu_beat := -1       # 숨쉬기를 한 마지막 박
+var _menu_cam := MENU_CAM
+var _menu_look := MENU_LOOK
 var _view := 0.0           # 1 = 메인 화면 카메라, 0 = 게임 카메라. 메인 화면의 첫 프레임에 1로 간다
 var _view_tween: Tween
 var _dead_time := 0.0
@@ -334,8 +342,8 @@ func begin() -> void:
 ## 카메라를 메인 화면 자리(1)와 게임 자리(0) 사이에 둔다
 func _set_view(k: float) -> void:
 	_view = k
-	_camera.position = GAME_CAM.lerp(MENU_CAM, k)
-	_camera.look_at(GAME_LOOK.lerp(MENU_LOOK, k))
+	_camera.position = GAME_CAM.lerp(_menu_cam, k)
+	_camera.look_at(GAME_LOOK.lerp(_menu_look, k))
 
 
 ## 메인 화면: 젤리는 제자리에서 박마다 숨 쉬듯 부풀었다 튀고, 빛 대시와 몇 안 되는 빛 줄기가 천천히 흐른다. 장애물은 없다
@@ -881,10 +889,9 @@ func _enter_menu() -> void:
 ## 일시정지 (‖ 버튼, Esc·P, 탭 가림·창 포커스 잃음·앱이 뒤로 감). 플레이 중에만.
 ## 트리를 멈춰 세상·판정·트윈이 서고, 음악은 그 표본에서 선다. 숫자 세는 중에 다시 가려지면 일시정지 화면으로 돌아간다
 func pause() -> void:
-	if paused:
-		if _pause_menu.counting:
-			AudioManager.set_held(true)
-			_pause_menu.open()
+	if paused:  # 숫자 세는 중이거나 숫자가 끝나 소리가 다시 돌기를 기다리는 중: 일시정지 화면으로 되돌린다
+		AudioManager.set_held(true)
+		_pause_menu.open()
 		return
 	if not started or dead or not prewarmed or _going_home:
 		return
@@ -916,14 +923,23 @@ func _on_resumed() -> void:
 		_report_drift()
 
 
-## 이어 한 뒤 DRIFT_TIME초 동안 화면의 음악 시간과 들리는 소리의 차이 중 가장 큰 값을 남긴다 (박자 오차 확인용 한 줄)
+## 이어 한 뒤 DRIFT_TIME초 동안 화면의 음악 시간과 들리는 소리 위치의 차이(+면 화면이 앞섬)를 남긴다 (박자 오차 확인용 한 줄).
+## 브라우저 오디오 시계는 블록 단위 계단으로 오르므로 프레임마다의 차이에는 계단 크기만큼 흔들림이 섞인다: 평균이 실제 어긋남이다
 func _report_drift() -> void:
-	var worst := 0.0
+	var low := INF
+	var high := -INF
+	var sum := 0.0
+	var n := 0
 	var end := Time.get_ticks_msec() + DRIFT_TIME * 1000.0
 	while Time.get_ticks_msec() < end and AudioManager.is_music_on() and not paused:
-		worst = maxf(worst, absf(AudioManager.drift()))
+		var d := AudioManager.drift()
+		low = minf(low, d)
+		high = maxf(high, d)
+		sum += d
+		n += 1
 		await get_tree().process_frame
-	print("PAUSE 이어 한 뒤 %.0f초 박자 오차 최대 %.1fms" % [DRIFT_TIME, worst * 1000.0])
+	if n > 0:
+		print("PAUSE 이어 한 뒤 %.0f초 박자 오차 평균 %+.1fms (%+.1f ~ %+.1f, %d프레임)" % [DRIFT_TIME, sum / n * 1000.0, low * 1000.0, high * 1000.0, n])
 
 
 func _unpause() -> void:
@@ -1146,10 +1162,10 @@ func _prewarm() -> void:
 
 
 ## 셰이더가 다 준비될 때까지 프레임을 돌린다: PREWARM_FRAMES번 연달아 빠른 프레임이 나오면 끝. 로딩 막대를 from → to로 채운다
-func _settle(from: float, to: float) -> void:
+func _settle(from: float, to: float, max_frames := PREWARM_MAX_FRAMES) -> void:
 	var fast := 0
 	var last := Time.get_ticks_msec()
-	for i in PREWARM_MAX_FRAMES:
+	for i in max_frames:
 		await get_tree().process_frame
 		fast = fast + 1 if Time.get_ticks_msec() - last < PREWARM_FAST_MS else 0
 		last = Time.get_ticks_msec()
@@ -1174,7 +1190,7 @@ func _warm_rest() -> void:
 		var undo: Array[Callable] = []
 		for warm: Callable in batch:
 			undo.append(warm.call())
-		await _settle(1.0, 1.0)
+		await _settle(1.0, 1.0, WARM_MAX_FRAMES)
 		for done: Callable in undo:
 			done.call()
 		groups = groups.slice(batch.size())
@@ -1280,7 +1296,15 @@ func _fit_camera() -> void:
 	var size := get_viewport().get_visible_rect().size
 	_camera.keep_aspect = Camera3D.KEEP_WIDTH if size.y >= size.x else Camera3D.KEEP_HEIGHT
 	_restart_label.offset_top = 370.0 if size.y >= size.x else 200.0  # 웅덩이와 겹치지 않는 자리 (세로는 아래, 가로는 위)
-	_title.fit(size.y >= size.x)
+	var short := size.y / size.x < MENU_SHORT
+	_menu_cam = MENU_CAM_SHORT if short else MENU_CAM
+	_menu_look = MENU_LOOK_SHORT if short else MENU_LOOK
+	# 메인 화면 카메라에서 본 웅덩이 앞 끝의 화면 높이 → 그 아래에 SWIPE TO START
+	var k := _view
+	_set_view(1.0)
+	var pool := _camera.unproject_position(Vector3(0.0, 0.0, POOL_FRONT_Z)).y
+	_set_view(k)
+	_title.place_start(pool, size.y)
 
 
 func _build_floor() -> void:

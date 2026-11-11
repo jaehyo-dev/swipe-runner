@@ -65,7 +65,7 @@ await page.waitForTimeout(300);
 
 // 3) 일시정지
 await page.mouse.click(cx, vp.height * 0.7);  // 시작 (화면 아무 곳)
-await page.waitForFunction(() => window.gameStarted > 0, null, { timeout: 30000 });
+await page.waitForFunction(() => window.gameStarted > 0, null, { timeout: 120000 });
 await page.waitForTimeout(3000);
 await page.mouse.click(20 * s + 48 * s, 20 * s + 48 * s);  // ‖
 await page.waitForTimeout(300);
@@ -79,7 +79,9 @@ while (Date.now() - t0 < 2600) {  // 3·2·1 (100BPM 한 박 0.6초 × 2 + 조�
   await page.waitForTimeout(60);
 }
 await page.waitForTimeout(3500);  // 박자 오차 3초 기록
-// 4) 탭 가림 흉내 → 자동 일시정지
+// 4) 탭 가림 흉내 → 자동 일시정지 (게임 오버 상태라 다시 시작한 직후에)
+await page.mouse.click(cx, vp.height * 0.7);
+await page.waitForTimeout(800);
 await page.evaluate(() => { Object.defineProperty(document, 'hidden', { value: true, configurable: true }); document.dispatchEvent(new Event('visibilitychange')); });
 await page.waitForTimeout(300);
 await page.evaluate(() => { Object.defineProperty(document, 'hidden', { value: false, configurable: true }); document.dispatchEvent(new Event('visibilitychange')); });

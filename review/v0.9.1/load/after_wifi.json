@@ -1,0 +1,136 @@
+[
+ {
+  "renderer": "ANGLE (Microsoft Corporation, D3D12 (NVIDIA GeForce RTX 4060), OpenGL 4.6)",
+  "loading_s": 0.46,
+  "main_s": 8.64,
+  "kb_before_main": 10974,
+  "kb_after_main": 850,
+  "files": [
+   {
+    "file": "(page)",
+    "kb": 5,
+    "cached": false,
+    "done_s": 0.03
+   },
+   {
+    "file": "xngAAClPAb2AAA=",
+    "kb": 1,
+    "cached": false,
+    "done_s": 0.04
+   },
+   {
+    "file": "index.js",
+    "kb": 68,
+    "cached": false,
+    "done_s": 0.09
+   },
+   {
+    "file": "index.icon.png",
+    "kb": 4,
+    "cached": false,
+    "done_s": 0.49
+   },
+   {
+    "file": "index.pck",
+    "kb": 949,
+    "cached": false,
+    "done_s": 1.29
+   },
+   {
+    "file": "index.wasm",
+    "kb": 9947,
+    "cached": false,
+    "done_s": 5.07
+   },
+   {
+    "file": "0106b979-228c-4e91-8956-dd488798206e",
+    "kb": 0,
+    "cached": false,
+    "done_s": 8.61
+   },
+   {
+    "file": "bgm_105_orig.ogg",
+    "kb": 412,
+    "cached": false,
+    "done_s": 9.52
+   },
+   {
+    "file": "bgm_110_a.ogg",
+    "kb": 438,
+    "cached": false,
+    "done_s": 11.76
+   }
+  ],
+  "errors": []
+ },
+ {
+  "renderer": "ANGLE (Microsoft Corporation, D3D12 (NVIDIA GeForce RTX 4060), OpenGL 4.6)",
+  "loading_s": 0.16,
+  "main_s": 7.95,
+  "kb_before_main": 10974,
+  "kb_after_main": 1260,
+  "files": [
+   {
+    "file": "(page)",
+    "kb": 5,
+    "cached": false,
+    "done_s": 0.02
+   },
+   {
+    "file": "xngAAClPAb2AAA=",
+    "kb": 1,
+    "cached": false,
+    "done_s": 0.04
+   },
+   {
+    "file": "index.js",
+    "kb": 68,
+    "cached": false,
+    "done_s": 0.08
+   },
+   {
+    "file": "index.icon.png",
+    "kb": 4,
+    "cached": false,
+    "done_s": 0.19
+   },
+   {
+    "file": "index.pck",
+    "kb": 949,
+    "cached": false,
+    "done_s": 1
+   },
+   {
+    "file": "index.wasm",
+    "kb": 9947,
+    "cached": false,
+    "done_s": 4.76
+   },
+   {
+    "file": "f109b62a-79d5-485e-a9ad-88b6a37b059b",
+    "kb": 0,
+    "cached": false,
+    "done_s": 7.91
+   },
+   {
+    "file": "bgm_105_orig.ogg",
+    "kb": 412,
+    "cached": false,
+    "done_s": 8.71
+   },
+   {
+    "file": "bgm_110_a.ogg",
+    "kb": 438,
+    "cached": false,
+    "done_s": 10.27
+   },
+   {
+    "file": "bgm_115_a.ogg",
+    "kb": 410,
+    "cached": false,
+    "done_s": 11.21
+   }
+  ],
+  "errors": []
+ }
+]

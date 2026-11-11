@@ -27,7 +27,7 @@ func _init(is_supported := false) -> void:
 ## 웹이면 브라우저에 물어 본다. 데스크톱(개발용)은 진동이 없다
 ## shortcut: 설치형 앱(안드로이드·iOS)은 아직 진동 없음, 앱 빌드를 만들 때 Input.vibrate_handheld로 잇는다
 static func detect() -> Haptics:
-	var ok := OS.has_feature("web") and str(JavaScriptBridge.eval("typeof navigator.vibrate === 'function'")) == "true"
+	var ok := OS.has_feature("web") and bool(JavaScriptBridge.eval("typeof navigator.vibrate === 'function'"))
 	return Haptics.new(ok)
 
 

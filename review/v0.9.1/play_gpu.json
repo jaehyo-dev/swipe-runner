@@ -1,0 +1,17 @@
+{
+ "first_run": {
+  "wait_start_ms": 1728,
+  "frames": 720,
+  "over33": 0,
+  "p99": 16.8,
+  "max": 16.8,
+  "renderer": "ANGLE (Microsoft Corporation, D3D12 (NVIDIA GeForce RTX 4060), OpenGL 4.6)"
+ },
+ "logs": [
+  "PAUSE 이어 한 뒤 3초 박자 오차 평균 -17.1ms (-34.7 ~ -11.6, 180프레임)",
+  "PAUSE 이어 한 뒤 3초 박자 오차 평균 -17.0ms (-40.3 ~ -8.8, 180프레임)",
+  "PAUSE 이어 한 뒤 3초 박자 오차 평균 -17.0ms (-39.8 ~ -9.0, 180프레임)",
+  "PAUSE 이어 한 뒤 3초 박자 오차 평균 -17.4ms (-38.3 ~ -11.6, 180프레임)"
+ ],
+ "errors": []
+}

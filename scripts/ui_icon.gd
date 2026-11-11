@@ -48,12 +48,15 @@ func _draw() -> void:
 		Kind.PAUSE:
 			for x in [-0.35, 0.35]:
 				draw_line(p.call(x, -0.75), p.call(x, 0.75), color, width, true)
-		Kind.GEAR:  # 고리 + 톱니 8개
-			draw_arc(c, u * 0.55, 0.0, TAU, 32, color, width, true)
-			draw_arc(c, u * 0.2, 0.0, TAU, 16, color, width, true)
+		Kind.GEAR:  # 톱니 8개 바퀴의 바깥선 + 가운데 구멍
+			var rim := PackedVector2Array()
 			for i in 8:
-				var dir := Vector2.from_angle(TAU * i / 8.0)
-				draw_line(c + dir * u * 0.55, c + dir * u * 0.9, color, width, true)
+				var a := TAU * i / 8.0
+				for pair: Array in [[-0.22, 0.62], [-0.13, 0.9], [0.13, 0.9], [0.22, 0.62]]:  # 톱니 하나: 안쪽 → 바깥 → 바깥 → 안쪽 (각도 반폭, 반지름)
+					rim.append(c + Vector2.from_angle(a + pair[0]) * u * pair[1])
+			rim.append(rim[0])
+			draw_polyline(rim, color, width, true)
+			draw_arc(c, u * 0.28, 0.0, TAU, 20, color, width, true)
 
 
 ## 화면 좌표 point가 이 아이콘의 누르는 자리 안인가
