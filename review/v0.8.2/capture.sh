@@ -7,7 +7,12 @@ tmp=$1; out=review/v0.8.2; root=$PWD
 mkdir -p "$tmp"
 godot --headless --path . --import >/dev/null 2>&1
 trap 'rm -f "$root/override.cfg" "$root"/perfect_shots.*' EXIT
+# 리눅스(WSL): 화면 없는 X(xvfb)에서 소프트웨어 OpenGL로 그린다. 맥은 숨긴 앱으로
+if [ "$(uname)" = Linux ]; then
+gd() { local name=$1; shift; xvfb-run -a -s "-screen 0 1280x1280x24" godot --rendering-driver opengl3 "$@" >"$tmp/$name.log" 2>&1; grep -E "SCRIPT ERROR" "$tmp/$name.log" | cut -c1-200 || true; }
+else
 gd() { local name=$1; shift; open -W -g -j -n -a /Applications/Godot.app --stdout "$tmp/$name.log" --stderr "$tmp/$name.log" --args "$@"; grep -E "SCRIPT ERROR" "$tmp/$name.log" | cut -c1-200 || true; }
+fi
 size() { printf '[display]\nwindow/size/window_width_override=%s\nwindow/size/window_height_override=%s\n' "$1" "$2" > override.cfg; }
 want() { [ -z "${STEPS:-}" ] || [[ " $STEPS " == *" $1 "* ]]; }  # STEPS="gif ui"처럼 일부만
 if [ -z "${WEB_ONLY:-}" ]; then
@@ -18,7 +23,12 @@ if want gif; then
   size 720 1280
   gd gif --path "$root" --fixed-fps 60 --resolution 720x1280 res://perfect_shots.tscn -- "$tmp/gif" gif
   for g in perfect perfect_x3; do
-    [ -d "$tmp/gif/$g" ] && ffmpeg -y -v error -framerate 30 -i "$tmp/gif/$g/%04d.png" -vf "scale=360:-1:flags=lanczos,split[a][b];[a]palettegen=max_colors=128[p];[b][p]paletteuse" "$out/$g.gif"
+    [ -d "$tmp/gif/$g" ] || continue
+    if ! command -v ffmpeg >/dev/null; then  # ffmpeg가 없으면 PIL로 (폭 360, 30fps)
+      python3 -c 'import sys,glob;from PIL import Image;f=[Image.open(p).convert("RGB") for p in sorted(glob.glob(sys.argv[1]+"/*.png"))];f=[i.resize((360,i.height*360//i.width),Image.LANCZOS).quantize(128) for i in f];f[0].save(sys.argv[2],save_all=True,append_images=f[1:],duration=33,loop=0)' "$tmp/gif/$g" "$out/$g.gif"
+      continue
+    fi
+    ffmpeg -y -v error -framerate 30 -i "$tmp/gif/$g/%04d.png" -vf "scale=360:-1:flags=lanczos,split[a][b];[a]palettegen=max_colors=128[p];[b][p]paletteuse" "$out/$g.gif"
   done
   cp "$tmp/gif/gif.txt" "$out/gif.txt"
 fi
