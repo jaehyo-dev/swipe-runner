@@ -9,7 +9,11 @@ const profile = fs.mkdtempSync(path.join(os.tmpdir(), 'mac-'));
 const [w, h] = size.split('x').map(Number);
 const args = ['--use-angle=metal', '--ignore-gpu-blocklist', '--enable-gpu-rasterization', '--autoplay-policy=no-user-gesture-required', '--disable-audio-output'];
 if (cap === 'uncapped') args.push('--disable-gpu-vsync', '--disable-frame-rate-limit');  // 수직 동기를 꺼서 그리는 데 걸린 시간을 잰다
-const ctx = await chromium.launchPersistentContext(profile, { executablePath: process.env.CHROME, headless: true, viewport: { width: w, height: h }, deviceScaleFactor: 2, args });
+// WSL(데스크탑): 헤드리스는 소프트웨어 렌더링이라 창을 띄우고(headed) d3d12로 GPU를 쓴다. 맥은 그대로
+const wsl = process.platform === 'linux' && /microsoft/i.test(os.release());
+const gpu = wsl ? { headless: false, env: { ...process.env, GALLIUM_DRIVER: 'd3d12' } } : { headless: true };
+if (wsl) args.splice(0, 1, '--use-angle=gl', '--enable-gpu');  // metal 대신 gl (나머지 플래그는 유지)
+const ctx = await chromium.launchPersistentContext(profile, { executablePath: process.env.CHROME, ...gpu, viewport: { width: w, height: h }, deviceScaleFactor: 2, args });
 const page = ctx.pages()[0] || await ctx.newPage();
 if (/^cpu\d+$/.test(cap || '')) await (await ctx.newCDPSession(page)).send('Emulation.setCPUThrottlingRate', { rate: +cap.slice(3) });
 const errors = []; let result = null;
