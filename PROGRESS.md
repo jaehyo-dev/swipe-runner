@@ -221,3 +221,7 @@
 - 난이도 유지: 보통 30.8초, 잘함 74.9초, 완벽 10분 × 5 충돌 0. 놓친 방울은 0.1초/z 1.5 전에 사라짐
 - 기록 저장 50점 간격 → 2초 간격 (방울 65점이면 다시 방울마다 저장되어 웹 끊김이 돌아올 수 있었음)
 - 기록 review/v0.8.1/
+
+## v0.8.2 PERFECT를 BEST와 같은 글자로 (진행 중, 브랜치 wip/v0.8.2)
+- 끝: 코드(PERFECT 한 줄 "PERFECT ×3  +300", BEST의 LabelSettings 공유, 398px = BEST + 68px, 1.1배 0.1초 '톡', 0.6초 뒤 제자리 흐려짐), Poppins Medium·CREDITS 삭제, ART_BIBLE·CHANGELOG·버전 0.8.2, test_main_scene 35/35 통과
+- 남음: `bash review/v0.8.2/capture.sh <임시 폴더>`(PW·CHROME 필요)로 GIF·휴대폰/PC 캡처·웹 콘솔, PERFECT 줄이 지평선 띠와 안 겹치는지 확인 → 전체 테스트 → final-reviewer → main 푸시

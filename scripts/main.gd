@@ -15,7 +15,6 @@ const ORB_HALO_SHADER := preload("res://shaders/orb_halo.gdshader")
 const ORB_LINK_SHADER := preload("res://shaders/orb_link.gdshader")
 const ORB_RING_SHADER := preload("res://shaders/orb_ring.gdshader")
 const FONT := preload("res://assets/fonts/Poppins-ExtraLight.ttf")
-const PERFECT_FONT := preload("res://assets/fonts/Poppins-Medium.ttf")  # PERFECT 글자에만
 ## 장애물 종류별 팔레트 이름 (색은 data/speed_palette.json). 파랑 = 옆으로, 주황 = 위로, 분홍 = 아래로.
 const KINDS := {
 	ObstacleField.Kind.BLOCK: "block",
@@ -72,15 +71,12 @@ const MULT_DROP_TIME := 0.35
 const MULT_TOP := 262.0        # 글자 위치(px, 720x1280 기준): 점수 아래 배수, 그 아래 BEST, 게임 오버 한 줄
 const BEST_TOP := 330.0
 const STATS_TOP := 384.0
-## PERFECT (ART_BIBLE.md 13): BEST 줄 아래에 "PERFECT", 그 아래 더해진 점수. '톡' 자리 잡고 머문 뒤 떠오르며 사라진다
-const PERFECT_TOP := 392.0
-const PERFECT_POINTS_GAP := 70.0  # PERFECT 줄과 "+300" 줄 사이(px)
-const PERFECT_POP := 1.3
-const PERFECT_POP_TIME := 0.12
+## PERFECT (ART_BIBLE.md 13): BEST 바로 아래 한 줄 "PERFECT ×3  +300", BEST와 같은 글자. 살짝 '톡' 자리 잡고 머문 뒤 제자리에서 흐려진다
+const PERFECT_TOP := BEST_TOP + (BEST_TOP - MULT_TOP)  # 줄 간격 = 배수와 BEST 사이
+const PERFECT_POP := 1.1
+const PERFECT_POP_TIME := 0.1
 const PERFECT_HOLD := 0.6
-const PERFECT_RISE := 30.0
 const PERFECT_FADE := 0.25
-const PERFECT_GLOW := Color(0.788, 0.722, 1.0, 0.75)  # 연보라 #C9B8FF 빛 (민트 금지)
 const COUNT_TIME := 0.3        # PERFECT 점수만큼 점수 숫자가 세어 올라가는 시간
 const SWISH_ALPHA := 0.35      # 주인공 옆을 스치는 흰 빛 줄기 세기. 0이면 끈다 (v0.8.1: 0.9 → 짧고 옅게)
 const SWISH_TIME := 0.1
@@ -162,9 +158,7 @@ var _orb_prewarm := false  # 가림막 뒤에서 방울 재질을 한 번 그린
 var _mult_label: Label
 var _mult_shown := 1       # 화면에 보이는 배수
 var _mult_tween: Tween
-var _perfect_box: Control       # PERFECT 글자와 "+점수" 줄
-var _perfect_label: Label
-var _perfect_points: Label
+var _perfect_label: Label       # "PERFECT ×3  +300" 한 줄
 var _perfect_tween: Tween
 var _perfect_chain := 0          # 앞 PERFECT가 사라지기 전에 이어진 수
 var _count_lag := 0.0            # 아직 숫자에 안 올라간 PERFECT 점수
@@ -357,28 +351,25 @@ func _on_close(item: Dictionary, points: int) -> void:
 		swish.chain().tween_callback(_swish.hide)
 	_count_lag += points
 	_count_rate = _count_lag / COUNT_TIME
-	_perfect_chain = _perfect_chain + 1 if _perfect_box.visible else 1
-	_perfect_label.text = "PERFECT" if _perfect_chain == 1 else "PERFECT ×%d" % _perfect_chain
-	_perfect_points.text = "+%d" % points
+	_perfect_chain = _perfect_chain + 1 if _perfect_label.visible else 1
+	_perfect_label.text = ("PERFECT" if _perfect_chain == 1 else "PERFECT ×%d" % _perfect_chain) + "  +%d" % points
 	if _perfect_tween:
 		_perfect_tween.kill()
-	_perfect_box.visible = true
-	_perfect_box.modulate.a = 1.0
-	_perfect_box.position.y = PERFECT_TOP
-	_perfect_box.pivot_offset = _perfect_box.size * 0.5
-	_perfect_box.scale = Vector2.ONE * PERFECT_POP
+	_perfect_label.visible = true
+	_perfect_label.modulate.a = 1.0
+	_perfect_label.pivot_offset = _perfect_label.size * 0.5
+	_perfect_label.scale = Vector2.ONE * PERFECT_POP
 	_perfect_tween = create_tween()
-	_perfect_tween.tween_property(_perfect_box, "scale", Vector2.ONE, PERFECT_POP_TIME).set_trans(Tween.TRANS_BACK).set_ease(Tween.EASE_OUT)
+	_perfect_tween.tween_property(_perfect_label, "scale", Vector2.ONE, PERFECT_POP_TIME).set_trans(Tween.TRANS_SINE).set_ease(Tween.EASE_OUT)
 	_perfect_tween.tween_interval(PERFECT_HOLD)
-	_perfect_tween.tween_property(_perfect_box, "position:y", PERFECT_TOP - PERFECT_RISE, PERFECT_FADE).set_trans(Tween.TRANS_SINE).set_ease(Tween.EASE_OUT)
-	_perfect_tween.parallel().tween_property(_perfect_box, "modulate:a", 0.0, PERFECT_FADE).set_trans(Tween.TRANS_QUAD).set_ease(Tween.EASE_IN)
-	_perfect_tween.tween_callback(_perfect_box.hide)
+	_perfect_tween.tween_property(_perfect_label, "modulate:a", 0.0, PERFECT_FADE).set_trans(Tween.TRANS_QUAD).set_ease(Tween.EASE_IN)
+	_perfect_tween.tween_callback(_perfect_label.hide)
 
 
 func _hide_perfect() -> void:
 	if _perfect_tween:
 		_perfect_tween.kill()
-	_perfect_box.visible = false
+	_perfect_label.visible = false
 	_count_lag = 0.0
 
 
@@ -869,7 +860,7 @@ func _prewarm() -> void:
 	var cover := CanvasLayer.new()
 	cover.layer = 100
 	add_child(cover)
-	for pair in [["0123456789", _score_label], [_restart_label.text, _restart_label], ["NEW BEST 0123456789", _best_label], ["×+0123456789", _mult_label], ["ORBS PERFECT · m0123456789", _stats_label], ["PERFECT ×0123456789", _perfect_label], ["+0123456789", _perfect_points]]:  # 글자 그림도 미리 만든다
+	for pair in [["0123456789", _score_label], [_restart_label.text, _restart_label], ["NEW BEST 0123456789", _best_label], ["×+0123456789", _mult_label], ["ORBS PERFECT · m0123456789", _stats_label], ["PERFECT ×+0123456789", _perfect_label]]:  # 글자 그림도 미리 만든다
 		var label := Label.new()
 		label.text = pair[0]
 		label.label_settings = pair[1].label_settings
@@ -1161,24 +1152,6 @@ func _build_ui() -> void:
 	_stats_label = _small_label("StatsLabel", STATS_TOP, 30, Color(1, 1, 1, 0.6))
 	_stats_label.visible = false
 	layer.add_child(_stats_label)
-	# PERFECT: 흰 글자 + 연보라 빛(그림자를 번지게), 그 아래 더해진 점수. 둘을 한 상자로 움직인다 (_on_close)
-	_perfect_box = Control.new()
-	_perfect_box.name = "PerfectBox"
-	_perfect_box.set_anchors_and_offsets_preset(Control.PRESET_TOP_WIDE)
-	_perfect_box.offset_top = PERFECT_TOP
-	_perfect_box.offset_bottom = PERFECT_TOP + PERFECT_POINTS_GAP + 60.0
-	_perfect_box.mouse_filter = Control.MOUSE_FILTER_IGNORE
-	_perfect_box.visible = false
-	layer.add_child(_perfect_box)
-	_perfect_label = _small_label("PerfectLabel", 0.0, 60, Color.WHITE)
-	_perfect_label.label_settings.font = PERFECT_FONT
-	_perfect_label.label_settings.shadow_color = PERFECT_GLOW
-	_perfect_label.label_settings.shadow_size = 14
-	_perfect_label.label_settings.shadow_offset = Vector2.ZERO
-	_perfect_box.add_child(_perfect_label)
-	_perfect_points = _small_label("PerfectPoints", PERFECT_POINTS_GAP, 44, Color(1, 1, 1, 0.9))
-	_perfect_box.add_child(_perfect_points)
-
 	# 최고 기록: 점수 숫자 아래에 작게 (Poppins에 한글이 없어 영문)
 	_best_label = Label.new()
 	_best_label.name = "BestLabel"
@@ -1192,6 +1165,11 @@ func _build_ui() -> void:
 	bs.font_color = Color(1, 1, 1, 0.7)
 	_best_label.label_settings = bs
 	layer.add_child(_best_label)
+	# PERFECT: BEST 바로 아래, BEST와 같은 글자 설정을 함께 쓴다 (_on_close)
+	_perfect_label = _small_label("PerfectLabel", PERFECT_TOP, 40, Color.WHITE)
+	_perfect_label.label_settings = bs
+	_perfect_label.visible = false
+	layer.add_child(_perfect_label)
 	_show_best()
 
 	# 게임 오버 안내 (Poppins에 한글이 없어 영문)
