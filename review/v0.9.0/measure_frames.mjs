@@ -1,19 +1,35 @@
 // 크로미움에서 재는 프레임 시간. 측정 빌드(build_measure.sh)의 자동 플레이 1판 동안 requestAnimationFrame 간격과 자동 낮춤(QUALITY 줄)을 기록한다.
-// v0.9.0: review/v0.8.1/measure_errors.mjs 복사본. 맥은 헤드리스(Metal) 그대로, WSL(데스크탑)은 창을 띄워 d3d12(RTX 4060)로. pmset은 맥에서만
+// v0.9.0: review/v0.8.1/measure_errors.mjs 복사본. 맥은 헤드리스(Metal) 그대로. pmset은 맥에서만
+// WSL(데스크탑)은 화면에 창을 띄우지 않는다 (2026-11-11 사용자). 두 가지:
+//  기본: Xvfb 가상 화면 안의 크로미움 + d3d12(RTX 4060), 60Hz. 반드시 `env -u WAYLAND_DISPLAY xvfb-run -a -s "-screen 0 1920x1080x24" node ...`로 실행 (아니면 창이 뜰 수 있어 멈춘다)
+//  MEASURE_WIN=1: 윈도우 크롬 헤드리스 + D3D11 (measure_frames_win.mjs를 윈도우 node.exe로). 수직 동기가 없어 rAF가 60fps에 묶이지 않는다: 그리는 시간 비교용
 // 맥북 전체 화면과 같은 캔버스: 1710x925, 화소 2배 = 3420x1850. 실제 창 측정은 measure_mac.mjs (사용자가 직접 실행)
 // 사용: PW=<playwright> CHROME=<크로미움> node measure_headless.mjs <주소> <결과.json> <가로x세로> [uncapped]
-import { createRequire } from 'module'; import { execSync } from 'child_process'; import fs from 'fs'; import os from 'os'; import path from 'path';
-const { chromium } = createRequire(import.meta.url)(process.env.PW || 'playwright');
+import { createRequire } from 'module'; import { execSync, execFileSync } from 'child_process'; import fs from 'fs'; import os from 'os'; import path from 'path';
 const [url, out, size, cap] = process.argv.slice(2);
+const wsl = process.platform === 'linux' && /microsoft/i.test(os.release());
+if (wsl && process.env.MEASURE_WIN) {
+  const winTmp = execFileSync('cmd.exe', ['/c', 'echo %TEMP%'], { cwd: '/mnt/c' }).toString().trim();  // 윈도우 node가 읽고 쓸 수 있는 곳
+  const dir = execFileSync('wslpath', ['-u', winTmp]).toString().trim() + '/swipe-measure';
+  fs.mkdirSync(dir, { recursive: true });
+  fs.copyFileSync(new URL('./measure_frames_win.mjs', import.meta.url), dir + '/measure_frames_win.mjs');
+  const node = process.env.NODE_WIN || '/mnt/c/Program Files/nodejs/node.exe';
+  const line = execFileSync(node, ['measure_frames_win.mjs', url, 'result.json', size], { cwd: dir }).toString().trim();
+  fs.copyFileSync(dir + '/result.json', out);
+  console.log(line);
+  process.exit(0);
+}
+if (wsl && (process.env.WAYLAND_DISPLAY || !process.env.DISPLAY || process.env.DISPLAY === ':0')) {
+  console.error('WSL: 실제 화면에 창이 뜰 수 있어 멈춤. env -u WAYLAND_DISPLAY xvfb-run -a ... 안에서 실행할 것');
+  process.exit(1);
+}
+const { chromium } = createRequire(import.meta.url)(process.env.PW || 'playwright');
 const profile = fs.mkdtempSync(path.join(os.tmpdir(), 'mac-'));
 const [w, h] = size.split('x').map(Number);
 const args = ['--use-angle=metal', '--ignore-gpu-blocklist', '--enable-gpu-rasterization', '--autoplay-policy=no-user-gesture-required', '--disable-audio-output'];
 if (cap === 'uncapped') args.push('--disable-gpu-vsync', '--disable-frame-rate-limit');  // 수직 동기를 꺼서 그리는 데 걸린 시간을 잰다
-// WSL(데스크탑): 헤드리스는 소프트웨어 렌더링이라 창을 띄우고(headed) d3d12로 GPU를 쓴다. 맥은 그대로
-const wsl = process.platform === 'linux' && /microsoft/i.test(os.release());
-const gpu = wsl ? { headless: false, env: { ...process.env, GALLIUM_DRIVER: 'd3d12' } } : { headless: true };
-if (wsl) args.splice(0, 1, '--use-angle=gl', '--enable-gpu');  // metal 대신 gl (나머지 플래그는 유지)
-const ctx = await chromium.launchPersistentContext(profile, { executablePath: process.env.CHROME, ...gpu, viewport: { width: w, height: h }, deviceScaleFactor: 2, args });
+if (wsl) args.splice(0, 1, '--ozone-platform=x11', '--use-angle=gl', '--enable-gpu');  // Xvfb 안의 창(화면에는 안 보임)에서 d3d12로
+const ctx = await chromium.launchPersistentContext(profile, { executablePath: process.env.CHROME, headless: !wsl, env: wsl ? { ...process.env, GALLIUM_DRIVER: 'd3d12' } : process.env, viewport: { width: w, height: h }, deviceScaleFactor: 2, args });
 const page = ctx.pages()[0] || await ctx.newPage();
 if (/^cpu\d+$/.test(cap || '')) await (await ctx.newCDPSession(page)).send('Emulation.setCPUThrottlingRate', { rate: +cap.slice(3) });
 const errors = []; let result = null;

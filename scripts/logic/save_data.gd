@@ -59,6 +59,7 @@ static func migrate(old_dir: String, new_dir: String) -> int:
 	var copied := 0
 	for file in DirAccess.get_files_at(old_dir):
 		var to := new_dir.path_join(file)
-		if not FileAccess.file_exists(to) and DirAccess.copy_absolute(old_dir.path_join(file), to) == OK:
+		# 임시 파일에 다 쓴 뒤 이름을 바꾼다: 복사가 중간에 끊겨 반쯤 쓴 기록이 남으면 다음에 다시 옮기지 못한다
+		if not FileAccess.file_exists(to) and DirAccess.copy_absolute(old_dir.path_join(file), to + ".tmp") == OK and DirAccess.rename_absolute(to + ".tmp", to) == OK:
 			copied += 1
 	return copied

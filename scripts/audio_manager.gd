@@ -93,6 +93,7 @@ var _blocked := false
 var _rng := RandomNumberGenerator.new()
 var _music_bus := AudioServer.get_bus_index(&"Music")
 var _duck: Tween
+var _fades := {}  # 음악 플레이어 -> 볼륨 트윈 (플레이어마다 하나만)
 
 
 func _ready() -> void:
@@ -236,6 +237,7 @@ func _begin_music(fade: float) -> void:
 	else:
 		var old := music
 		music = _players[1 - _players.find(old)]
+		_stop_fade(music)  # 이 플레이어가 아직 앞 판에서 사라지는 중이면(메인 화면에 오자마자 시작) 그 페이드와 정지를 취소한다
 		if old.playing:
 			_fade_out(old, fade)
 		var stream := AudioStreamGenerator.new()
@@ -246,7 +248,7 @@ func _begin_music(fade: float) -> void:
 		music.play()
 		if fade > 0.0:
 			music.volume_db = FADE_FLOOR_DB
-			create_tween().tween_property(music, "volume_db", 0.0, fade)
+			_volume_tween(music).tween_property(music, "volume_db", 0.0, fade)
 		_gen = music.get_stream_playback()
 		_feed = open_track(TRACKS[start_step])
 		_pushed = 0
@@ -258,8 +260,20 @@ func _begin_music(fade: float) -> void:
 	music_time = _clock.time
 
 
+func _stop_fade(player: AudioStreamPlayer) -> void:
+	if _fades.has(player):
+		_fades[player].kill()
+
+
+## 플레이어의 앞 볼륨 트윈을 멈추고 새 트윈을 준다
+func _volume_tween(player: AudioStreamPlayer) -> Tween:
+	_stop_fade(player)
+	_fades[player] = create_tween()
+	return _fades[player]
+
+
 func _fade_out(player: AudioStreamPlayer, fade: float) -> void:
-	var tween := create_tween()
+	var tween := _volume_tween(player)
 	tween.tween_property(player, "volume_db", FADE_FLOOR_DB, fade)
 	tween.tween_callback(player.stop)
 

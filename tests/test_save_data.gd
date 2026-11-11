@@ -67,6 +67,7 @@ func test_옛_폴더의_기록을_복사하고_새_폴더에_있던_파일은_�
 	assert_eq(FileAccess.get_file_as_string(NEW.path_join("settings.cfg")), "new", "새 폴더 파일은 그대로")
 	assert_true(FileAccess.file_exists(OLD.path_join("best_score.txt")), "옛 폴더는 지우지 않음")
 	assert_eq(SaveData.migrate(OLD, NEW), 0, "두 번째에는 할 일 없음")
+	assert_false(FileAccess.file_exists(NEW.path_join("best_score.txt.tmp")), "임시 파일은 남지 않음")
 	assert_eq(SaveData.migrate(OLD + "_none", NEW), 0, "옛 폴더가 없으면(새로 설치) 아무것도 안 함")
 	_clean()
 

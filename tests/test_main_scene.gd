@@ -944,3 +944,19 @@ func test_세_판을_한_뒤에는_조작_안내를_숨김() -> void:
 	assert_false(main._title.guide.visible, "4판째부터 숨김")
 	AudioManager.music.stop()
 	main.queue_free()
+
+
+func test_메인_화면에_오자마자_시작해도_앞_페이드가_새_음악을_멈추지_않음() -> void:
+	var main: Node3D = await _make_menu()
+	_touch(main, Vector2(360, 700))
+	main.dead = true
+	main.go_home()
+	await get_tree().create_timer(main.HOME_FADE + 0.02).timeout  # 메인 화면 음악이 겹쳐 넘어가는 중(0.3초)에 바로 시작
+	assert_false(main.started)
+	_touch(main, Vector2(360, 700))
+	assert_true(main.started)
+	await get_tree().create_timer(AudioManager.RESTART_FADE + 0.1).timeout
+	assert_true(AudioManager.music.playing, "새 게임 음악이 계속 흐름")
+	assert_eq(AudioManager.music.volume_db, 0.0, "제 크기")
+	AudioManager.music.stop()
+	main.queue_free()
