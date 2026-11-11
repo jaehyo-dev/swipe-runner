@@ -31,27 +31,43 @@ func test_빠르면_낮추지_않음() -> void:
 	assert_eq(guard.level, 0)
 
 
-func test_밀리면_2초마다_한_단계씩_낮추고_마지막_단계에서_멈추며_올리지_않음() -> void:
+## 페이지를 연 뒤의 쉬는 시간을 넘긴 판단기
+func _ready_guard() -> QualityGuard:
 	var guard := QualityGuard.new()
-	assert_eq(_feed(guard, 0.025, 1.9), 0, "2초 전에는 판단하지 않음")
-	assert_eq(_feed(guard, 0.025, 0.2), 1, "2초가 차면 1단계")
-	assert_eq(_feed(guard, 0.025, 2.1), 1)
+	_feed(guard, FAST, QualityGuard.GRACE)
+	return guard
+
+
+func test_3초_연속_밀릴_때만_한_단계씩_낮추고_이유를_남기며_마지막_단계에서_멈춤() -> void:
+	var guard := _ready_guard()
+	assert_eq(_feed(guard, 0.025, 2.9), 0, "3초 전에는 낮추지 않음")
+	assert_eq(_feed(guard, 0.025, 0.2), 1, "3초 연속이면 1단계")
+	assert_true(guard.reason.contains("25.0"), "이유에 99%% 프레임: " + guard.reason)
+	assert_eq(_feed(guard, 0.025, QualityGuard.GRACE - 0.1), 0, "낮춘 뒤 쉬는 동안은 판단하지 않음")
+	assert_eq(_feed(guard, 0.025, 3.2), 1, "쉰 뒤 다시 3초면 한 단계")
 	assert_eq(guard.level, 2)
-	_feed(guard, 0.025, 20.0)
+	_feed(guard, 0.025, 60.0)
 	assert_eq(guard.level, QualityGuard.LEVELS, "마지막 단계에서 멈춤")
 	_feed(guard, FAST, 20.0)
 	assert_eq(guard.level, QualityGuard.LEVELS, "빨라져도 올리지 않음")
 
 
-func test_한두_번_끊김이나_탭_전환은_낮추지_않음() -> void:
+func test_느린_구간이_끊기면_처음부터_다시_셈() -> void:
+	var guard := _ready_guard()
+	for i in 5:
+		_feed(guard, 0.025, 2.0)
+		_feed(guard, FAST, 1.0)
+	assert_eq(guard.level, 0, "2초 느림 + 1초 정상 반복")
+
+
+func test_페이지를_연_뒤_탭에서_돌아온_뒤_화면_전환_뒤_5초는_판단하지_않음() -> void:
 	var guard := QualityGuard.new()
-	_feed(guard, FAST, 1.0)
-	guard.push(0.03)
-	_feed(guard, FAST, 3.0)
-	assert_eq(guard.level, 0, "2초에 한 번")
-	guard.push(5.0)
-	_feed(guard, FAST, 3.0)
-	assert_eq(guard.level, 0, "긴 멈춤은 렉이 아님")
+	assert_eq(_feed(guard, 0.025, QualityGuard.GRACE + 2.9), 0, "연 뒤 5초 + 2.9초")
+	guard.push(1.0)  # 탭이 가려졌다 돌아옴
+	assert_eq(_feed(guard, 0.025, QualityGuard.GRACE + 2.9), 0, "돌아온 뒤 5초 + 2.9초")
+	guard.hold()  # 화면 전환
+	assert_eq(_feed(guard, 0.025, QualityGuard.GRACE + 2.9), 0, "전환 뒤 5초 + 2.9초")
+	assert_eq(_feed(guard, 0.025, 0.2), 1, "그 뒤 3초 연속이면 낮춤")
 
 
 func test_빛_줄기가_가장_먼저_줄어듦() -> void:

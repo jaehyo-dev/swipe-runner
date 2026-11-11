@@ -47,6 +47,7 @@ const DUCK_DB := -8.0
 const DUCK_TIME := 1.0          # 음악을 낮춘 뒤 원래대로 돌아올 때까지
 const DUCK_FADE := 0.1          # 내려가고 올라오는 데 쓰는 시간 (뚝 끊겨 들리지 않게)
 const RESTART_FADE := 0.3       # 재시작 때 지금 곡에서 첫 곡으로 겹치며 넘어가는 시간
+const MENU_DB := -6.0           # 메인 화면 음악은 게임보다 이만큼 작게
 ## 경계가 이만큼 안으로 들어오면 다음 곡을 예약한다. 장애물은 z -85(속도 15에서 5.67초 앞)에 나오며 박 → 거리는 경계를 알아야 정해지므로, 첫 장애물보다 먼저 정한다.
 const SCHEDULE_LEAD := 7.0
 ## 이보다 가까운 경계는 4마디 뒤로 미룬다. 위와 같은 이유로 6초보다 길어야 한다 (데스크톱 제너레이터 버퍼 0.5초보다도 길다)
@@ -67,6 +68,8 @@ var ladder := MusicLadder.new()
 var start_step := 0
 ## 데스크톱 음악 플레이어 (제너레이터). 웹에서는 재생에 쓰지 않는다.
 var music: AudioStreamPlayer
+## 소리 끔 (메인 화면 버튼): 음악·효과음 모두
+var muted := false
 
 var _web: WebMusic
 var _web_playing := false
@@ -340,14 +343,35 @@ func play_crash() -> void:
 	_duck.tween_method(_set_music_db, MUSIC_DB + DUCK_DB, MUSIC_DB, DUCK_FADE)
 
 
+## 새 판: 효과음을 다시 내고 음악을 원래 크기로 (충돌 때 낮춘 것, 메인 화면에서 작게 둔 것)
 func unblock() -> void:
 	_blocked = false
+	_music_level(MUSIC_DB)
+
+
+## 메인 화면: 첫 곡을 처음부터 게임보다 MENU_DB 작게 튼다. 다음 곡으로 넘어가지 않고(첫 곡 구간이 돈다) 효과음도 내지 않는다
+func play_menu_music() -> void:
+	_begin_music(RESTART_FADE if is_music_on() else 0.0)
+	_blocked = true
+	_music_level(MUSIC_DB + MENU_DB)
+
+
+func _music_level(db: float) -> void:
+	if _duck:
+		_duck.kill()
+	_set_music_db(db)
+
+
+func set_muted(on: bool) -> void:
+	muted = on
+	AudioServer.set_bus_mute(0, on)
+	_set_music_db(AudioServer.get_bus_volume_db(_music_bus))
 
 
 func _set_music_db(db: float) -> void:
 	AudioServer.set_bus_volume_db(_music_bus, db)
-	if _web:
-		_web.set_db(db)
+	if _web:  # 웹 음악은 엔진 버스를 거치지 않고 바로 나가므로 소리 끔도 여기서
+		_web.set_db(-120.0 if muted else db)
 
 
 func _jitter() -> float:

@@ -11,6 +11,7 @@ func _make_main() -> Node3D:
 	var main: Node3D = load("res://scenes/main.tscn").instantiate()
 	main.seed_value = 1234
 	DirAccess.remove_absolute(TEST_BEST)
+	DirAccess.remove_absolute(TEST_BEST.get_basename() + "_settings.cfg")  # 판 수·소리 설정도 처음부터
 	main.best_path = TEST_BEST
 	add_child(main)
 	main.set_process(false)  # 시간은 advance()로만 흘려 결과를 고정한다
@@ -169,8 +170,10 @@ func test_화면에_점수와_버전_안내_글자만_있음() -> void:
 	while not main.prewarmed:
 		await wait_frames()
 	await wait_frames()
-	var labels := main.find_children("*", "Label", true, false)
-	assert_eq(labels.size(), 7, "점수 + 최고 + 버전 + (숨겨진) 다시 시작 안내·배수·PERFECT 한 줄·게임 오버 한 줄")
+	var labels: Array = main._hud.find_children("*", "Label", true, false)
+	assert_eq(labels.size(), 6, "점수 + 최고 + (숨겨진) 다시 시작 안내·배수·PERFECT 한 줄·게임 오버 한 줄")
+	assert_eq(main._title.find_children("*", "Label", true, false).size(), 6, "메인 화면: 제목 + BEST + 안내 세 줄(기호는 선으로 그림) + 시작 안내")
+	assert_eq(main.find_children("*", "Label", true, false).size(), 13, "+ 버전")
 	for hidden in ["MultiplierLabel", "StatsLabel", "RestartLabel", "PerfectLabel"]:
 		assert_false(main.find_child(hidden, true, false).visible, hidden + " 처음엔 숨김")
 	var version: Label = main.find_child("VersionLabel", true, false)
@@ -485,18 +488,18 @@ func test_첫_화면_전에_세_종류와_글자를_가림막_뒤에서_그린�
 		assert_true(main._kind_meshes[kind]["body"].visible_instance_count > 0, "장애물 %d을 그림" % kind)
 	main._sync_orbs()
 	assert_true(main._orbs.visible_instance_count > 0 and main._links.visible_instance_count > 0 and main._ring.visible, "방울·실선·고리 셰이더도 미리 그림")
-	var covers := main.find_children("*", "ColorRect", true, false)
+	var covers := main.find_children("*", "ColorRect", true, false).filter(func(c: ColorRect) -> bool: return c.visible)
 	assert_eq(covers.size(), 1)
-	assert_true(covers[0].get_parent().layer > 1, "화면 맨 위 가림막")
-	assert_eq(main.find_children("*", "Label", true, false).size(), 13, "숫자·안내·최고·배수·한 줄·PERFECT 글자도 그림")
+	assert_true(covers[0].get_parent().layer > main._fade.get_parent().layer, "화면 맨 위 가림막")
+	assert_eq(main.find_children("*", "Label", true, false).size(), 19, "숫자·안내·최고·배수·한 줄·PERFECT 글자도 그림 (메인 화면 글자는 그대로 보여 그려진다)")
 	assert_eq(main.find_children("Flash", "", true, false).size(), 0, "v0.8.1: 화면 깜빡임 없음")
 	var nodes_during: int = _count_nodes(main)
 	while not main.prewarmed:
 		await wait_frames()
 	await wait_frames()
-	assert_eq(main.find_children("*", "ColorRect", true, false).size(), 0, "가림막 사라짐")
+	assert_eq(main.find_children("*", "ColorRect", true, false), [main._fade], "가림막 사라짐 (페이드 판만 남음)")
 	assert_true(_count_nodes(main) < nodes_during, "준비용 노드 정리")
-	assert_eq(main.find_children("*", "Label", true, false).size(), 7, "가림막 글자는 지움")
+	assert_eq(main.find_children("*", "Label", true, false).size(), 13, "가림막 글자는 지움")
 	main.queue_free()
 
 
@@ -815,4 +818,129 @@ func test_PERFECT는_점수_아래_글자와_더해진_점수_세어_올라가�
 	main.restart()
 	assert_false(main._stats_label.visible)
 	assert_eq(main.score.close, 0, "재시작하면 0")
+	main.queue_free()
+
+
+# ---------- 메인 화면 ----------
+
+## 메인 화면에서 시작하는 게임 화면 (음악은 멈춘 상태에서)
+func _make_menu() -> Node3D:
+	AudioManager.music.stop()
+	var main := _make_main()
+	main.started = false
+	while not main.prewarmed:
+		await wait_frames()
+	main.advance(STEP)
+	return main
+
+
+func _touch(main: Node3D, at: Vector2) -> void:
+	var touch := InputEventScreenTouch.new()
+	touch.pressed = true
+	touch.position = at
+	main._input(touch)
+
+
+func test_메인_화면은_장애물_없이_젤리가_박마다_숨_쉬고_제목과_안내가_보임() -> void:
+	var main: Node3D = await _make_menu()
+	assert_true(main._camera.position.is_equal_approx(main.MENU_CAM), "메인 화면 카메라")
+	assert_eq(main._hud.modulate.a, 0.0, "점수 글자는 숨김")
+	assert_true(main._title.visible)
+	assert_false(main._title.best_label.visible, "기록이 없으면 BEST 숨김")
+	assert_true(main._title.guide.visible, "처음에는 조작 안내")
+	var beat_time := MusicLadder.beat_time(AudioManager.start_step)
+	var glows := 0
+	var alphas: Array[float] = []
+	main.runner._process(STEP)  # 0박의 부풂은 세지 않는다
+	for i in roundi(beat_time * 3.5 / STEP):
+		main.advance(STEP)
+		if main.runner._absorb == 1.0:
+			glows += 1
+		main.runner._process(STEP)
+		alphas.append(main._title.start_label.modulate.a)
+	assert_eq(glows, 3, "3박에 3번 부풂")
+	assert_true(alphas.max() - alphas.min() > 0.4, "SWIPE TO START가 밝아졌다 흐려짐")
+	assert_true(main.field.items.is_empty() and main.travel == 0.0, "장애물 없음, 제자리")
+	assert_true(main._streaks.visible_instance_count <= main.MENU_STREAKS, "빛 줄기는 아주 적게")
+	main.queue_free()
+
+
+func test_시작하면_제목이_0_3초에_흐려지고_카메라가_0_6초에_게임_자리로_들어감() -> void:
+	var main: Node3D = await _make_menu()
+	_touch(main, Vector2(360, 700))
+	assert_true(main.started)
+	assert_eq(main.save.plays, 1, "판 수 저장")
+	assert_eq(SaveData.new(main.save._path).plays, 1)
+	await get_tree().create_timer(main.TITLE_FADE + 0.05).timeout
+	assert_false(main._title.visible, "제목·안내 사라짐")
+	assert_eq(main._hud.modulate.a, 1.0, "점수 글자 나타남")
+	assert_false(main._camera.position.is_equal_approx(main.GAME_CAM), "카메라는 아직 들어가는 중")
+	await get_tree().create_timer(main.CAMERA_IN - main.TITLE_FADE).timeout
+	assert_true(main._camera.position.is_equal_approx(main.GAME_CAM), "게임 카메라 자리")
+	while main.field.items.is_empty():
+		main.advance(STEP)
+	assert_eq(main.field.items[0]["beat"], float(BeatClock.BEATS_PER_BAR), "첫 장애물은 1마디 뒤 첫 박")
+	AudioManager.music.stop()
+	main.queue_free()
+
+
+func test_소리_버튼은_시작하지_않고_음악_효과음을_끄고_켜며_저장() -> void:
+	var main: Node3D = await _make_menu()
+	var button: Control = main._title.sound
+	_touch(main, button.get_global_rect().get_center())
+	assert_false(main.started, "소리 버튼은 시작이 아님")
+	assert_true(AudioManager.muted and AudioServer.is_bus_mute(0), "음악·효과음 모두 끔")
+	assert_eq(button.kind, UiIcon.Kind.SOUND_OFF)
+	assert_true(SaveData.new(main.save._path).muted, "저장")
+	_touch(main, button.get_global_rect().get_center())
+	assert_false(AudioManager.muted or AudioServer.is_bus_mute(0), "다시 켬")
+	assert_false(SaveData.new(main.save._path).muted)
+	main.queue_free()
+
+
+func test_게임_오버의_집_버튼은_0_4초_페이드로_메인_화면에_가고_첫_곡이_6dB_작게_흐름() -> void:
+	var main: Node3D = await _make_menu()
+	_touch(main, Vector2(360, 700))
+	_run(main, 1.0)
+	_put_in_front(main, ObstacleField.Kind.BLOCK)
+	main.advance(STEP)
+	assert_true(main.dead)
+	assert_false(main._home.visible, "부딪힌 직후에는 숨김")
+	_run(main, main.RESTART_DELAY + 0.05)
+	assert_true(main._home.visible, "다시 시작 안내와 함께 보임")
+	_touch(main, main._home.get_global_rect().get_center())
+	assert_true(main.dead, "페이드가 가릴 때까지는 그대로")
+	_touch(main, Vector2(360, 700))
+	assert_true(main.dead, "페이드 중 입력은 받지 않음")
+	await get_tree().create_timer(main.HOME_FADE * 0.5 + 0.05).timeout
+	assert_false(main.dead or main.started, "메인 화면")
+	assert_true(main.field.items.is_empty() and main._obstacles.is_empty(), "앞 판 장애물 지움")
+	assert_true(main._title.visible and main._title.best_label.visible, "BEST가 보임")
+	assert_true(AudioManager.music.playing, "메인 화면 음악")
+	assert_eq(AudioServer.get_bus_volume_db(AudioServer.get_bus_index(&"Music")), AudioManager.MUSIC_DB + AudioManager.MENU_DB, "게임보다 6dB 작게")
+	assert_eq(AudioManager.ladder.segment_at(AudioManager.music_time)["step"], 0, "원본 100BPM")
+	await get_tree().create_timer(main.HOME_FADE * 0.5).timeout
+	assert_false(main._fade.visible, "페이드 끝")
+	main.advance(STEP)
+	_touch(main, Vector2(360, 700))
+	assert_true(main.started, "다시 시작")
+	assert_eq(AudioServer.get_bus_volume_db(AudioServer.get_bus_index(&"Music")), AudioManager.MUSIC_DB, "게임 음악은 원래 크기")
+	assert_eq(main.save.plays, 2)
+	AudioManager.music.stop()
+	main.queue_free()
+
+
+func test_세_판을_한_뒤에는_조작_안내를_숨김() -> void:
+	var main: Node3D = await _make_menu()
+	main.save.plays = SaveData.GUIDE_RUNS - 1
+	main.dead = true
+	main.go_home()
+	await get_tree().create_timer(main.HOME_FADE + 0.05).timeout
+	assert_true(main._title.guide.visible, "3판째 전에는 보임")
+	_touch(main, Vector2(360, 700))
+	main.dead = true
+	main.go_home()
+	await get_tree().create_timer(main.HOME_FADE + 0.05).timeout
+	assert_false(main._title.guide.visible, "4판째부터 숨김")
+	AudioManager.music.stop()
 	main.queue_free()

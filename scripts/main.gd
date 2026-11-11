@@ -85,10 +85,24 @@ const SWISH_FROM := -2.5
 const SWISH_TO := 2.5
 const SWISH_SIDE := 0.62       # 주인공 가운데에서 옆으로
 const BOOT_COLOR := Color(0.02, 0.016, 0.051)  # project.godot boot_splash/bg_color와 같은 색: 로딩에서 가림막으로 이어져 보이게
+## 메인 화면 (ART_BIBLE.md 14): 같은 무대에 젤리가 서서 박마다 숨 쉬고, 시작하면 카메라가 게임 자리로 들어간다
+const GAME_CAM := Vector3(0.0, 3.3, 5.4)
+const GAME_LOOK := Vector3(0.0, 0.7, -8.0)
+const MENU_CAM := Vector3(0.0, 2.0, 4.6)    # 낮고 가깝게: 젤리가 크게, 위쪽 하늘에 제목 자리
+const MENU_LOOK := Vector3(0.0, 1.5, -8.0)
+const TITLE_FADE := 0.3      # 시작할 때 제목·안내가 흐려지는 시간 (점수 글자는 같은 시간에 나타난다)
+const CAMERA_IN := 0.6       # 시작할 때 카메라가 게임 자리로 들어가는 시간
+const HOME_FADE := 0.4       # 게임 오버 → 메인 화면 페이드 (반은 어두워지고 반은 밝아진다)
+const MENU_FLOW := 3.0       # 메인 화면에서 빛 대시가 흐르는 속도 (게임 첫 속도 15의 1/5)
+const MENU_STREAKS := 4      # 메인 화면의 빛 줄기 수 (아주 적게)
+## 웹: 브라우저가 실제로 그린 프레임 간격(requestAnimationFrame)을 모은다. 엔진 _process 안에서 잰 간격은 화면이 멀쩡해도 크게 흔들려
+## 자동 낮춤이 잘못 걸렸다 (review/v0.9.0/quality.md: rAF 16.8ms인 2초 동안 _process 간격 99% 25.8ms)
+const FRAMES_JS := "window.gameFrames = []; { let last = 0; const tick = t => { if (last) window.gameFrames.push(t - last); last = t; requestAnimationFrame(tick); }; requestAnimationFrame(tick); }"
+const FRAMES_POLL := 30      # 이 프레임마다 모인 간격을 한 번에 가져온다
 
 ## 0이면 실행할 때마다 무작위. 테스트에서는 0이 아닌 값을 줘서 장애물 레인을 고정한다.
 @export var seed_value := 0
-## 최고 기록 파일. 테스트는 임시 파일을 준다.
+## 최고 기록 파일. 테스트는 임시 파일을 준다 (설정 파일도 그 옆의 임시 파일을 쓴다)
 @export var best_path := BestRecord.PATH
 
 var lane := RunLogic.START_LANE
@@ -97,6 +111,7 @@ var travel := 0.0
 ## 지금 세상이 다가오는 속도
 var speed := RunLogic.SPEED
 var record: BestRecord
+var save: SaveData  # 플레이 횟수(조작 안내)·소리 켜기/끄기
 var score := ScoreBoard.new()
 var field: ObstacleField
 var runner: Runner
@@ -136,7 +151,15 @@ var _row_segments := 0            # 대시 줄을 쓸 때의 사다리 구간 �
 var _row_ladder: MusicLadder
 var _quality := QualityGuard.new()
 var _effect_level := 0  # 지금 적용된 효과 단계
-var _last_frame_usec := 0
+var _title: TitleScreen
+var _hud: Control          # 게임 중 글자(점수·BEST·배수·PERFECT·게임 오버). 메인 화면에서는 숨는다
+var _home: UiIcon          # 게임 오버 왼쪽 위 집 버튼
+var _fade: ColorRect       # 게임 오버 → 메인 화면 페이드
+var _going_home := false
+var _menu_t := 0.0         # 메인 화면에서 흐른 시간 (음악이 없을 때의 박, 대시 흐름)
+var _menu_beat := -1       # 숨쉬기를 한 마지막 박
+var _view := 0.0           # 1 = 메인 화면 카메라, 0 = 게임 카메라. 메인 화면의 첫 프레임에 1로 간다
+var _view_tween: Tween
 var _dead_time := 0.0
 var _restart_label: Label
 var _camera: Camera3D
@@ -189,7 +212,12 @@ func _ready() -> void:
 	if seed_value == 0 and OS.has_feature("web"):
 		# 화면 확인 기록(review/)을 같은 배치로 다시 찍을 수 있게 주소의 ?seed=숫자를 읽는다
 		seed_value = int(str(JavaScriptBridge.eval("new URLSearchParams(location.search).get('seed') || 0")))
+	if best_path == BestRecord.PATH:  # 실제 게임만: 이름이 바뀌기 전 폴더의 기록을 옮겨 온다 (테스트·도구는 임시 파일)
+		var copied := SaveData.migrate(SaveData.old_user_dir(), OS.get_user_data_dir())
+		print("SAVE %s (옛 폴더에서 옮긴 파일 %d개)" % [OS.get_user_data_dir(), copied])  # 저장 위치 확인용 한 줄
 	record = BestRecord.new(best_path)
+	save = SaveData.new(SaveData.PATH if best_path == BestRecord.PATH else best_path.get_basename() + "_settings.cfg")
+	AudioManager.set_muted(save.muted)
 	_new_field()
 	_build_environment()
 	_build_camera()
@@ -207,6 +235,9 @@ func _ready() -> void:
 	get_viewport().size_changed.connect(_fit_render_scale)
 	_fit_camera()
 	_fit_render_scale()
+	_title.show_menu(record.best, save.shows_guide(), save.muted)
+	if OS.has_feature("web"):
+		JavaScriptBridge.eval(FRAMES_JS, true)
 	_prewarm()
 
 
@@ -218,13 +249,14 @@ func _process(delta: float) -> void:
 		_watch_frames()
 
 
-## 실제 프레임 간격을 재서 밀리면 효과를 한 단계 낮춘다 (엔진 delta는 고르게 다듬어져 밀림이 덜 보인다)
+## 브라우저가 그린 프레임 간격으로 밀림을 판단해 효과를 한 단계 낮춘다 (기준은 QualityGuard)
 func _watch_frames() -> void:
-	var now := Time.get_ticks_usec()
-	if _last_frame_usec > 0 and _quality.push((now - _last_frame_usec) / 1000000.0):
-		apply_quality(_quality.level)
-		print("QUALITY %d %.1f" % [_quality.level, now / 1000000.0])  # 측정 기록용: 언제 낮췄는지
-	_last_frame_usec = now
+	if Engine.get_process_frames() % FRAMES_POLL != 0:
+		return
+	for ms in str(JavaScriptBridge.eval("window.gameFrames.splice(0).join()")).split(",", false):
+		if _quality.push(ms.to_float() / 1000.0):
+			apply_quality(_quality.level)
+			print("QUALITY %d %.1f %s" % [_quality.level, Time.get_ticks_msec() / 1000.0, _quality.reason])  # 언제, 왜 낮췄는지
 
 
 ## 효과 단계: 1 빛 줄기 줄이기, 2 반사 끄기, 3 MSAA 2x, 4 빛 번짐 낮추기. 이 단계까지 전부 적용한다.
@@ -247,14 +279,64 @@ func _fit_render_scale() -> void:
 	get_viewport().scaling_3d_scale = QualityGuard.render_scale(DisplayServer.window_get_size())
 
 
-## 첫 입력: 음악 0초와 함께 세상이 출발한다. 미리 놓인 장애물을 음악 시간에 맞춘다 (출력 지연만큼의 차이).
+## 메인 화면의 시작 입력: 음악 0초와 함께 세상이 출발한다. 제목은 흐려지고 카메라가 게임 자리로 들어간다.
+## 첫 실행은 이 입력이 오디오를 켠다(브라우저 정책). 메인 화면 음악이 흐르고 있었으면 첫 곡 0초로 겹치며 넘어간다
 func begin() -> void:
 	started = true
+	_quality.hold()
+	save.count_play()
+	if AudioManager.is_music_on():
+		AudioManager.restart_music()
+	else:
+		AudioManager.start_music()
+	AudioManager.unblock()
 	_dash_material.set_shader_parameter("sparkle_on", 1.0)
-	AudioManager.start_music()
 	field.ladder = AudioManager.ladder  # 음악과 함께 시작한 사다리: 경계가 여기에 쌓인다
 	_music_t = AudioManager.music_time
+	runner.running = true
+	var t := _tint
+	_tint = -1.0
+	_apply_tint(t)  # 메인 화면에서 줄인 빛 줄기 수를 되돌린다
+	record.begin_run()
+	_show_best()
 	_move_world()
+	_pop_dashes()  # 대시가 메인 화면의 흐르던 자리에서 박 자리로 옮겨 가는 순간을 가린다
+	var fade := create_tween().set_parallel()
+	fade.tween_property(_title, "modulate:a", 0.0, TITLE_FADE)
+	fade.tween_property(_hud, "modulate:a", 1.0, TITLE_FADE)
+	fade.chain().tween_callback(_title.hide)
+	if _view_tween:
+		_view_tween.kill()
+	_view_tween = create_tween()
+	_view_tween.tween_method(_set_view, _view, 0.0, CAMERA_IN).set_trans(Tween.TRANS_SINE).set_ease(Tween.EASE_IN_OUT)
+
+
+## 카메라를 메인 화면 자리(1)와 게임 자리(0) 사이에 둔다
+func _set_view(k: float) -> void:
+	_view = k
+	_camera.position = GAME_CAM.lerp(MENU_CAM, k)
+	_camera.look_at(GAME_LOOK.lerp(MENU_LOOK, k))
+
+
+## 메인 화면: 젤리는 제자리에서 박마다 숨 쉬듯 부풀었다 튀고, 빛 대시와 몇 안 되는 빛 줄기가 천천히 흐른다. 장애물은 없다
+func _advance_menu(delta: float) -> void:
+	_menu_t += delta
+	var music := AudioManager.is_music_on()
+	var beat := AudioManager.ladder.beat_at(AudioManager.music_time) if music else _menu_t / MusicLadder.beat_time(AudioManager.start_step)
+	_title.pulse(beat)
+	runner.running = false
+	if floori(beat) != _menu_beat:
+		_menu_beat = floori(beat)
+		runner.absorb()  # 방울을 먹을 때의 작은 부풂과 속빛을 박마다
+	if _view != 1.0 and not _going_home:
+		_set_view(1.0)
+	_hud.modulate.a = 0.0
+	var ladder := AudioManager.ladder
+	_dashes.position.z = fposmod(_menu_t * MENU_FLOW, ladder.distance_of_beat(BeatRows.ROW_BEATS) - ladder.distance_of_beat(0.0))
+	_dash_material.set_shader_parameter("pulse", BeatRows.pulse(fposmod(beat, 1.0) * MusicLadder.beat_time(AudioManager.start_step)))
+	_scroll += MENU_FLOW * delta
+	_streak_material.set_shader_parameter("scroll", _scroll)
+	_streaks.visible_instance_count = mini(MENU_STREAKS, _streaks.visible_instance_count)
 
 
 ## delta초만큼 게임을 진행한다 (테스트에서도 직접 호출). music_t: 음악 시간. 안 주면(테스트) delta만큼 흐른 것으로 친다.
@@ -269,6 +351,7 @@ func advance(delta: float, music_t := NAN) -> void:
 	runner.lift = player.height()
 	runner.crouch = player.crouch()
 	if not started:
+		_advance_menu(delta)
 		return
 	_move_world()
 	for item in field.items:
@@ -634,6 +717,7 @@ func _advance_dead(delta: float) -> void:
 	_camera.h_offset = shake.x
 	_camera.v_offset = shake.y
 	_restart_label.visible = _dead_time >= RESTART_DELAY
+	_home.visible = _restart_label.visible
 
 
 ## 부딪혔다: 실수로 바로 넘기지 않게 잠깐 뒤부터 다시 시작할 수 있다.
@@ -664,14 +748,14 @@ func _game_over(item: Dictionary) -> void:
 func restart() -> void:
 	dead = false
 	_dead_time = 0.0
+	_quality.hold()
+	save.count_play()
 	_tint_from = _tint  # 부딪힌 순간의 색에서 돌아간다
 	AudioManager.restart_music()
 	_music_t = AudioManager.music_time
 	_tint_clock = _music_t
 	travel = AudioManager.ladder.distance_at(_music_t)  # 출력 지연만큼 음수에서 출발: 다음 프레임에 길이 뒤로 튀지 않게
-	player = PlayerAction.new()
-	score = ScoreBoard.new()
-	_swipe = SwipeDetector.new()
+	_reset_round()
 	var old_pieces := _obstacles.values()
 	_obstacles.clear()
 	_new_field()
@@ -689,23 +773,87 @@ func restart() -> void:
 	_dashes.position.z = 0.0  # 부딪힌 뒤 밀려 간 만큼 되돌린다
 	_place_rows()
 	_dash_material.set_shader_parameter("sparkle_on", 1.0)
-	# 박자가 0박으로 돌아가며 대시 격자가 옮겨 가는 순간을 장애물과 같은 '퐁'으로 가린다
+	_pop_dashes()  # 박자가 0박으로 돌아가며 대시 격자가 옮겨 가는 순간을 가린다
+	record.begin_run()
+	_show_best()
+	runner.reform(lane)
+
+
+## 대시 격자가 장애물과 같은 '퐁'으로 나타난다
+func _pop_dashes() -> void:
 	var appear := func(a: float) -> void: _dash_material.set_shader_parameter("appear", a)
 	appear.call(0.0)
 	create_tween().tween_method(appear, 0.0, 1.0, POP_TIME).set_trans(Tween.TRANS_BACK).set_ease(Tween.EASE_OUT)
+
+
+## 새 판(다시 시작·메인 화면)마다 처음으로 돌리는 입력·점수·게임 오버 글자
+func _reset_round() -> void:
+	player = PlayerAction.new()
+	score = ScoreBoard.new()
+	_swipe = SwipeDetector.new()
 	_camera.h_offset = 0.0
 	_camera.v_offset = 0.0
 	_restart_label.visible = false
 	_stats_label.visible = false
+	_home.visible = false
 	_mult_shown = 1
 	if _mult_tween:
 		_mult_tween.kill()
 	_reset_multiplier()
 	_hide_perfect()
 	_score_label.text = "0"
-	record.begin_run()
-	_show_best()
+
+
+## 게임 오버의 집 버튼: 0.4초 페이드로 메인 화면에 간다
+func go_home() -> void:
+	_going_home = true
+	_fade.visible = true
+	var fade := create_tween()
+	fade.tween_property(_fade, "color:a", 1.0, HOME_FADE * 0.5)
+	fade.tween_callback(_enter_menu)
+	fade.tween_property(_fade, "color:a", 0.0, HOME_FADE * 0.5)
+	fade.tween_callback(func() -> void:
+		_fade.visible = false
+		_going_home = false)
+
+
+## 페이드로 가려진 사이에 메인 화면 상태로: 앞 판을 지우고, 젤리는 가운데 레인에 모이고, 첫 곡이 6dB 작게 흐른다
+func _enter_menu() -> void:
+	dead = false
+	started = false
+	_dead_time = 0.0
+	_quality.hold()
+	AudioManager.play_menu_music()
+	_reset_round()
+	_obstacles.clear()
+	_pieces_dirty = true
+	_new_field()
+	_music_t = 0.0
+	travel = 0.0
+	_tint_from = -1.0
+	_apply_tint(AudioManager.ladder.tint_at(0.0))
+	_apply_fog(AudioManager.ladder, 0.0)
+	_apply_stretch(1.0)
+	_set_stage_glow(0.0)
+	_place_rows()
+	_dash_material.set_shader_parameter("sparkle_on", 0.0)
+	lane = RunLogic.START_LANE
 	runner.reform(lane)
+	runner.position.x = RunLogic.lane_x(lane)
+	_menu_t = 0.0
+	_menu_beat = -1
+	_set_view(1.0)
+	_hud.modulate.a = 0.0
+	_title.show_menu(record.best, save.shows_guide(), save.muted)
+	_sync_pieces()  # 페이드가 걷히기 전 프레임부터 앞 판 장애물이 보이지 않게
+	_sync_orbs()
+
+
+## 메인 화면 소리 버튼: 음악·효과음 모두. 상태는 저장한다
+func toggle_sound() -> void:
+	save.set_muted(not save.muted)
+	AudioManager.set_muted(save.muted)
+	_title.set_muted(save.muted)
 
 
 ## 기록이 있으면 숫자 아래에 작게. 첫 판에는 숨긴다.
@@ -724,13 +872,22 @@ func _on_new_record() -> void:
 
 
 func _input(event: InputEvent) -> void:
-	if not started and not prewarmed:  # 가림막 뒤에서 게임이 시작되면 보이지 않는 장애물에 부딪힐 수 있다
+	if (not started and not prewarmed) or _going_home:  # 가림막·페이드 뒤의 입력은 받지 않는다
 		return
-	if not started and (event is InputEventScreenTouch or event is InputEventKey) and event.pressed:
-		begin()  # 이 입력도 아래에서 게임 동작으로 그대로 처리한다
+	var pressed: bool = (event is InputEventScreenTouch or event is InputEventKey) and event.pressed
+	if not started:
+		if not pressed:
+			return
+		if event is InputEventScreenTouch and _title.sound.hit(event.position):
+			toggle_sound()
+		else:
+			begin()  # 탭이든 어느 방향 스와이프든 시작만 한다. 게임 동작으로는 처리하지 않는다
+		return
 	if dead:
-		var pressed: bool = (event is InputEventScreenTouch or event is InputEventKey) and event.pressed
 		if pressed and _dead_time >= RESTART_DELAY:
+			if event is InputEventScreenTouch and _home.hit(event.position):
+				go_home()
+				return
 			restart()
 			if event is InputEventScreenTouch:  # 다시 시작한 손가락 그대로 밀어도 스와이프가 된다
 				_swipe.press(event.position, event.index)
@@ -887,7 +1044,8 @@ func _prewarm() -> void:
 	_swish.visible = false
 	prewarmed = true
 	if OS.has_feature("web"):
-		JavaScriptBridge.eval("window.gameReady = performance.now()")  # 첫 화면이 드러난 시각: 프레임 측정의 시작점
+		# 가림막 뒤의 느린 프레임은 자동 낮춤 판단에 넣지 않는다. gameReady: 첫 화면이 드러난 시각 (프레임 측정의 시작점)
+		JavaScriptBridge.eval("window.gameFrames.length = 0; window.gameReady = performance.now()")
 
 
 # ---------- 장면 만들기 ----------
@@ -936,6 +1094,7 @@ func _fit_camera() -> void:
 	var size := get_viewport().get_visible_rect().size
 	_camera.keep_aspect = Camera3D.KEEP_WIDTH if size.y >= size.x else Camera3D.KEEP_HEIGHT
 	_restart_label.offset_top = 370.0 if size.y >= size.x else 200.0  # 웅덩이와 겹치지 않는 자리 (세로는 아래, 가로는 위)
+	_title.fit(size.y >= size.x)
 
 
 func _build_floor() -> void:
@@ -1128,8 +1287,16 @@ func _build_orbs() -> void:
 
 
 func _build_ui() -> void:
-	var layer := CanvasLayer.new()
-	add_child(layer)
+	var root := CanvasLayer.new()
+	add_child(root)
+	_title = TitleScreen.new()
+	root.add_child(_title)
+	var layer := Control.new()  # 게임 중 글자를 한꺼번에 흐리고 밝힌다
+	layer.name = "Hud"
+	layer.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
+	layer.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	root.add_child(layer)
+	_hud = layer
 	_score_label = Label.new()
 	_score_label.name = "ScoreLabel"
 	_score_label.text = "0"
@@ -1188,6 +1355,11 @@ func _build_ui() -> void:
 	_restart_label.label_settings = rs
 	_restart_label.visible = false
 	layer.add_child(_restart_label)
+	_home = UiIcon.new(UiIcon.Kind.HOME, Color(1, 1, 1, 0.7), TitleScreen.SOUND_SIDE)
+	_home.name = "HomeButton"
+	TitleScreen.corner(_home, false)
+	_home.visible = false
+	layer.add_child(_home)
 
 	# 아주 흐린 버전 표시 (project.godot 버전을 읽음)
 	var version := Label.new()
@@ -1202,4 +1374,13 @@ func _build_ui() -> void:
 	vs.font_size = 22
 	vs.font_color = Color(1, 1, 1, 0.4)
 	version.label_settings = vs
-	layer.add_child(version)
+	root.add_child(version)  # 메인 화면에서도 보인다
+	var top := CanvasLayer.new()
+	top.layer = 50
+	add_child(top)
+	_fade = ColorRect.new()
+	_fade.color = Color(BOOT_COLOR, 0.0)
+	_fade.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
+	_fade.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	_fade.visible = false
+	top.add_child(_fade)

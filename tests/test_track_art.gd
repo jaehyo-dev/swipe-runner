@@ -107,14 +107,17 @@ func test_슬라이드_블록에는_받침이_없고_아래_빛_웅덩이는_블
 	assert_true(center > 0.2 and center <= 0.35, "가운데 %f" % center)
 
 
-## 기호 하나가 면의 50~60% (둥근 끝까지 포함한 폭과 높이), 앞면에 있고 면 안에 든다
-func test_기호는_앞면의_50에서_60퍼센트() -> void:
+## 기호 하나가 면의 65~75% (둥근 끝까지 포함한 폭과 높이), 앞면에 있고 면 안에 든다. 선은 화면에서 2픽셀 이상 (v0.9.0: 멀리서 ^가 뭉개짐)
+func test_기호는_앞면의_70퍼센트이고_화면에서_2픽셀_이상() -> void:
+	var shader: Shader = load("res://shaders/block.gdshader")
+	var radius := RegEx.create_from_string("mark_min_pixels = ([0-9.]+)").search(shader.code).get_string(1).to_float()  # 헤드리스는 셰이더 기본값을 읽지 못해 코드에서 읽는다
+	assert_true(radius * 2.0 >= 2.0, "선 굵기(반지름 × 2) 2픽셀 이상: %f" % radius)
 	for kind: K in [K.LOW, K.HIGH]:
 		var face: AABB = _box(kind, ArtMeshes.Part.BODY)
 		var mark: AABB = _box(kind, ArtMeshes.Part.MARK)
 		for axis in 2:
 			var share: float = mark.size[axis] / face.size[axis]
-			assert_true(share >= 0.5 and share <= 0.6, "종류 %d 축 %d: %f" % [kind, axis, share])
+			assert_true(share >= 0.65 and share <= 0.75, "종류 %d 축 %d: %f" % [kind, axis, share])
 		assert_true(absf(mark.get_center().y - face.get_center().y) < 0.001, "종류 %d: 가운데" % kind)
 		assert_true(mark.end.z > face.end.z, "종류 %d: 앞면에서 솟음" % kind)
 		assert_true(mark.position.z > 0.0, "종류 %d: 앞면에만" % kind)

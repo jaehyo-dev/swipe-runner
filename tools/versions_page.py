@@ -23,7 +23,7 @@ def render(current, older):
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>스와이프 러너 - 이전 버전</title>
+  <title>SWIPE PULSE - 이전 버전</title>
   <style>
     body {{ background: #0a0f2e; color: #dfe6ff; font-family: sans-serif; margin: 0; padding: 24px 16px; }}
     main {{ max-width: 480px; margin: 0 auto; }}
@@ -34,7 +34,7 @@ def render(current, older):
 </head>
 <body>
   <main>
-    <h1>스와이프 러너 - 이전 버전</h1>
+    <h1>SWIPE PULSE - 이전 버전</h1>
     <p><a href="../">최신 버전(v{html.escape(current)})으로 돌아가기</a></p>
 {body}
   </main>

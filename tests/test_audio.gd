@@ -235,19 +235,17 @@ func test_충돌_소리_뒤_막혔다가_다시_시작하면_풀림_음악은_�
 	main.queue_free()
 
 
-func test_첫_입력_전에는_세상이_멈춰_있고_첫_입력이_음악을_켜고_동작으로도_처리됨() -> void:
+func test_첫_입력_전에는_세상이_멈춰_있고_첫_입력은_음악과_게임을_시작만_함() -> void:
 	AudioManager.music.stop()
 	var main := _make_main(false)
 	while not main.prewarmed:
 		await wait_frames()
 	_start_log()
 	var scroll: float = main._scroll
-	var waiting_z: Array = main.field.items.map(func(i): return i["z"])
-	# 첫 장애물(1마디 뒤, 거리 36)은 시작 안개 거리(27) 너머라 아직 없다. 있으면 멈춰 있어야 한다
 	main.advance(30.0)
 	assert_eq(main.travel, 0.0, "거리는 아직")
-	assert_eq(main.field.items.map(func(i): return i["z"]), waiting_z, "장애물은 멈춰 있음")
-	assert_eq(main._scroll, scroll, "길도 멈춰 있음")
+	assert_true(main.field.items.is_empty(), "메인 화면에는 장애물이 없다")
+	assert_true(main._scroll > scroll, "빛 대시·줄기는 천천히 흐른다")
 	assert_false(AudioManager.music.playing, "음악은 아직")
 	var key := InputEventKey.new()
 	key.pressed = true
@@ -255,20 +253,21 @@ func test_첫_입력_전에는_세상이_멈춰_있고_첫_입력이_음악을_�
 	main._input(key)
 	assert_true(main.started)
 	assert_true(AudioManager.music.playing, "음악 시작")
-	assert_eq(main.lane, 0, "첫 입력도 게임 동작")
-	assert_eq(_names(), ["lane"])
+	assert_eq(main.lane, 1, "시작 입력은 게임 동작이 아님")
+	assert_eq(_names(), [])
 	# 박 계산은 첫 입력(음악 0초) 기준이다
 	var t: float = AudioManager.music_time
 	assert_true(absf(t) < 0.2, "음악 0초 근처 %f" % t)
 	assert_eq(main.field.travel, AudioManager.ladder.distance_at(t), "장애물 거리 = 음악 시간의 이동 거리")
-	for item in main.field.items:
-		assert_true(absf(item["z"] + RunLogic.SPEED * (item["beat"] * 0.6 - t)) < 0.001, "자기 박에 맞는 자리")
-		assert_true(absf(main._obstacles[item["id"]].position.z - item["z"]) < 0.0001, "노드도 같은 자리")
+	main.advance(1.0 / 60.0)
+	assert_eq(main.lane, 1)
+	main._input(key)
+	assert_eq(main.lane, 0, "다음 입력부터 동작")
 	AudioManager.music.stop()
 	main.queue_free()
 
 
-func test_첫_터치도_시작이고_그대로_밀면_스와이프() -> void:
+func test_첫_터치로_시작하고_그대로_밀어도_동작하지_않음() -> void:
 	AudioManager.music.stop()
 	var main := _make_main(false)
 	while not main.prewarmed:
@@ -282,20 +281,9 @@ func test_첫_터치도_시작이고_그대로_밀면_스와이프() -> void:
 	var drag := InputEventScreenDrag.new()
 	drag.position = Vector2(300, 600)
 	main._input(drag)
-	assert_eq(main.lane, 2)
-	assert_eq(_names(), ["lane"])
+	assert_eq(main.lane, 1, "시작한 손가락의 스와이프는 게임 동작이 아님")
+	assert_eq(_names(), [])
 	AudioManager.music.stop()
-	main.queue_free()
-
-
-func test_음악_시간을_받으면_세상이_그_차이만큼_움직임() -> void:
-	var main := _make_main()
-	await wait_frames()
-	main.advance(1.0, 1.0)
-	var z: float = main.field.items[0]["z"]
-	main.advance(0.001, 1.5)  # 프레임 시간과 상관없이
-	assert_true(absf(main.field.items[0]["z"] - (z + RunLogic.SPEED * 0.5)) < 0.000001)
-	assert_true(absf(main.travel - RunLogic.SPEED * 1.5) < 0.000001)
 	main.queue_free()
 
 

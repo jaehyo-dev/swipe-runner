@@ -96,8 +96,7 @@ func _apply_measure_switches() -> void:
 		return
 	var off := str(JavaScriptBridge.eval("new URLSearchParams(location.search).get('off') || ''")).split(",")
 	if bool(JavaScriptBridge.eval("new URLSearchParams(location.search).has('quiet')")):
-		AudioServer.set_bus_mute(0, true)  # 스피커로 소리를 내지 않되 AudioContext는 실제 장치로 돈다
-		AudioManager._set_music_db(-120.0)
+		AudioManager.set_muted(true)  # 스피커로 소리를 내지 않되 AudioContext는 실제 장치로 돈다 (판이 바뀌어도 끈 채로)
 	var scale := float(str(JavaScriptBridge.eval("new URLSearchParams(location.search).get('scale') || 0")))
 	if "msaa" in off:
 		get_viewport().msaa_3d = Viewport.MSAA_DISABLED

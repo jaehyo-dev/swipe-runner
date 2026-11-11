@@ -1,0 +1,63 @@
+{
+ "phone": {
+  "errors": [],
+  "logs": [
+   "SAVE /userfs/godot/app_userdata/SWIPE PULSE (옛 폴더에서 옮긴 파일 0개)",
+   "QUALITY 1 22.3 99% 프레임 83.4, 83.4, 100.0 ms가 3초 연속 20ms 초과"
+  ],
+  "levels": {
+   "menu_first": {
+    "db": null,
+    "state": "running"
+   },
+   "run": {
+    "db": -17.1,
+    "state": "running"
+   },
+   "menu_second": {
+    "db": -22.1,
+    "state": "running"
+   },
+   "muted": {
+    "db": -142.3,
+    "state": "running"
+   },
+   "unmuted": {
+    "db": -25.6,
+    "state": "running"
+   }
+  },
+  "renderer": "ANGLE (Google, Vulkan 1.3.0 (SwiftShader Device (Subzero) (0x0000C0DE)), SwiftShader driver)"
+ },
+ "pc": {
+  "errors": [],
+  "logs": [
+   "SAVE /userfs/godot/app_userdata/SWIPE PULSE (옛 폴더에서 옮긴 파일 0개)",
+   "QUALITY 1 34.5 99% 프레임 183.4, 166.7, 166.7 ms가 3초 연속 20ms 초과",
+   "QUALITY 2 48.7 99% 프레임 150.0, 166.7, 166.7 ms가 3초 연속 20ms 초과"
+  ],
+  "levels": {
+   "menu_first": {
+    "db": null,
+    "state": "running"
+   },
+   "run": {
+    "db": -13.4,
+    "state": "running"
+   },
+   "menu_second": {
+    "db": -26.3,
+    "state": "running"
+   },
+   "muted": {
+    "db": -137.4,
+    "state": "running"
+   },
+   "unmuted": {
+    "db": -20.1,
+    "state": "running"
+   }
+  },
+  "renderer": "ANGLE (Google, Vulkan 1.3.0 (SwiftShader Device (Subzero) (0x0000C0DE)), SwiftShader driver)"
+ }
+}

@@ -88,6 +88,11 @@ func _run() -> void:
 			await process_frame
 
 	print("\n결과: 통과 %d, 실패 %d" % [passed, failed])
+	# 소리를 멈추고 오디오 스레드가 재생 상태 객체를 치울 시간을 준다. 재생 중이거나 막 끝난 소리를 두고 바로 끝내면
+	# "ObjectDB instances were leaked" 경고가 난다 (review/v0.9.0/leak.md)
+	for player in root.find_children("*", "AudioStreamPlayer", true, false):
+		player.stop()
+	await create_timer(0.3).timeout
 	quit(1 if failed > 0 or passed == 0 else 0)
 
 

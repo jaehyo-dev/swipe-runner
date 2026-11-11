@@ -11,7 +11,7 @@ uniform vec3 fog_color : source_color = vec3(0.2);   // 지금의 안개 색
 uniform float face_tint = 0.07;     // 앞면 바탕의 색 비침
 uniform float top_gloss = 0.24;     // 윗면 반사 하이라이트
 uniform float min_pixels = 0.75;    // 관 반지름의 화면 최소 크기(픽셀)
-uniform float mark_min_pixels = 1.0; // 기호는 더 굵게: 멀리서도 읽혀야 한다
+uniform float mark_min_pixels = 1.25; // 기호는 더 굵게: 반지름 1.25픽셀 = 화면에서 선 굵기 2.5픽셀 이상 (v0.9.0, 멀리서도 ^가 읽히게)
 uniform float haze_near = 6.0;      // 연속 블록의 뒤쪽 것이 흐려지기 시작하는 카메라 거리
 uniform float haze_far = 16.0;
 uniform float fog_near = 24.75;     // 주인공 앞 이 거리부터 안개 속에서 진해진다 (main.gd가 매 프레임: 보이는 시간 기준)
