@@ -7,7 +7,7 @@ config_version=5
 
 config/name="SWIPE PULSE"
 config/description="말랑한 민트 젤리가 어두운 네온 무대의 3레인을 달리며 장애물을 스와이프로 피하는 3D 러너"
-config/version="0.11.1"
+config/version="0.11.2"
 run/main_scene="res://scenes/main.tscn"
 config/features=PackedStringArray("4.7", "GL Compatibility")
 boot_splash/bg_color=Color(0.02, 0.016, 0.051, 1)

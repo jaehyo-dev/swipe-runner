@@ -44,6 +44,7 @@ const SCHEDULE_MIN := 6.2
 const GENERATOR_BUFFER := 0.5   # RESTART_FADE보다 길어야 겹치는 동안 이전 곡이 끊기지 않는다
 const FADE_FLOOR_DB := -60.0
 const SWITCH_BLEND := 0.005     # 곡 경계에서 파형이 튀어 딸깍거리지 않게 겹치는 시간. 틈은 없다
+const GAP_POLL := 30            # 이 프레임마다 오디오 출력 시계를 끊김 추정에 넣는다 (약 0.5초)
 const RESAMPLE_HEAD := 2        # mix_audio가 맨 앞에 내놓는 빈 표본 수. 버리지 않으면 곡 이음매마다 틈이 생긴다
 
 ## 소리를 낸 순간 알림 (이름, 재생 속도). 화면 확인 기록과 테스트에서 쓴다.
@@ -92,6 +93,7 @@ var _music_db := MUSIC_DB  # 게임이 정한 음악 크기 (메인 화면·충�
 var _music_user_db := 0.0   # 설정 MUSIC 슬라이더 (dB)
 var _sfx_user_db := 0.0     # 설정 SFX 슬라이더 (dB)
 var _held := false          # 일시정지로 소리를 멈췄다
+var gaps := AudioGapMeter.new()  # 성능 표시의 오디오 끊김 추정 (웹만)
 var _fades := {}  # 음악 플레이어 -> 볼륨 트윈 (플레이어마다 하나만)
 
 
@@ -187,6 +189,8 @@ func _process(delta: float) -> void:
 		elif not _blocked:  # 게임 오버 화면에서는 경계가 계속 밀리므로 곡을 다시 풀지 않는다
 			_want_next_track()
 		_web.decode_slice()
+		if Engine.get_process_frames() % GAP_POLL == 0:
+			gaps.push(_web.peak(), Time.get_ticks_msec() / 1000.0)
 	if not is_music_on():
 		return
 	if not _web:
@@ -196,6 +200,14 @@ func _process(delta: float) -> void:
 	music_time = _clock.smoothed(delta)
 	if not _blocked:  # 부딪힌 뒤에는 지금 곡을 그대로 둔다
 		_plan_next_track()
+
+
+## 성능 표시 셋째 줄: 출력 표본율, 출력 지연, 최근 10초 끊김 추정(웹만)
+func audio_text() -> String:
+	if _web:
+		var info := _web.info()
+		return AudioGapMeter.text(info[0], info[1], gaps.count(Time.get_ticks_msec() / 1000.0))
+	return AudioGapMeter.text(AudioServer.get_mix_rate(), AudioServer.get_output_latency(), -1)
 
 
 func is_music_on() -> bool:

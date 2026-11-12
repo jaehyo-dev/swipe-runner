@@ -41,6 +41,8 @@ func test_웹_음악이_쓸_AudioContext를_남겨_둠() -> void:
 	presets.load("res://export_presets.cfg")
 	var head := str(presets.get_value("preset.0.options", "html/head_include", ""))
 	assert_true(head.contains("window.gameAudioCtx=this"), "head_include의 AudioContext")
+	assert_true(head.contains("latencyHint:0.02"), "휴대폰 출력 버퍼 20ms (v0.11.2)")
+	assert_true(head.contains("n==='godot-position-reporting-processor'"), "효과음 위치 워클릿을 빈 노드로 (v0.11.2)")
 
 
 func test_내보내기_결과물_폴더는_리소스로_가져오지_않음() -> void:

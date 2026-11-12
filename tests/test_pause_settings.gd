@@ -152,6 +152,14 @@ func test_설정은_크기_진동_안내를_바로_적용하고_저장한다() -
 	panel.tap(_center(panel._rows["GRAPHICS"]))
 	assert_eq(panel.graphics_value.text, "LOW")
 	assert_eq(main._effect_level, QualityGuard.LEVELS, "바로 적용")
+	assert_eq(panel.performance_value.text, "OFF", "PERFORMANCE 처음은 OFF")
+	assert_false(main._perf_label.visible)
+	panel.tap(_center(panel._rows["PERFORMANCE"]))
+	assert_eq(panel.performance_value.text, "ON")
+	assert_true(main._perf_label.visible, "바로 보인다")
+	assert_eq(main._perf_label.text.count("\n"), 5, "여섯 줄: 프레임 둘·화면 둘·오디오 둘")
+	assert_true(main._perf_label.get_minimum_size().x < 230.0, "좁은 칸: 다섯 자리 점수 숫자 왼쪽 (폭 %.0f)" % main._perf_label.get_minimum_size().x)
+	assert_true(main._perf_label.text.contains("AUDIO"), main._perf_label.text)
 	main.save.plays = 10
 	panel.tap(_center(panel._rows["SHOW GUIDE"]))
 	assert_eq(main.save.guide_left, SaveData.GUIDE_RUNS)
@@ -162,6 +170,7 @@ func test_설정은_크기_진동_안내를_바로_적용하고_저장한다() -
 	assert_false(again.vibration)
 	assert_true(again.shows_guide(), "다음 판에 안내")
 	assert_eq(again.graphics, "low", "GRAPHICS 저장")
+	assert_true(again.performance, "PERFORMANCE 저장")
 	panel.open(main.save, main.haptics)
 	panel.tap(_center(panel._rows["GRAPHICS"]))
 	assert_eq(main.save.graphics, "auto", "LOW 다음은 AUTO")
@@ -194,6 +203,21 @@ func test_왼쪽_위_세_번_탭으로_성능_표시를_켜고_끄고_시작하�
 	f3.keycode = KEY_F3
 	main._input(f3)
 	assert_true(main._perf_label.visible, "PC는 F3")
+	assert_true(SaveData.new(main.save._path).performance, "세 번 탭·F3도 설정 PERFORMANCE를 바꿔 저장")
+	var pause := Rect2(TitleScreen.SOUND_MARGIN, TitleScreen.SOUND_MARGIN, TitleScreen.SOUND_SIDE, TitleScreen.SOUND_SIDE)
+	assert_true(main._perf_label.position.y >= pause.end.y, "일시정지 버튼 아래")
+	_done(main)
+
+
+func test_PERFORMANCE가_켜져_있으면_처음부터_보인다() -> void:
+	var file := SaveData.new(TEST_BEST.get_basename() + "_settings.cfg")
+	file.performance = true
+	file.save()
+	var main: Node3D = load("res://scenes/main.tscn").instantiate()
+	main.seed_value = 1234
+	main.best_path = TEST_BEST
+	add_child(main)
+	assert_true(main._perf_label.visible, "메인 화면부터")
 	_done(main)
 
 
@@ -202,7 +226,7 @@ func test_진동을_지원하지_않으면_설정에서_숨김() -> void:
 	main.haptics = Haptics.new(false)
 	main.open_settings()
 	assert_false(main._settings._rows["VIBRATION"].is_visible_in_tree())
-	assert_eq(main._settings._rows["SHOW GUIDE"].position.y, SettingsPanel.TOP + SettingsPanel.ROW * 3, "아래 줄이 올라온다 (MUSIC·SFX·GRAPHICS 다음)")
+	assert_eq(main._settings._rows["SHOW GUIDE"].position.y, SettingsPanel.TOP + SettingsPanel.ROW * 4, "아래 줄이 올라온다 (MUSIC·SFX·GRAPHICS·PERFORMANCE 다음)")
 	main._settings.close()
 	_done(main)
 

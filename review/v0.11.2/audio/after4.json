@@ -1,0 +1,19 @@
+{
+ "opts": "{\"latencyHint\":0.02}",
+ "rate": 48000,
+ "base": 0.021333333333333333,
+ "outLat": 0.07200000000000001,
+ "state": "running",
+ "sp": [],
+ "worklets": {
+  "godot-processor": 1
+ },
+ "sources": 44,
+ "msgsPerSec": 381,
+ "frames": 1222,
+ "drops": 0,
+ "worstMs": 0,
+ "currentTimeStepMax": "42.7",
+ "errors": [],
+ "throttle": "4"
+}

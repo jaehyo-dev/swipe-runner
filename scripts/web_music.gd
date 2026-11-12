@@ -4,6 +4,8 @@ extends RefCounted
 ## 그래서 Web Audio 노드를 직접 다룬다: 곡을 프레임마다 조금씩 디코딩해 AudioBuffer에 채우고, 경계 시각에 start(when)/stop(when)으로 잇는다.
 ## 브라우저 decodeAudioData는 쓰지 않는다: 오래된 Safari는 Vorbis를 못 푼다.
 ## 엔진의 AudioContext는 export_presets.cfg의 html/head_include가 window.gameAudioCtx로 남겨 둔다.
+## v0.11.2 head_include: 휴대폰은 출력 버퍼를 20ms(latencyHint 0.02)로 조금 늘린다(오디오 스레드가 잠깐 밀려도 버틴다. 늘어난 지연은 position()이 빼고,
+## 보고하지 않는 브라우저여도 20ms 안). 엔진이 효과음마다 붙이는 위치 워클릿(128표본마다 메시지)은 게임이 쓰지 않아 빈 노드로 바꾼다.
 ## 메모리(아이폰 대비): 곡마다 실제로 쓸 4마디 구간만 푼다. 들고 있는 것은 재시작용 첫 곡과 다음 곡뿐이고, 지금 곡은 재생 노드가 붙들고 있다가 끝나면 사라진다.
 
 const CHUNK_FRAMES := 2048
@@ -20,7 +22,7 @@ window.gameMusic = (() => {
   const resume = c.resume.bind(c);
   let held = false;
   c.resume = () => held ? Promise.resolve() : resume();
-  let run = null, t0 = 0, cur = null, unloops = [];
+  let run = null, t0 = 0, cur = null, unloops = [], top = -Infinity, stampOk = false;
   // v0.11.1: 디코드한 묶음마다 새 배열을 만들지 않고 같은 바이트 배열을 다시 쓴다 (아이폰 WebKit 가비지 수집 멈춤 줄이기)
   let bytes = new Uint8Array(0), floats = new Float32Array(0);
   const source = (i, gain) => {
@@ -78,7 +80,15 @@ window.gameMusic = (() => {
       run.sources.push(next);
       cur = next;
     },
-    tick() { if (unloops.length) unloops = unloops.filter(u => { if (c.currentTime < u.at) return true; u.s.loop = false; return false; }); },
+    tick() {
+      if (unloops.length) unloops = unloops.filter(u => { if (c.currentTime < u.at) return true; u.s.loop = false; return false; });
+      if (held || c.state !== 'running' || !c.getOutputTimestamp) { stampOk = false; return; }
+      const s = c.getOutputTimestamp();
+      if (s.performanceTime > 0) top = Math.max(top, s.contextTime * 1000 - s.performanceTime);
+    },
+    // v0.11.2 끊김 추정(AudioGapMeter): 지난 호출 뒤 (오디오 출력 시각 − 실제 시각)의 최댓값(ms). 멈춤이 끼었거나 값이 없으면 null
+    peak() { const p = stampOk && top > -Infinity ? top : null; top = -Infinity; stampOk = true; return p; },
+    info() { return c.sampleRate + ',' + ((c.baseLatency || 0) + (c.outputLatency || 0)); },
     position() { return c.currentTime - t0 - c.baseLatency - (c.outputLatency || 0); },
     // 일시정지: AudioContext를 멈춰 음악·효과음과 시계(currentTime)를 함께 세운다. 예약해 둔 곡 경계도 같은 시계라 그대로 맞는다
     hold(on) { held = on; return on ? c.suspend() : resume(); },
@@ -176,6 +186,17 @@ func hold(on: bool) -> void:
 
 func running() -> bool:
 	return bool(_js.running())
+
+
+## 지난 호출 뒤 출력 시계 최댓값(ms) 또는 null (AudioGapMeter.push)
+func peak() -> Variant:
+	return _js.peak()
+
+
+## [출력 표본율 Hz, 출력 지연 초]
+func info() -> PackedFloat64Array:
+	var parts := str(_js.info()).split(",")
+	return PackedFloat64Array([parts[0].to_float(), parts[1].to_float()])
 
 
 func set_db(db: float) -> void:

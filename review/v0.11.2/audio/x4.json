@@ -1,0 +1,20 @@
+{
+ "opts": "{}",
+ "rate": 48000,
+ "base": 0.005333333333333333,
+ "outLat": 0.04,
+ "state": "running",
+ "sp": [],
+ "worklets": {
+  "godot-processor": 1,
+  "godot-position-reporting-processor": 2
+ },
+ "sources": 48,
+ "msgsPerSec": 479,
+ "frames": 1226,
+ "drops": 0,
+ "worstMs": 0,
+ "currentTimeStepMax": "37.3",
+ "errors": [],
+ "throttle": "4"
+}

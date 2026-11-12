@@ -14,6 +14,7 @@ var sfx := 1.0         # 효과음 크기 0~1
 var vibration := true  # 진동 (기본 켬)
 var guide_left := 0    # 설정의 SHOW GUIDE: 앞으로 이만큼의 판에 조작 안내를 다시 보인다
 var graphics := "auto" # 설정의 GRAPHICS: QualityGuard.SETTINGS
+var performance := false  # 설정의 PERFORMANCE: 왼쪽 위 성능 표시 (v0.11.2)
 
 var _path: String
 
@@ -35,6 +36,8 @@ func _init(path := PATH) -> void:
 	guide_left = clampi(left, 0, GUIDE_RUNS) if left is int else 0
 	var look: Variant = file.get_value("play", "graphics", "auto")
 	graphics = look if look in QualityGuard.SETTINGS else "auto"
+	var meter: Variant = file.get_value("play", "performance", false)
+	performance = meter is bool and meter
 
 
 ## 0~1 크기 값. 숫자가 아니면 처음 값(1)
@@ -74,6 +77,7 @@ func save() -> void:
 	file.set_value("play", "vibration", vibration)
 	file.set_value("play", "guide_left", guide_left)
 	file.set_value("play", "graphics", graphics)
+	file.set_value("play", "performance", performance)
 	file.save(_path)  # 저장소가 막힌 브라우저(시크릿 창 등)에서도 게임은 계속된다
 
 

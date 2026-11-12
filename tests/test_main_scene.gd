@@ -178,8 +178,8 @@ func test_화면에_점수와_버전_안내_글자만_있음() -> void:
 	assert_eq(labels.size(), 9, "점수 + 최고 + (숨겨진) 다시 시작 안내·배수·PERFECT 한 줄·게임 오버 한 줄·SHARE·NEW SKIN·EQUIP")
 	assert_eq(main._title.find_children("*", "Label", true, false).size(), 10, "메인 화면: 제목 + BEST + 안내 세 줄(기호는 선으로 그림) + 스킨 이름 + 시작 안내 + DAILY 버튼, 오늘의 판: 번호 + 기록 줄")
 	assert_eq(main._pause_menu.find_children("*", "Label", true, false).size(), 5, "일시정지: PAUSED + 버튼 셋 + 숫자")
-	assert_eq(main._settings.find_children("*", "Label", true, false).size(), 10, "설정: 제목 + 줄 이름 다섯 + 값 셋 + DONE")
-	assert_eq(main.find_children("*", "Label", true, false).size(), 20 + 5 + 10 + 1, "+ 버전 + 숨은 성능 표시")
+	assert_eq(main._settings.find_children("*", "Label", true, false).size(), 12, "설정: 제목 + 줄 이름 여섯 + 값 넷(PERFORMANCE 포함) + DONE")
+	assert_eq(main.find_children("*", "Label", true, false).size(), 20 + 5 + 12 + 1, "+ 버전 + 성능 표시")
 	assert_false(main.find_child("ShareButton", true, false).visible, "SHARE 처음엔 숨김")
 	assert_false(main._pause_menu.visible or main._settings.visible, "일시정지·설정은 처음엔 숨김")
 	for hidden in ["MultiplierLabel", "StatsLabel", "RestartLabel", "PerfectLabel"]:

@@ -356,17 +356,24 @@ func _process(delta: float) -> void:
 			_show_perf()
 
 
-## 숨은 성능 표시: 왼쪽 위 빠른 세 번 탭(PC는 F3)으로 켜고 끈다
+## 성능 표시: 설정 PERFORMANCE가 기본 방법. 왼쪽 위 빠른 세 번 탭(PC는 F3)도 같은 설정을 바꾼다
 func toggle_perf() -> void:
-	_perf_label.visible = not _perf_label.visible
+	set_perf(not save.performance)
+
+
+func set_perf(on: bool) -> void:
+	if save.performance != on:
+		save.performance = on
+		save.save()
+	_perf_label.visible = on
 	_perf_wait = 0.0
-	if _perf_label.visible:
+	if on:
 		_show_perf()
 
 
 func _show_perf() -> void:
 	var render := Vector2i(Vector2(DisplayServer.window_get_size()) * get_viewport().scaling_3d_scale)
-	_perf_label.text = perf.text(render, _effect_level, save.graphics, dpr)
+	_perf_label.text = perf.text(render, _effect_level, save.graphics, dpr) + "\n" + AudioManager.audio_text()
 
 
 ## 브라우저가 그린 프레임 간격으로 밀림을 판단해 효과를 한 단계 낮춘다 (기준은 QualityGuard)
@@ -2016,13 +2023,13 @@ func _build_ui() -> void:
 	_pause_menu.home_pressed.connect(_on_pause_home)
 	_pause_menu.settings_pressed.connect(open_settings)
 	root.add_child(_pause_menu)
-	# 숨은 성능 표시: 메인 화면·플레이·게임 오버 어디서든 (점수 글자 층과 따로, 맨 위)
+	# 성능 표시: 메인 화면·플레이·게임 오버 어디서든 (점수 글자 층과 따로, 맨 위)
 	var perf_layer := CanvasLayer.new()
 	perf_layer.layer = 50
 	add_child(perf_layer)
 	_perf_label = Label.new()
 	_perf_label.name = "PerfLabel"
-	_perf_label.position = Vector2(PerfStats.TAP_ZONE.position.x, 22.0)  # 두 줄이 점수 숫자(위 90px부터, 글자는 더 아래) 위에 들어간다
+	_perf_label.position = Vector2(TitleScreen.SOUND_MARGIN, TitleScreen.SOUND_MARGIN + TitleScreen.SOUND_SIDE + 12.0)  # 일시정지·집 버튼 바로 아래
 	_perf_label.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	var ps := LabelSettings.new()
 	ps.font_size = 18
@@ -2032,9 +2039,11 @@ func _build_ui() -> void:
 	_perf_label.label_settings = ps
 	_perf_label.visible = false
 	perf_layer.add_child(_perf_label)
+	set_perf(save.performance)
 	_settings = SettingsPanel.new()
 	_settings.closed.connect(_on_settings_closed)
 	_settings.graphics_changed.connect(apply_graphics)
+	_settings.performance_changed.connect(set_perf)
 	root.add_child(_settings)
 	var top := CanvasLayer.new()
 	top.layer = 50
