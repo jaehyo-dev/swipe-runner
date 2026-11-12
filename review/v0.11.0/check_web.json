@@ -1,0 +1,15 @@
+{
+  "errors": [],
+  "logs": [],
+  "flip": {
+    "frames": 81,
+    "ms": 4000,
+    "slow": 0.1
+  },
+  "locked": {
+    "frames": 121,
+    "ms": 6000,
+    "slow": 0.1
+  },
+  "lockedStarted": false
+}
