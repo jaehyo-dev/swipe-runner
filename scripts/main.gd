@@ -605,7 +605,8 @@ func _move_world() -> void:
 	_halo_material.set_shader_parameter("pulse", pulse)
 	_link_material.set_shader_parameter("pulse", pulse)
 	var age := ladder.stage_up_age(_music_t)
-	_set_stage_glow(1.0 - age / STAGE_GLOW_TIME if age >= 0.0 and age < STAGE_GLOW_TIME else 0.0)
+	var stage := 1.0 - age / STAGE_GLOW_TIME if age >= 0.0 and age < STAGE_GLOW_TIME else 0.0
+	_set_stage_glow(maxf(stage, StageLight.wall_flash(ladder.wall_age(_music_t))))  # 고비: 0.4초 가장 세게 (밝기 순서 상한은 그대로)
 	_apply_step(field.step(travel, ladder.spawn_distance_at(_music_t)))
 
 

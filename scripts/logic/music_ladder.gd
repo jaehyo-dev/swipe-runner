@@ -48,11 +48,18 @@ static func data() -> Dictionary:
 
 ## 단계의 {bpm, speed, stage, file}. 맨 위 곡 뒤의 단계는 끝없이 이어진다: BPM·곡은 그대로, 속도만 4마디마다 오른다.
 static func info(step: int) -> Dictionary:
-	if step <= TOP:
-		return STEPS[step]
-	var top: Dictionary = STEPS[TOP].duplicate()
-	top["speed"] = top["speed"] + (step - TOP) * data()["speed_after_top"]
-	return top
+	var out: Dictionary = STEPS[mini(step, TOP)].duplicate()
+	out["speed"] += maxi(step - TOP, 0) * data()["speed_after_top"] + (wall()["speed"] if past_wall(step) else 0.0)
+	return out
+
+
+## 고비(v0.10.1): 이 단계부터 속도·보이는 시간·압박 단계가 한 번에 어려워진다 (data/difficulty.json의 wall)
+static func wall() -> Dictionary:
+	return data()["wall"]
+
+
+static func past_wall(step: int) -> bool:
+	return step >= int(wall()["step"])
 
 
 ## 단계가 쓰는 곡 번호 (AudioManager.TRACKS)
@@ -63,9 +70,8 @@ static func track(step: int) -> int:
 ## 장애물이 안개에서 나타나 도착할 때까지의 시간 (초)
 static func visible_time(step: int) -> float:
 	var v: Dictionary = data()["visible"]
-	if step <= TOP:
-		return lerpf(v["start"], v["top"], float(step) / TOP)
-	return maxf(v["top"] - (step - TOP) * v["per_step"], v["min"])
+	var t: float = lerpf(v["start"], v["top"], float(step) / TOP) if step <= TOP else v["top"] - (step - TOP) * v["per_step"]
+	return maxf(t - (wall()["visible"] if past_wall(step) else 0.0), v["min"])
 
 
 ## 단계의 안개 거리 = 속도 × 보이는 시간
@@ -173,6 +179,14 @@ func stage_up_age(t: float) -> float:
 	if i == 0 or info(segments[i]["step"])["stage"] == info(segments[i - 1]["step"])["stage"]:
 		return -1.0
 	return t - segments[i]["start"]
+
+
+## 고비 단계에 들어선 순간부터 흐른 시간. 아직이면 -1 (난간·레인 빛 신호)
+func wall_age(t: float) -> float:
+	for seg in segments:
+		if past_wall(seg["step"]):
+			return t - seg["start"] if t >= seg["start"] and seg["step"] == int(wall()["step"]) else -1.0
+	return -1.0
 
 
 ## 음악 시간 t의 색 진하기: 속도가 오른 순간부터 2마디 동안 끊김 없이 새 값으로 따라간다.

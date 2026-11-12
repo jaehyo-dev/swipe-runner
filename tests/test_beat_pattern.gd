@@ -127,7 +127,7 @@ func test_압박_단계는_8마디마다_1씩_상한_없이_오름() -> void:
 	assert_eq(BeatPattern.pressure(0.0), 0)
 	assert_eq(BeatPattern.pressure(31.9), 0)
 	assert_eq(BeatPattern.pressure(32.0), 1, "8마디")
-	assert_eq(BeatPattern.pressure(32.0 * 100), 100, "상한 없음")
+	assert_eq(BeatPattern.pressure(32.0 * 100), 100 + 4, "상한 없음 (고비 +4 포함)")
 	var top: int = MusicLadder.TOP * MusicLadder.STEP_BEATS
 	assert_eq(_bpm_of(top + 1000.0), 160, "160 뒤 BPM은 그대로")
 
@@ -232,7 +232,7 @@ func test_모든_시작_BPM과_더_많은_시드에서_풀림() -> void:
 func _runs(model: Dictionary) -> Array:
 	var runs := []
 	for s in range(1, 51):
-		runs.append(RunSim.run(s, HumanPlayer.new(s, model), 400.0))
+		runs.append(RunSim.run(s, HumanPlayer.new(s, model), 600.0))
 	return runs
 
 
@@ -252,20 +252,61 @@ func _assert_mixed(runs: Array) -> void:
 	assert_true(by_shape.values().max() <= 25, "쏠림 %s" % str(by_shape))
 
 
-func test_보통_모델은_중앙값_25에서_40초() -> void:
+## v0.10.1 점수 목표 (사람 모델 시드 50): 5000점 무렵 고비, 잘한 판 8000점, 10000점은 마의 구간
+func _score_share(runs: Array, lo: int, hi := 1 << 30) -> float:
+	return 100.0 * runs.filter(func(r: Dictionary) -> bool: return r["score"] >= lo and r["score"] < hi).size() / runs.size()
+
+
+func test_보통_모델은_절반쯤_5000점에_닿고_대부분_7000점_전에_죽음() -> void:
 	var runs := _runs(HumanPlayer.NORMAL)
-	var median: float = _times(runs)[24]
-	assert_true(median >= 25.0 and median <= 40.0, "중앙값 %f" % median)
+	var reach := _score_share(runs, 5000)
+	assert_true(reach >= 40.0 and reach <= 60.0, "5000점 도달 %.0f%%" % reach)
+	assert_true(_score_share(runs, 5000, 7000) >= reach * 0.75, "도달한 판 대부분이 5000~7000에서 죽음 %.0f%%" % _score_share(runs, 5000, 7000))
+	assert_eq(_score_share(runs, 10000), 0.0, "10000점은 없음")
 	_assert_mixed(runs)
 
 
-func test_잘하는_모델은_중앙값_50에서_80초_95퍼센트_150초_최대_240초() -> void:
+func test_잘하는_모델은_5000점을_넘고_8000점이_20에서_30퍼센트_10000점은_드묾() -> void:
 	var runs := _runs(HumanPlayer.GOOD)
-	var times := _times(runs)
-	assert_true(times[24] >= 50.0 and times[24] <= 80.0, "중앙값 %f" % times[24])
-	assert_true(times[47] <= 150.0, "95%% %f" % times[47])
-	assert_true(times[49] <= 240.0, "최대 %f" % times[49])
+	assert_true(_score_share(runs, 5000) >= 85.0, "5000점 도달 %.0f%%" % _score_share(runs, 5000))
+	assert_true(_score_share(runs, 5000, 8000) >= 60.0, "5000~8000 사망 %.0f%%" % _score_share(runs, 5000, 8000))
+	var top := _score_share(runs, 8000)
+	assert_true(top >= 20.0 and top <= 30.0, "8000점 이상 %.0f%%" % top)
+	var rare := _score_share(runs, 10000)
+	assert_true(rare >= 3.0 and rare <= 7.0, "10000점 이상 %.0f%%" % rare)
 	_assert_mixed(runs)
+
+
+func test_고비_전_난이도는_v0_10_0과_같고_고비에서_한꺼번에_어려워짐() -> void:
+	var wall := int(MusicLadder.wall()["step"])
+	assert_eq(wall, 8, "140BPM 단계 (약 66초, 5000점 무렵)")
+	# 고비 전: v0.10.0 값 그대로 (쉬워지지 않음)
+	assert_eq(MusicLadder.info(wall - 1)["speed"], 25.5)
+	assert_true(is_equal_approx(MusicLadder.visible_time(wall - 1), lerpf(1.8, 1.1, 7.0 / 12.0)))
+	assert_eq(BeatPattern.pressure(wall * MusicLadder.STEP_BEATS - 0.5), 3)
+	# 고비: 속도 +4, 보이는 시간 −0.15초, 압박 +4 (원래 오름 1 + 4 = 5)
+	assert_eq(MusicLadder.info(wall)["speed"], 27.0 + 4.0)
+	assert_true(is_equal_approx(MusicLadder.visible_time(wall), lerpf(1.8, 1.1, 8.0 / 12.0) - 0.15))
+	assert_eq(BeatPattern.pressure(wall * MusicLadder.STEP_BEATS), 4 + 4)
+	assert_eq(MusicLadder.info(MusicLadder.TOP + 2)["speed"], 33.0 + 2.0 + 4.0, "고비 뒤에도 그대로 이어서 오름")
+	assert_true(MusicLadder.visible_time(40) >= MusicLadder.data()["visible"]["min"], "보이는 시간 하한은 그대로")
+
+
+func test_고비_신호는_0_4초() -> void:
+	assert_eq(StageLight.wall_flash(-1.0), 0.0, "아직")
+	assert_eq(StageLight.wall_flash(0.0), 1.0)
+	assert_eq(StageLight.wall_flash(0.1), 1.0, "처음엔 가장 세게")
+	assert_true(StageLight.wall_flash(0.3) > 0.0 and StageLight.wall_flash(0.3) < 1.0)
+	assert_eq(StageLight.wall_flash(0.4), 0.0, "0.4초에 끝")
+	var ladder := MusicLadder.new()
+	var t := 0.0
+	while ladder.segments[-1]["step"] < 9:
+		t += 0.5
+		ladder.plan(t, AudioManager.SCHEDULE_LEAD, AudioManager.SCHEDULE_MIN, true)
+	var start: float = ladder.segments[8]["start"]
+	assert_eq(ladder.wall_age(start - 0.1), -1.0)
+	assert_true(is_equal_approx(ladder.wall_age(start + 0.2), 0.2))
+	assert_eq(MusicLadder.new(9).wall_age(5.0), -1.0, "고비 뒤에서 시작한 판(?bpm)은 신호 없음")
 
 
 func test_늦어서_길이_없어도_열린_레인을_돌려줌() -> void:
@@ -279,9 +320,9 @@ func test_사람_모델은_반응_지연을_지킴() -> void:
 	var delays := []
 	for i in 2000:
 		delays.append(human._delay())
-	var late := delays.filter(func(d): return d > 0.33 + 0.0001).size()
+	var late := delays.filter(func(d): return d > 0.25 + 0.0001).size()
 	for d: float in delays:
-		assert_true(d >= 0.17 and d <= 0.48 + 0.0001, "지연 %f" % d)
+		assert_true(d >= 0.13 - 0.0001 and d <= 0.40 + 0.0001, "지연 %f" % d)
 	assert_true(late >= 2 and late <= 60, "1%% 안팎으로 늦음: %d" % late)
 	var seeded := HumanPlayer.new(5)
 	assert_eq(seeded._delay(), delays[0], "시드 고정")
@@ -296,5 +337,5 @@ func test_160BPM의_2박이_점프와_슬라이드보다_김() -> void:
 
 func test_잘하는_모델은_반응이_빠르고_더_멀리_봄() -> void:
 	assert_true(HumanPlayer.GOOD["delay"] < HumanPlayer.NORMAL["delay"])
-	assert_eq(HumanPlayer.NORMAL["look"], 2)
-	assert_eq(HumanPlayer.GOOD["look"], 4)
+	assert_eq(HumanPlayer.NORMAL["look"], 4)
+	assert_eq(HumanPlayer.GOOD["look"], 5)

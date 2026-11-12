@@ -7,12 +7,14 @@ extends RefCounted
 const SEE := 0.55           # 줄을 알아채는 순간 (도착까지 남은 시간). 평균 반응 뒤 약 0.3초 앞에서 입력하는 값
 ## delay: 반응 지연, jitter: ± 무작위, late: 이 확률로 LATE만큼 더 늦게 반응, look: 내다보는 줄 수, gap: 입력 간격(초)
 ## speed_lag: 속도 1당 늘어나는 반응 지연(초). 화면이 빨리 흐를수록 장애물을 알아보는 데 오래 걸린다는 가정 (시작 속도 15 기준)
-const NORMAL := {"delay": 0.25, "jitter": 0.08, "late": 0.01, "look": 2, "gap": 0.28, "speed_lag": 0.02}
-const GOOD := {"delay": 0.18, "jitter": 0.05, "late": 0.005, "look": 4, "gap": 0.24, "speed_lag": 0.0165}
+## v0.10.1: 사용자가 "5000점까지는 쉽다"고 해 실제 사람보다 약했던 두 모델을 강하게 다시 맞췄다 (지연 ×0.76 안팎, 더 멀리 봄).
+## 예전 값: 보통 지연 0.25·흔들림 0.08·늦음 0.01·2줄·간격 0.28·속도 지연 0.02, 잘함 0.18·0.05·0.005·4줄·0.24·0.0165
+const NORMAL := {"delay": 0.19, "jitter": 0.06, "late": 0.008, "look": 4, "gap": 0.245, "speed_lag": 0.017}
+const GOOD := {"delay": 0.15, "jitter": 0.04, "late": 0.004, "look": 5, "gap": 0.22, "speed_lag": 0.014}
 ## 욕심쟁이: 잘하는 모델 + 보이는 방울을 최대한 쫓는다 (방울 레인을 고르는 비용 AutoPlayer.ORB_MISS)
-const GREEDY := {"delay": 0.18, "jitter": 0.05, "late": 0.005, "look": 4, "gap": 0.24, "speed_lag": 0.0165, "greedy": true}
+const GREEDY := {"delay": 0.15, "jitter": 0.04, "late": 0.004, "look": 5, "gap": 0.22, "speed_lag": 0.014, "greedy": true}
 ## 도전 모델: 잘하는 모델 + 점프·슬라이드를 도착 dare초 전(± 흔들림 jitter의 반)까지 일부러 기다린다 (PERFECT를 노림). 레인 이동은 늦으면 부딪히므로 평소대로
-const DARE := {"delay": 0.18, "jitter": 0.05, "late": 0.005, "look": 4, "gap": 0.24, "speed_lag": 0.0165, "dare": 0.145}
+const DARE := {"delay": 0.15, "jitter": 0.04, "late": 0.004, "look": 5, "gap": 0.22, "speed_lag": 0.014, "dare": 0.145}
 const LAG_FROM_SPEED := 15.0
 const LATE := 0.15
 const CLEAR_AHEAD := 0.05   # 앞 줄을 다 지나기 이만큼 전에 움직이기 시작해도 된다 (레인 이동의 앞부분은 아직 제 레인 안이다)

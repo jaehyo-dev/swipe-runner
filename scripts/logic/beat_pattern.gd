@@ -42,9 +42,11 @@ func _init(seed_value: int, first_beat: int, start_step := 0) -> void:
 	_start_step = start_step
 
 
-## 박의 압박 단계: 음악 처음부터 8마디마다 1씩, 상한 없음 (?bpm으로 시작한 판도 0부터)
+## 박의 압박 단계: 음악 처음부터 8마디마다 1씩, 상한 없음 (?bpm으로 시작한 판도 0부터). 고비 박부터 wall.pressure를 더한다
 static func pressure(at_beat: float) -> int:
-	return floori(maxf(at_beat, 0.0) / (BeatClock.BEATS_PER_BAR * MusicLadder.data()["pressure_bars"]))
+	var wall := MusicLadder.wall()
+	var bonus: int = wall["pressure"] if at_beat >= float(wall["step"]) * MusicLadder.STEP_BEATS else 0  # 고비 (v0.10.1)
+	return floori(maxf(at_beat, 0.0) / (BeatClock.BEATS_PER_BAR * MusicLadder.data()["pressure_bars"])) + bonus
 
 
 ## 숨 고르기 마디인가 (압박 단계 안의 정해진 한 마디)

@@ -7,7 +7,7 @@ const DT := 1.0 / 60.0
 
 ## player: "perfect" 또는 HumanPlayer. 결과 {time, hit: 부딪힌 장애물(없으면 빈 값), step: 그때 단계, gaps: 최소 입력 간격, ladder,
 ##   score: 점수, orbs: 먹은 방울, orbs_seen: 지나간 방울 전체, close: 아슬아슬, distance}
-static func run(seed_value: int, player: Variant, seconds: float, start_step := 0) -> Dictionary:
+static func run(seed_value: int, player: Variant, seconds: float, start_step := 0, trace: Variant = null) -> Dictionary:
 	var ladder := MusicLadder.new(start_step)
 	var field := ObstacleField.new(seed_value, ladder)
 	var action := PlayerAction.new()
@@ -31,6 +31,8 @@ static func run(seed_value: int, player: Variant, seconds: float, start_step := 
 				return _result(t, item, ladder, min_gap, board)
 		var speed := ladder.speed_at(t)
 		board.watch(field, x, action.height(), action.crouch(), lane, t, speed)
+		if trace != null and (trace.is_empty() or t - trace[-1][0] >= 1.0):  # 1초마다 [시간, 점수, 단계, 박] (점수 곡선)
+			trace.append([t, board.total(ladder.distance_at(t)), ladder.segment_at(t)["step"], ladder.beat_at(t)])
 		var seen := visible_items(field.items, ladder, t)
 		var dir: int
 		if player is HumanPlayer:

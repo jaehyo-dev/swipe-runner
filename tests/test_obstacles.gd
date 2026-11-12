@@ -120,8 +120,8 @@ func test_같은_시드면_같은_배치_세_레인_세_종류가_모두_나옴(
 
 ## 속도 80, 20~60fps: 한 프레임에 판정 폭(1.4)보다 멀리 움직여도 주인공 자리를 건너뛴 장애물은 부딪힌다
 func test_속도_80에서도_프레임_사이_구간_판정으로_뚫리지_않음() -> void:
-	var step := MusicLadder.TOP + 47
-	assert_eq(MusicLadder.info(step)["speed"], 80.0)
+	var step := MusicLadder.TOP + 43
+	assert_eq(MusicLadder.info(step)["speed"], 80.0)  # 33 + 43 + 고비 4
 	for fps in [60.0, 30.0, 20.0]:
 		var ladder := MusicLadder.new(step)
 		var field := ObstacleField.new(5, ladder)

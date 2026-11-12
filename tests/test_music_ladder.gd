@@ -8,7 +8,7 @@ const MIN_LEAD := 6.2
 func test_표대로_BPM과_속도와_편곡_단계() -> void:
 	var want := []
 	for i in 13:  # 100~160BPM, 5BPM마다 속도 +1.5 (15에서 33까지), 100~105 원본, 110~115 A, 120부터 B
-		want.append([100 + 5 * i, 15.0 + 1.5 * i, 0 if i < 2 else (1 if i < 4 else 2)])
+		want.append([100 + 5 * i, 15.0 + 1.5 * i + (4.0 if i >= 8 else 0.0), 0 if i < 2 else (1 if i < 4 else 2)])  # 140BPM부터 고비 +4 (v0.10.1)
 	assert_eq(MusicLadder.STEPS.size(), want.size())
 	for i in want.size():
 		var ladder := MusicLadder.new(i)
@@ -50,9 +50,9 @@ func test_160_뒤_단계는_BPM과_곡은_그대로_속도만_4마디마다_1씩
 		var info := MusicLadder.info(MusicLadder.TOP + k)
 		assert_eq(info["bpm"], 160)
 		assert_eq(info["stage"], 2)
-		assert_eq(info["speed"], 33.0 + k)
+		assert_eq(info["speed"], 33.0 + k + 4.0)  # 고비 +4
 		assert_eq(MusicLadder.track(MusicLadder.TOP + k), MusicLadder.TOP, "마지막 곡")
-	assert_eq(MusicLadder.new(MusicLadder.TOP + 3).speed_at(1.0), 36.0)
+	assert_eq(MusicLadder.new(MusicLadder.TOP + 3).speed_at(1.0), 40.0)
 	assert_eq(MusicLadder.step_tint(MusicLadder.TOP + 30), 1.0, "색 진하기는 1에서 멈춤")
 
 
@@ -78,9 +78,9 @@ func test_10분_동안_곡이_바뀌는_경계는_12번뿐() -> void:
 func test_보이는_시간은_1_8초에서_160_도착_1_1초_그_뒤_4마디마다_0_03초_최소_0_75초() -> void:
 	assert_true(is_equal_approx(MusicLadder.visible_time(0), 1.8))
 	assert_true(is_equal_approx(MusicLadder.visible_time(6), 1.45))
-	assert_true(is_equal_approx(MusicLadder.visible_time(MusicLadder.TOP), 1.1))
-	assert_true(is_equal_approx(MusicLadder.visible_time(MusicLadder.TOP + 1), 1.07))
-	assert_true(is_equal_approx(MusicLadder.visible_time(MusicLadder.TOP + 10), 0.8))
+	assert_true(is_equal_approx(MusicLadder.visible_time(MusicLadder.TOP), 1.1 - 0.15), "고비 뒤 −0.15초 (v0.10.1)")
+	assert_true(is_equal_approx(MusicLadder.visible_time(MusicLadder.TOP + 1), 1.07 - 0.15))
+	assert_eq(MusicLadder.visible_time(MusicLadder.TOP + 10), 0.75, "고비로 하한에 일찍 닿음")
 	assert_eq(MusicLadder.visible_time(MusicLadder.TOP + 12), 0.75)
 	assert_eq(MusicLadder.visible_time(MusicLadder.TOP + 400), 0.75)
 	for step in 80:
@@ -159,7 +159,7 @@ func test_경계를_넘는_장애물도_박에_도착() -> void:
 		var edge := MusicLadder.span_time(start)
 		var t := 0.0
 		var crossing := []
-		while t < edge - 1.0:
+		while t < edge - 0.6:  # 고비 뒤 단계는 보이는 시간이 짧아(v0.10.1) 경계 0.6초 전까지 진행해야 경계를 넘는 장애물이 생긴다
 			t += 1.0 / 60.0
 			ladder.plan(t, LEAD, MIN_LEAD, true)
 			field.step(ladder.distance_at(t), ladder.spawn_distance_at(t))

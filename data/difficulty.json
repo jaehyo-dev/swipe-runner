@@ -1,6 +1,7 @@
 {
-	"_설명": "난이도 손잡이 (GAME_SPEC.md v0.7.0). speed_after_top: 160BPM 도착 뒤 4마디마다 더하는 속도. visible: 장애물이 안개에서 나타나 도착할 때까지의 시간(초) — start(100BPM) → top(160BPM 도착)까지 단계마다 고르게 줄고, 그 뒤 4마디마다 per_step씩 줄어 min에서 멈춘다. fade: 안개 속에서 진해지는 시간. spawn_margin: 안개 거리보다 이 시간만큼 먼 곳에서 생성. pressure_bars: 압박 단계가 1 오르는 마디 수, breather_bar: 그 안의 숨 고르기 마디(0부터). pattern의 값은 [편곡 단계 0, 1, 2의 기본 확률, 압박 단계당 더하는 값, 상한]. side_big: 기둥 둘 줄의 하나를 턱·막대로 바꿀 확률(v0.8.1, 기둥 비율 45% 이하). combo_every: 이 압박 단계마다 1박 콤보가 한 줄씩 길어진다(2~combo_max).",
+	"_설명": "난이도 손잡이 (GAME_SPEC.md v0.7.0). speed_after_top: 160BPM 도착 뒤 4마디마다 더하는 속도. visible: 장애물이 안개에서 나타나 도착할 때까지의 시간(초) — start(100BPM) → top(160BPM 도착)까지 단계마다 고르게 줄고, 그 뒤 4마디마다 per_step씩 줄어 min에서 멈춘다. fade: 안개 속에서 진해지는 시간. spawn_margin: 안개 거리보다 이 시간만큼 먼 곳에서 생성. pressure_bars: 압박 단계가 1 오르는 마디 수, breather_bar: 그 안의 숨 고르기 마디(0부터). pattern의 값은 [편곡 단계 0, 1, 2의 기본 확률, 압박 단계당 더하는 값, 상한]. side_big: 기둥 둘 줄의 하나를 턱·막대로 바꿀 확률(v0.8.1, 기둥 비율 45% 이하). combo_every: 이 압박 단계마다 1박 콤보가 한 줄씩 길어진다(2~combo_max). wall(v0.10.1 고비): step 단계(약 5000점 무렵)부터 속도 +speed, 보이는 시간 −visible초, 압박 단계 +pressure가 한꺼번에 붙는다.",
 	"speed_after_top": 1.0,
+	"wall": {"step": 8, "speed": 4.0, "visible": 0.15, "pressure": 4},
 	"visible": {
 		"start": 1.8,
 		"top": 1.1,

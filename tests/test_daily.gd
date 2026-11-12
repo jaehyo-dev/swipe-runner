@@ -148,4 +148,4 @@ func test_배치는_프레임_간격과_전역_난수에_영향받지_않음() -
 ## 고정 지문: 패턴·방울 규칙이나 값(data/difficulty.json, data/score.json)이 바뀌면 그날 판이 바뀐다.
 ## 의도한 변경이면 값을 고치고 CHANGELOG에 "오늘의 판 배치 바뀜"이라고 적는다.
 func test_고정_지문() -> void:
-	assert_eq(DailyRecord.layout_hash(DailyRecord.seed_of(D1)), "99e7039b5e52de92")
+	assert_eq(DailyRecord.layout_hash(DailyRecord.seed_of(D1)), "900b07ea24aa43e3")  # v0.10.1 고비로 바뀜 (v0.10.0: 99e7039b5e52de92)

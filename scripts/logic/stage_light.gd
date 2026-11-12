@@ -10,3 +10,14 @@ const STAGE_BOOST := 0.6  # 단계 빛남이 평소 빛 세기에 더하는 비�
 ## 지금의 난간 빛 세기. base: 진하기의 빛 세기, stage: 단계 빛남(1 → 0)
 static func energy(base: float, stage: float) -> float:
 	return minf(base * (1.0 + STAGE_BOOST * stage), PEAK_MAX)
+
+
+const WALL_HOLD := 0.15   # 고비 신호: 이만큼 가장 밝게 있다가
+const WALL_FADE := 0.25   # 이만큼 동안 꺼진다 (모두 0.4초)
+
+
+## 고비(v0.10.1) 신호의 빛남(1 → 0). age: 고비에 들어선 뒤 흐른 시간, 음수면 아직
+static func wall_flash(age: float) -> float:
+	if age < 0.0 or age >= WALL_HOLD + WALL_FADE:
+		return 0.0
+	return 1.0 if age < WALL_HOLD else 1.0 - (age - WALL_HOLD) / WALL_FADE
