@@ -92,3 +92,18 @@ func test_손가락을_뗀_뒤나_누르기_전의_움직임은_무시() -> void
 	swipe.press(Vector2.ZERO)
 	swipe.release()
 	assert_eq(swipe.move(Vector2(500, 0)), Dir.NONE, "뗀 뒤")
+
+
+## 메인 화면: 방향을 돌려주지 않고 뗀 손가락은 탭(시작), 스와이프 뒤에 뗀 손가락은 탭이 아님 (v0.11.0)
+func test_뗄_때_탭과_스와이프_구분() -> void:
+	var swipe := SwipeDetector.new()
+	swipe.press(Vector2(100, 100))
+	swipe.move(Vector2(120, 110))  # 임계 거리 아래
+	assert_true(swipe.release(), "탭")
+	swipe.press(Vector2(100, 100))
+	assert_eq(swipe.move(Vector2(20, 100)), SwipeDetector.Dir.LEFT)
+	assert_false(swipe.release(), "스와이프 뒤")
+	assert_false(swipe.release(), "누르지 않은 손가락")
+	swipe.press(Vector2(100, 100))
+	assert_eq(swipe.move(Vector2(300, 300)), SwipeDetector.Dir.NONE, "크게 대각선")
+	assert_false(swipe.release(), "크게 민 대각선은 탭이 아님")

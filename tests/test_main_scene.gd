@@ -14,6 +14,7 @@ func _make_main() -> Node3D:
 	DirAccess.remove_absolute(TEST_BEST)
 	DirAccess.remove_absolute(TEST_BEST.get_basename() + "_settings.cfg")  # 판 수·소리 설정도 처음부터
 	DirAccess.remove_absolute(TEST_BEST.get_basename() + "_daily.cfg")  # 오늘의 판 기록도
+	DirAccess.remove_absolute(TEST_BEST.get_basename() + "_skins.cfg")  # 스킨 진행도도
 	main.clock_override = LAUNCH + 5 * 86400 + 3600.0  # DAILY #6, 01:00 UTC
 	main.best_path = TEST_BEST
 	add_child(main)
@@ -174,11 +175,11 @@ func test_화면에_점수와_버전_안내_글자만_있음() -> void:
 		await wait_frames()
 	await wait_frames()
 	var labels: Array = main._hud.find_children("*", "Label", true, false)
-	assert_eq(labels.size(), 7, "점수 + 최고 + (숨겨진) 다시 시작 안내·배수·PERFECT 한 줄·게임 오버 한 줄·SHARE")
-	assert_eq(main._title.find_children("*", "Label", true, false).size(), 9, "메인 화면: 제목 + BEST + 안내 세 줄(기호는 선으로 그림) + 시작 안내 + DAILY 버튼, 오늘의 판: 번호 + 기록 줄")
+	assert_eq(labels.size(), 9, "점수 + 최고 + (숨겨진) 다시 시작 안내·배수·PERFECT 한 줄·게임 오버 한 줄·SHARE·NEW SKIN·EQUIP")
+	assert_eq(main._title.find_children("*", "Label", true, false).size(), 10, "메인 화면: 제목 + BEST + 안내 세 줄(기호는 선으로 그림) + 스킨 이름 + 시작 안내 + DAILY 버튼, 오늘의 판: 번호 + 기록 줄")
 	assert_eq(main._pause_menu.find_children("*", "Label", true, false).size(), 5, "일시정지: PAUSED + 버튼 셋 + 숫자")
 	assert_eq(main._settings.find_children("*", "Label", true, false).size(), 8, "설정: 제목 + 줄 이름 넷 + 값 둘 + DONE")
-	assert_eq(main.find_children("*", "Label", true, false).size(), 17 + 5 + 8, "+ 버전")
+	assert_eq(main.find_children("*", "Label", true, false).size(), 20 + 5 + 8, "+ 버전")
 	assert_false(main.find_child("ShareButton", true, false).visible, "SHARE 처음엔 숨김")
 	assert_false(main._pause_menu.visible or main._settings.visible, "일시정지·설정은 처음엔 숨김")
 	for hidden in ["MultiplierLabel", "StatsLabel", "RestartLabel", "PerfectLabel"]:
@@ -498,7 +499,7 @@ func test_첫_화면_전에는_메인_화면만_그리고_장애물_방울_글�
 	assert_false(main.prewarmed, "아직 준비 중")
 	var key := InputEventKey.new()
 	key.pressed = true
-	key.keycode = KEY_LEFT
+	key.keycode = KEY_SPACE
 	main._input(key)
 	assert_false(main.started, "가림막 뒤 입력으로는 시작하지 않음")
 	assert_eq(main.lane, 1, "동작도 하지 않음")
@@ -544,7 +545,7 @@ func test_준비가_끝나기_전에_시작을_누르면_남은_것을_한꺼번
 		await wait_frames()
 	var key := InputEventKey.new()
 	key.pressed = true
-	key.keycode = KEY_LEFT
+	key.keycode = KEY_SPACE
 	main._input(key)
 	assert_false(main.started, "아직 준비 중: 기다린다")
 	await wait_frames()
@@ -892,10 +893,13 @@ func _make_menu() -> Node3D:
 	return main
 
 
+## 탭: 누르고 그 자리에서 뗀다 (v0.11.0: 메인 화면 시작은 뗄 때)
 func _touch(main: Node3D, at: Vector2) -> void:
 	var touch := InputEventScreenTouch.new()
 	touch.pressed = true
 	touch.position = at
+	main._input(touch)
+	touch.pressed = false
 	main._input(touch)
 
 
@@ -1125,4 +1129,60 @@ func test_플레이_중_자정을_넘기면_그_판은_시작한_날_다음_판�
 	assert_eq(main.daily.tries, 1)
 	assert_eq(main.field._pattern._rng.seed, DailyRecord.seed_of(first_day + 1))
 	assert_eq(main.daily.streak_on(first_day + 1), 2, "이틀 연속")
+	main.queue_free()
+
+
+## v0.11.0 스킨 넘기기: 좌우 스와이프로 넘기고(0.25초 뒤 제자리), 잠긴 스킨은 조건 글자·탭해도 시작 안 함, 열린 스킨은 고른 스킨으로 저장
+func test_메인_화면_스킨_넘기기와_잠긴_스킨() -> void:
+	var main: Node3D = await _make_menu()
+	assert_eq(main._title.start_label.text, "TAP TO START")
+	assert_eq(main._title.skin_name.text, "MINT")
+	_touch_swipe(main, Vector2(500, 900), Vector2(300, 900), 4)  # 왼쪽으로 밀면 다음 스킨
+	assert_eq(main.skin_view, 1)
+	assert_eq(main._title.skin_name.text, "PERFECTS 0/30", "잠긴 딸기: 조건·진행도")
+	assert_false(main.started, "스와이프로는 시작하지 않음")
+	await get_tree().create_timer(0.4).timeout  # 넘기기 0.25초 (트윈은 실제 시간으로 돈다)
+	assert_true(absf(main.runner.position.x - RunLogic.lane_x(RunLogic.START_LANE)) < 0.001, "제자리로 돌아옴")
+	assert_true(main.runner.scale.is_equal_approx(Vector3.ONE))
+	_touch(main, Vector2(360, 700))
+	assert_false(main.started, "잠긴 스킨은 시작 안 함")
+	assert_eq(main.skins.selected, "mint", "잠긴 스킨은 고르지 않음")
+	main.skins.finish_run(0, 30, 0, 1, 0)  # 딸기 열기
+	var key := InputEventKey.new()
+	key.pressed = true
+	key.keycode = KEY_LEFT
+	main._input(key)  # ← : 앞 스킨(민트)
+	assert_eq(main.skin_view, 0)
+	await get_tree().create_timer(0.4).timeout
+	key.keycode = KEY_RIGHT
+	main._input(key)
+	assert_eq(main._title.skin_name.text, "STRAWBERRY")
+	assert_eq(SkinBook.new(TEST_BEST.get_basename() + "_skins.cfg").selected, "strawberry", "고른 스킨 저장")
+	_touch(main, Vector2(360, 700))
+	assert_true(main.started, "열린 스킨은 탭으로 시작")
+	assert_true(main.runner.scale.is_equal_approx(Vector3.ONE), "넘기던 중에 시작해도 제 크기")
+	AudioManager.music.stop()
+	main.queue_free()
+
+
+## 판 중에 조건을 넘으면 게임 오버에 NEW SKIN + EQUIP, EQUIP을 누르면 고른 스킨이 된다
+func test_게임_오버_NEW_SKIN과_EQUIP() -> void:
+	var main := _make_main()
+	await wait_frames()
+	main.score.close = 30
+	main._game_over({"kind": ObstacleField.Kind.BLOCK, "lane": 1, "z": 0.0})
+	assert_eq(main.new_skin_id, "strawberry")
+	for i in 40:
+		main.advance(STEP)
+	assert_true(main._new_skin.is_visible_in_tree(), "다시 시작할 수 있을 때 함께 보임")
+	assert_eq(main._equip.text, "EQUIP STRAWBERRY")
+	_touch(main, main._equip.get_global_rect().get_center())
+	assert_true(main.dead, "EQUIP은 다시 시작이 아님")
+	assert_eq(main.skins.selected, "strawberry")
+	assert_eq(main._equip.text, "EQUIPPED")
+	_touch(main, Vector2(360, 700))
+	assert_false(main.dead, "다시 시작")
+	assert_false(main._new_skin.visible)
+	main._game_over({"kind": ObstacleField.Kind.BLOCK, "lane": 1, "z": 0.0})
+	assert_eq(main.new_skin_id, "", "이미 열린 스킨은 다시 알리지 않음")
 	main.queue_free()

@@ -106,14 +106,21 @@ const MENU_CAM := Vector3(0.0, 2.0, 4.6)    # 낮고 가깝게: 젤리가 크게
 const MENU_LOOK := Vector3(0.0, 1.5, -8.0)
 ## 짧은 창(세로/가로 MENU_SHORT 미만: PC, 거의 정사각형 창)은 젤리가 화면 아래를 채워 SWIPE TO START 자리가 없다: 조금 멀리서 본다
 const MENU_SHORT := 1.75
-const MENU_CAM_SHORT := Vector3(0.0, 2.2, 7.2)
-const MENU_LOOK_SHORT := Vector3(0.0, 2.0, -8.0)
+## v0.11.0: 젤리 아래에 스킨 이름·점이 들어가 더 멀리, 시선은 낮게 (젤리가 화면 59~68%, 웅덩이 앞 끝 70%)
+const MENU_CAM_SHORT := Vector3(0.0, 2.2, 8.5)
+const MENU_LOOK_SHORT := Vector3(0.0, 1.2, -8.0)
 const POOL_FRONT_Z := 1.25   # 젤리 빛 웅덩이·반사의 앞(화면 아래) 끝. SWIPE TO START는 이 아래에 둔다
 const TITLE_FADE := 0.3      # 시작할 때 제목·안내가 흐려지는 시간 (점수 글자는 같은 시간에 나타난다)
 const CAMERA_IN := 0.6       # 시작할 때 카메라가 게임 자리로 들어가는 시간
 const HOME_FADE := 0.4       # 게임 오버 → 메인 화면 페이드 (반은 어두워지고 반은 밝아진다)
 const MENU_FLOW := 3.0       # 메인 화면에서 빛 대시가 흐르는 속도 (게임 첫 속도 15의 1/5)
 const MENU_STREAKS := 4      # 메인 화면의 빛 줄기 수 (아주 적게)
+const FLIP_OUT := 0.12       # 스킨 넘기기: 젤리가 옆으로 밀려나며 작아지는 시간
+const FLIP_IN := 0.13        # 다음 젤리가 반대쪽에서 들어오는 시간 (합 0.25초)
+const FLIP_X := 1.2          # 밀려나는 거리(m). 가로 화면은 화면 끝이 멀어 날려 보내지 않고 거리 + 작아짐으로
+const FLIP_SCALE := 0.6
+const NEW_SKIN_TOP := 450.0  # 게임 오버 NEW SKIN 묶음 (세로: 한 줄 아래, 가로: 오른쪽 칸)
+const PREVIEW_SIZE := Vector2(150.0, 130.0)
 ## 웹: 브라우저가 실제로 그린 프레임 간격(requestAnimationFrame)을 모은다. 엔진 _process 안에서 잰 간격은 화면이 멀쩡해도 크게 흔들려
 ## 자동 낮춤이 잘못 걸렸다 (review/v0.9.0/quality.md: rAF 16.8ms인 2초 동안 _process 간격 99% 25.8ms)
 const FRAMES_JS := "window.gameFrames = []; { let last = 0; const tick = t => { if (last) window.gameFrames.push(t - last); last = t; requestAnimationFrame(tick); }; requestAnimationFrame(tick); }"
@@ -230,6 +237,13 @@ var shared_text := ""      # 마지막으로 공유·복사한 글 (테스트에
 var _share_tween: Tween
 var _final_score := 0      # 게임 오버 점수 (SHARE 글)
 var _menu_second := -1     # 오늘의 판 남은 시간을 고친 마지막 초
+var skins: SkinBook        # 스킨 해금 진행도·고른 스킨
+var skin_view := 0         # 메인 화면에서 보고 있는 스킨 번호 (잠긴 스킨일 수 있다)
+var _flip: Tween
+var _new_skin: Control     # 게임 오버 NEW SKIN 묶음 (글자·미리보기·EQUIP)
+var _new_skin_preview: SkinPreview
+var _equip: Label
+var new_skin_id := ""      # 이번 게임 오버에 새로 열린 스킨 (EQUIP 대상)
 
 
 ## 장애물 하나의 화면 상태. 노드 대신 MultiMesh 한 칸에 옮겨 그린다.
@@ -273,6 +287,8 @@ func _ready() -> void:
 	if OS.has_feature("web") and str(JavaScriptBridge.eval("new URLSearchParams(location.search).get('dailyhash') || ''")) == "1":
 		print("DAILYHASH\n" + DailyRecord.hash_report(30))  # 기기 비교용 (tools/daily_hash.gd와 같은 표)
 	save = SaveData.new(SaveData.PATH if best_path == BestRecord.PATH else best_path.get_basename() + "_settings.cfg")
+	skins = SkinBook.new(SkinBook.PATH if best_path == BestRecord.PATH else best_path.get_basename() + "_skins.cfg")
+	skins.absorb_records(maxi(normal_record.best, daily.best_ever()), daily.streak)  # 이미 넘은 기록의 스킨은 바로 열린다
 	AudioManager.set_muted(save.muted)
 	AudioManager.set_volumes(save.music, save.sfx)
 	haptics = Haptics.detect()
@@ -290,6 +306,10 @@ func _ready() -> void:
 	runner.position = Vector3(RunLogic.lane_x(lane), 0.0, 0.0)
 	add_child(runner)
 	_build_ui()
+	if OS.has_feature("web"):
+		_dev_view()
+	skin_view = SkinBook.index_of(skins.selected)
+	_apply_skin_view()
 	get_viewport().size_changed.connect(_fit_camera)
 	get_viewport().size_changed.connect(_fit_render_scale)
 	_fit_camera()
@@ -343,6 +363,7 @@ func _fit_render_scale() -> void:
 ## 첫 실행은 이 입력이 오디오를 켠다(브라우저 정책). 메인 화면 음악이 흐르고 있었으면 첫 곡 0초로 겹치며 넘어간다
 func begin() -> void:
 	started = true
+	_end_flip()
 	if OS.has_feature("web"):
 		JavaScriptBridge.eval("window.gameStarted = performance.now()")  # 첫 판 프레임 측정의 시작점
 	_quality.hold()
@@ -791,6 +812,7 @@ func _advance_dead(delta: float) -> void:
 	_camera.v_offset = shake.y
 	_restart_label.visible = _dead_time >= RESTART_DELAY
 	_home.visible = _restart_label.visible
+	_new_skin.visible = _restart_label.visible and not new_skin_id.is_empty()
 	_share.visible = _restart_label.visible and daily_mode
 
 
@@ -813,6 +835,7 @@ func _game_over(item: Dictionary) -> void:
 	else:
 		_stats_label.text = "ORBS %d · PERFECT %d · %dm" % [score.orbs, score.close, int(travel)]
 	_stats_label.visible = true
+	_show_new_skin(_finish_run())
 	if _mult_tween:  # 게임 오버 화면은 점수·BEST·한 줄만
 		_mult_tween.kill()
 	_reset_multiplier()
@@ -880,6 +903,8 @@ func _reset_round() -> void:
 	_stats_label.visible = false
 	_home.visible = false
 	_share.visible = false
+	_new_skin.visible = false
+	new_skin_id = ""
 	_mult_shown = 1
 	if _mult_tween:
 		_mult_tween.kill()
@@ -906,6 +931,8 @@ func _enter_menu() -> void:
 	if paused:  # 일시정지에서 왔다: 화면이 가려진 지금 멈춘 것을 푼다
 		_pause_menu.hide()
 		_unpause()
+	if started and not dead:  # 일시정지에서 집: 이 판의 진행도도 센다 (NEW SKIN 화면은 없이 열린다)
+		_finish_run()
 	dead = false
 	started = false
 	daily_mode = false  # 게임 오버·일시정지의 집은 언제나 메인 화면으로
@@ -929,6 +956,8 @@ func _enter_menu() -> void:
 	lane = RunLogic.START_LANE
 	runner.reform(lane)
 	runner.position.x = RunLogic.lane_x(lane)
+	skin_view = SkinBook.index_of(skins.selected)
+	_apply_skin_view()
 	_menu_t = 0.0
 	_menu_beat = -1
 	_set_view(1.0)
@@ -1056,6 +1085,10 @@ func _show_title() -> void:
 ## 메인 → 오늘의 판 시작 화면 (같은 무대 위 0.3초). 배치는 시작할 때 그날 씨앗으로 만든다
 func open_daily() -> void:
 	daily_mode = true
+	if skin_view != SkinBook.index_of(skins.selected):  # 오늘의 판은 넘기기 없이 고른 스킨으로
+		_end_flip()
+		skin_view = SkinBook.index_of(skins.selected)
+		_apply_skin_view()
 	record = daily
 	daily.view(today())
 	_refresh_daily()
@@ -1112,20 +1145,7 @@ func _input(event: InputEvent) -> void:
 		return
 	var pressed: bool = (event is InputEventScreenTouch or event is InputEventKey) and event.pressed
 	if not started:
-		if not pressed:
-			return
-		if event is InputEventScreenTouch and _title.sound.hit(event.position):
-			toggle_sound()
-		elif event is InputEventScreenTouch and _title.gear.hit(event.position):
-			open_settings()
-		elif not daily_mode and ((event is InputEventScreenTouch and _title.daily_hit(event.position)) or (event is InputEventKey and event.keycode == KEY_D)):
-			open_daily()
-		elif daily_mode and ((event is InputEventScreenTouch and _title.daily_home.hit(event.position)) or (event is InputEventKey and event.keycode == KEY_ESCAPE)):
-			close_daily()
-		elif not warmed:  # 장애물 셰이더를 아직 준비하는 중: 남은 것을 한꺼번에 그리고 시작한다
-			_begin_waiting = true
-		else:
-			begin()  # 탭이든 어느 방향 스와이프든 시작만 한다. 게임 동작으로는 처리하지 않는다
+		_menu_input(event, pressed)
 		return
 	if dead:
 		if pressed and _dead_time >= RESTART_DELAY:
@@ -1134,6 +1154,9 @@ func _input(event: InputEvent) -> void:
 				return
 			if event is InputEventScreenTouch and _share.is_visible_in_tree() and _share.get_global_rect().has_point(event.position):
 				share()
+				return
+			if event is InputEventScreenTouch and _equip.is_visible_in_tree() and _equip.get_global_rect().has_point(event.position):
+				equip_new_skin()
 				return
 			restart()
 			if event is InputEventScreenTouch:  # 다시 시작한 손가락 그대로 밀어도 스와이프가 된다
@@ -1157,6 +1180,155 @@ func _input(event: InputEvent) -> void:
 		apply_swipe(SwipeDetector.Dir.UP)
 	elif event.is_action_pressed("ui_down"):
 		apply_swipe(SwipeDetector.Dir.DOWN)
+
+
+## 화면 확인 기록(review/)용 주소 값. 쓰면 이 창에서는 스킨 진행도를 저장하지 않는다.
+## ?skin=lemon 은 잠겨 있어도 그 스킨으로, ?skin=all 은 모두 열린 것처럼, ?orbs=499 는 방울 진행도를 그 값으로 (NEW SKIN 캡처), ?quality=4 는 효과 단계를 그만큼 낮춘다, ?slow=0.1 은 시간 배율
+func _dev_view() -> void:
+	var query := func(key: String) -> String: return str(JavaScriptBridge.eval("new URLSearchParams(location.search).get('%s') || ''" % key))
+	var dev_skin: String = query.call("skin")
+	var orbs: String = query.call("orbs")
+	if not (dev_skin.is_empty() and orbs.is_empty()):
+		skins._read_only = true  # 더 새 형식 파일의 읽기 전용은 그대로 둔다
+	if orbs.is_valid_int():
+		skins.stats["orbs"] = int(orbs)
+	for item: Dictionary in SkinBook.list():
+		if (dev_skin == "all" or dev_skin == item["id"]) and not skins.is_unlocked(item["id"]):
+			skins.unlocked.append(item["id"])
+	if SkinBook.index_of(dev_skin) >= 0:
+		skins.selected = dev_skin
+	var level := int(query.call("quality"))
+	var slow := float(query.call("slow"))
+	if slow > 0.0:
+		Engine.time_scale = slow  # GIF 프레임용: 헤드리스 캡처가 느려 게임을 그만큼 느리게 돌린다
+	if level > 0:
+		_quality.level = level  # 자동 낮춤이 이 단계 아래에서 다시 시작하지 않게
+		apply_quality(level)
+
+
+## 메인 화면(·오늘의 판 시작 화면) 입력. 버튼은 누르는 순간, 시작은 손을 뗄 때(탭) 또는 위 스와이프.
+## 좌우 스와이프·방향키는 스킨 넘기기(메인 화면만). 키보드: D 오늘의 판, Esc 돌아가기, 아래는 아무것도 안 함, 나머지 키는 시작
+func _menu_input(event: InputEvent, pressed: bool) -> void:
+	if event is InputEventScreenTouch:
+		if not event.pressed:
+			if _swipe.release(event.index):
+				_menu_start()
+		elif _title.sound.hit(event.position):
+			toggle_sound()
+		elif _title.gear.hit(event.position):
+			open_settings()
+		elif not daily_mode and _title.daily_hit(event.position):
+			open_daily()
+		elif daily_mode and _title.daily_home.hit(event.position):
+			close_daily()
+		else:
+			_swipe.press(event.position, event.index)
+		return
+	if event is InputEventScreenDrag:
+		match _swipe.move(event.position, event.index):
+			SwipeDetector.Dir.LEFT:
+				flip_skin(1)  # 손가락을 왼쪽으로: 젤리가 왼쪽으로 밀려나고 다음 스킨이 오른쪽에서
+			SwipeDetector.Dir.RIGHT:
+				flip_skin(-1)
+			SwipeDetector.Dir.UP:
+				_menu_start()
+		return
+	if not pressed or not event is InputEventKey:
+		return
+	match event.keycode:
+		KEY_D when not daily_mode:
+			open_daily()
+		KEY_ESCAPE when daily_mode:
+			close_daily()
+		KEY_LEFT:
+			flip_skin(-1)
+		KEY_RIGHT:
+			flip_skin(1)
+		KEY_DOWN, KEY_D, KEY_ESCAPE:
+			pass
+		_:
+			_menu_start()
+
+
+## 시작 (탭·위 스와이프·키). 잠긴 스킨을 보고 있으면 젤리만 살짝 흔들린다
+func _menu_start() -> void:
+	if not skins.is_unlocked(SkinBook.list()[skin_view]["id"]):
+		runner.nudge()
+	elif not warmed:  # 장애물 셰이더를 아직 준비하는 중: 남은 것을 한꺼번에 그리고 시작한다
+		_begin_waiting = true
+	else:
+		begin()  # 게임 동작으로는 처리하지 않는다
+
+
+## 메인 화면 스킨 넘기기 (0.25초): 젤리가 옆으로 밀려나며 작아지고, 화면 밖 순간에 색을 바꿔 반대쪽에서 들어온다.
+## 출렁임 스프링이 옆 이동을 받아 말랑하게 기운다. 넘기는 중의 입력은 무시한다. 열린 스킨이면 고른 스킨으로 저장
+func flip_skin(step: int) -> void:
+	if daily_mode or (_flip and _flip.is_running()):
+		return
+	_begin_waiting = false  # 준비 중에 눌러 둔 시작은 넘기면 취소 (잠긴 스킨을 보다가 저절로 시작하지 않게)
+	var count := SkinBook.list().size()
+	skin_view = posmod(skin_view + step, count)
+	var id: String = SkinBook.list()[skin_view]["id"]
+	skins.select(id)  # 잠긴 스킨은 고르지 않는다 (시작하면 마지막으로 고른 열린 스킨)
+	var home := RunLogic.lane_x(lane)
+	_flip = create_tween()
+	_flip.set_parallel()
+	_flip.tween_property(runner, "position:x", home - FLIP_X * step, FLIP_OUT).set_trans(Tween.TRANS_SINE).set_ease(Tween.EASE_IN)
+	_flip.tween_property(runner, "scale", Vector3.ONE * FLIP_SCALE, FLIP_OUT)
+	_flip.chain().tween_callback(func() -> void:
+		_apply_skin_view()
+		runner.snap_x(home + FLIP_X * step))
+	_flip.chain().tween_property(runner, "position:x", home, FLIP_IN).set_trans(Tween.TRANS_BACK).set_ease(Tween.EASE_OUT)
+	_flip.parallel().tween_property(runner, "scale", Vector3.ONE, FLIP_IN).set_trans(Tween.TRANS_BACK).set_ease(Tween.EASE_OUT)
+	_title.set_skin(skin_view, count, _skin_text(skin_view), not skins.is_unlocked(id))
+
+
+## 넘기기를 멈추고 젤리를 제자리·제 크기로 (시작·오늘의 판)
+func _end_flip() -> void:
+	if _flip:
+		_flip.kill()
+		_flip = null
+	runner.scale = Vector3.ONE
+	runner.snap_x(RunLogic.lane_x(lane))
+	skin_view = SkinBook.index_of(skins.selected)
+	_apply_skin_view()  # 넘기는 도중(색을 바꾸기 전)에 시작해도 고른 스킨으로
+
+
+## 보고 있는 스킨을 젤리와 메인 화면 글자에 (잠긴 스킨은 어두운 실루엣과 조건·진행도)
+func _apply_skin_view() -> void:
+	var item: Dictionary = SkinBook.list()[skin_view]
+	var locked := not skins.is_unlocked(item["id"])
+	runner.apply_skin(SkinBook.shader_params(item, locked))
+	_title.set_skin(skin_view, SkinBook.list().size(), _skin_text(skin_view), locked)
+
+
+func _skin_text(index: int) -> String:
+	var item: Dictionary = SkinBook.list()[index]
+	return item["name"] if skins.is_unlocked(item["id"]) else skins.condition_text(item["id"])
+
+
+## 한 판이 끝났다: 진행도를 더하고 새로 열린 스킨 id 목록 (일반·오늘의 판 합산)
+func _finish_run() -> Array[String]:
+	return skins.finish_run(score.total(travel), score.close, score.orbs, score.top_multiplier, daily.streak)
+
+
+## 게임 오버: 새로 열린 스킨이 있으면 NEW SKIN + 미리보기 + EQUIP (여러 개면 앞의 것, 나머지는 메인 화면에서 고를 수 있다)
+func _show_new_skin(fresh: Array[String]) -> void:
+	new_skin_id = "" if fresh.is_empty() else fresh[0]
+	if new_skin_id.is_empty():
+		return
+	var item := SkinBook.skin(new_skin_id)
+	_new_skin_preview.params = SkinBook.shader_params(item)
+	_new_skin_preview.queue_redraw()
+	_equip.text = "EQUIP " + item["name"]
+
+
+## EQUIP: 새 스킨을 고르고 젤리에 바로 입힌다
+func equip_new_skin() -> void:
+	skins.select(new_skin_id)
+	skin_view = SkinBook.index_of(new_skin_id)
+	_apply_skin_view()
+	_equip.text = "EQUIPPED"
 
 
 ## 스와이프(또는 방향키) 방향을 게임 동작으로 옮긴다.
@@ -1352,7 +1524,7 @@ func _warm_drop() -> Callable:
 func _warm_labels() -> Callable:
 	var cover := CanvasLayer.new()
 	add_child(cover)
-	for pair in [["0123456789", _score_label], [_restart_label.text, _restart_label], ["NEW BEST 0123456789", _best_label], ["×+0123456789", _mult_label], ["ORBS PERFECT · m0123456789", _stats_label], ["PERFECT ×+0123456789", _perfect_label]]:
+	for pair in [["0123456789", _score_label], [_restart_label.text, _restart_label], ["NEW BEST 0123456789", _best_label], ["×+0123456789", _mult_label], ["ORBS PERFECT · m0123456789", _stats_label], ["PERFECT ×+0123456789", _perfect_label], ["ABCDEFGHIJKLMNOPQRSTUVWXYZ ×/0123456789", _title.skin_name], ["NEW SKIN", _new_skin.get_child(0)], ["EQUIPDABCDEFGHIJKLMNOPQRSTUVWXYZ", _equip]]:
 		var label := Label.new()
 		label.text = pair[0]
 		label.label_settings = pair[1].label_settings
@@ -1415,12 +1587,20 @@ func _fit_camera() -> void:
 	var short := size.y / size.x < MENU_SHORT
 	_menu_cam = MENU_CAM_SHORT if short else MENU_CAM
 	_menu_look = MENU_LOOK_SHORT if short else MENU_LOOK
-	# 메인 화면 카메라에서 본 웅덩이 앞 끝의 화면 높이 → 그 아래에 SWIPE TO START
+	# 메인 화면 카메라에서 본 웅덩이 앞 끝·젤리 몸의 화면 자리 → 그 아래에 스킨 이름·점·TAP TO START, 안내가 젤리에 닿으면 옆으로
 	var k := _view
 	_set_view(1.0)
-	var pool := _camera.unproject_position(Vector3(0.0, 0.0, POOL_FRONT_Z)).y
+	var x := RunLogic.lane_x(RunLogic.START_LANE)
+	var pool := _camera.unproject_position(Vector3(x, 0.0, POOL_FRONT_Z)).y
+	var top_left := _camera.unproject_position(Vector3(x - Runner.BODY_RADIUS, Runner.BODY_HEIGHT, 0.0))
+	var bottom_right := _camera.unproject_position(Vector3(x + Runner.BODY_RADIUS, 0.0, 0.0))
 	_set_view(k)
-	_title.place_start(pool, size.y)
+	_title.place(pool, Rect2(top_left, bottom_right - top_left), size)
+	# NEW SKIN: 세로는 게임 오버 한 줄 아래 가운데, 가로(PC)는 SHARE·젤리와 겹치지 않게 오른쪽 칸
+	_new_skin.set_anchors_preset(Control.PRESET_CENTER_TOP)
+	_new_skin.offset_left = (-180.0 if portrait else size.x * 0.25 - 180.0)
+	_new_skin.offset_right = _new_skin.offset_left + 360.0
+	_new_skin.offset_top = NEW_SKIN_TOP if portrait else STATS_TOP
 
 
 func _build_floor() -> void:
@@ -1612,6 +1792,26 @@ func _build_orbs() -> void:
 	add_child(_swish)
 
 
+## 게임 오버 NEW SKIN 묶음: "NEW SKIN"(BEST 줄 글씨) → 젤리 미리보기(2D) → EQUIP(DAILY 버튼과 같은 테)
+func _build_new_skin(layer: Control) -> void:
+	_new_skin = VBoxContainer.new()
+	_new_skin.name = "NewSkin"
+	_new_skin.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	_new_skin.add_theme_constant_override("separation", 8)
+	_new_skin.visible = false
+	layer.add_child(_new_skin)
+	var title := TitleScreen.text_label("NewSkinLabel", "NEW SKIN", 40, Color(TitleScreen.LAVENDER, 0.95))
+	_new_skin.add_child(title)
+	_new_skin_preview = SkinPreview.new()
+	_new_skin_preview.custom_minimum_size = PREVIEW_SIZE
+	_new_skin.add_child(_new_skin_preview)
+	_equip = TitleScreen.text_label("EquipButton", "EQUIP", 36, Color(1, 1, 1, 0.8))
+	_equip.add_theme_stylebox_override("normal", _title.daily_button.get_theme_stylebox("normal"))
+	_equip.size_flags_horizontal = Control.SIZE_SHRINK_CENTER
+	_equip.custom_minimum_size.x = 240.0
+	_new_skin.add_child(_equip)
+
+
 func _build_ui() -> void:
 	var root := CanvasLayer.new()
 	add_child(root)
@@ -1689,6 +1889,7 @@ func _build_ui() -> void:
 	_share.custom_minimum_size.x = 240.0
 	_share.visible = false
 	layer.add_child(_share)
+	_build_new_skin(layer)
 	_home = UiIcon.new(UiIcon.Kind.HOME, Color(1, 1, 1, 0.7), TitleScreen.SOUND_SIDE)
 	_home.name = "HomeButton"
 	TitleScreen.corner(_home, false)

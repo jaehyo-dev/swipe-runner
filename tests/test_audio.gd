@@ -249,7 +249,7 @@ func test_첫_입력_전에는_세상이_멈춰_있고_첫_입력은_음악과_�
 	assert_false(AudioManager.music.playing, "음악은 아직")
 	var key := InputEventKey.new()
 	key.pressed = true
-	key.keycode = KEY_LEFT
+	key.keycode = KEY_UP  # v0.11.0: ← →는 스킨 넘기기
 	main._input(key)
 	assert_true(main.started)
 	assert_true(AudioManager.music.playing, "음악 시작")
@@ -261,6 +261,7 @@ func test_첫_입력_전에는_세상이_멈춰_있고_첫_입력은_음악과_�
 	assert_eq(main.field.travel, AudioManager.ladder.distance_at(t), "장애물 거리 = 음악 시간의 이동 거리")
 	main.advance(1.0 / 60.0)
 	assert_eq(main.lane, 1)
+	key.keycode = KEY_LEFT
 	main._input(key)
 	assert_eq(main.lane, 0, "다음 입력부터 동작")
 	AudioManager.music.stop()
@@ -273,13 +274,18 @@ func test_첫_터치로_시작하고_그대로_밀어도_동작하지_않음() -
 	while not main.warmed:
 		await wait_frames()
 	_start_log()
+	# v0.11.0: 누르는 순간이 아니라 위 스와이프(또는 뗄 때 탭)로 시작한다
 	var touch := InputEventScreenTouch.new()
 	touch.pressed = true
 	touch.position = Vector2(100, 600)
 	main._input(touch)
-	assert_true(AudioManager.music.playing)
+	assert_false(main.started, "누르기만 해서는 아직")
 	var drag := InputEventScreenDrag.new()
-	drag.position = Vector2(300, 600)
+	drag.position = Vector2(100, 500)
+	main._input(drag)
+	assert_true(main.started, "위로 밀어 시작")
+	assert_true(AudioManager.music.playing)
+	drag.position = Vector2(300, 500)
 	main._input(drag)
 	assert_eq(main.lane, 1, "시작한 손가락의 스와이프는 게임 동작이 아님")
 	assert_eq(_names(), [])

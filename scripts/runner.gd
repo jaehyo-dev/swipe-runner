@@ -110,6 +110,8 @@ var _crouch_vis := 0.0  # 화면에 보이는 슬라이드 정도: 점프로 슬
 var _flat := 1.0        # 바닥 평평함 (1 = 땅, 0 = 공중의 둥근 바닥)
 var _shadow_mat: ShaderMaterial
 var _absorb := 0.0     # 방울을 먹은 빛남 (1 → 0)
+var _core_base := 1.0  # 스킨의 속빛 세기 (먹은 빛남은 여기에 더한다)
+var _drop_mat: ShaderMaterial
 ## 점프로 뜬 높이와 슬라이드로 낮아진 정도(0~1). main이 매 프레임 넣어 준다.
 var lift := 0.0
 var crouch := 0.0
@@ -254,6 +256,7 @@ func _ready() -> void:
 	drop_mesh.radial_segments = 12
 	drop_mesh.rings = 6
 	var drop_mat := ShaderMaterial.new()
+	_drop_mat = drop_mat
 	drop_mat.shader = _mat.shader
 	var drop_params := {"height": DROPLET_RADIUS * 2.0, "radius": DROPLET_RADIUS, "widest_t": -1.0, "core_strength": 0.0,
 			"bubble_strength": 0.0, "ground_dark": 0.0, "ripple": 0.0}
@@ -287,7 +290,7 @@ func _process(delta: float) -> void:
 		return
 	if _absorb > 0.0:
 		_absorb = maxf(_absorb - delta / ABSORB_TIME, 0.0)
-		_mat.set_shader_parameter("core_strength", 1.0 + ABSORB_GLOW * _absorb)
+		_mat.set_shader_parameter("core_strength", _core_base + ABSORB_GLOW * _absorb)
 	if _reform_t >= 0.0:
 		_reform_t += delta
 		if _reform_t >= REFORM_TIME:
@@ -444,6 +447,30 @@ func reform(lane: int) -> void:
 
 ## 박자가 정한 눌림 목표: 바닥에 닿을 때 1, 공중에서 0
 ## 빛 방울을 먹었다
+## 스킨 색·무늬를 몸·바닥 반사·물방울·발밑 빛에 넣는다 (SkinBook.shader_params). 셰이더는 그대로라 바꿀 때 렉이 없다
+func apply_skin(params: Dictionary) -> void:
+	for key: String in params:
+		_mat.set_shader_parameter(key, params[key])
+		_mirror_mat.set_shader_parameter(key, params[key])
+		if key not in ["core_strength", "pattern", "pattern_strength", "bubble_strength"]:  # 물방울은 무늬·심지·기포 없이 색만
+			_drop_mat.set_shader_parameter(key, params[key])
+	_core_base = params["core_strength"]
+	_mat.set_shader_parameter("core_strength", _core_base + ABSORB_GLOW * _absorb)
+	_shadow_mat.set_shader_parameter("glow_color", params["mint"])
+
+
+## 잠긴 스킨을 눌렀다: 옆으로 살짝 흔들린다
+func nudge() -> void:
+	_wobble_vel += 6.0
+
+
+## 메인 화면 넘기기: 옆으로 순간이동해도 출렁임 스프링이 튀지 않게 이전 위치·속도도 같이 옮긴다
+func snap_x(x: float) -> void:
+	position.x = x
+	_prev_x = x
+	_prev_vx = 0.0
+
+
 func absorb() -> void:
 	_absorb = 1.0
 	_squish_vel += ABSORB_KICK

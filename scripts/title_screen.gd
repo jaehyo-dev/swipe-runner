@@ -3,7 +3,8 @@ extends Control
 ## 메인 화면 글자 (ART_BIBLE.md 14): 위에 "SWIPE / PULSE", 그 아래 BEST, 처음 몇 판만 조작 안내, 아래쪽 "SWIPE TO START", 오른쪽 위 소리 버튼과 그 왼쪽 설정 톱니.
 ## 글자는 모두 Poppins ExtraLight(점수 숫자와 같은 계열). 무대·젤리·음악은 main이 맡고 여기서는 글자만 보이고 감춘다.
 ## v0.10.0: "SWIPE TO START" 아래 DAILY 버튼(연보라 테, 오늘 안 했으면 점). 누르면 같은 무대 위에서 0.3초 교차 페이드로
-## 오늘의 판 시작 화면(DAILY #n, TODAY BEST, STREAK, NEW IN, 왼쪽 위 집 버튼)으로 바뀐다. SWIPE TO START는 두 화면이 함께 쓴다.
+## 오늘의 판 시작 화면(DAILY #n, TODAY BEST, STREAK, NEW IN, 왼쪽 위 집 버튼)으로 바뀐다. 시작 글자는 두 화면이 함께 쓴다.
+## v0.11.0: 젤리 아래 스킨 이름(잠긴 스킨은 조건·진행도)과 위치 점, 시작 글자는 "TAP TO START" (좌우 스와이프 = 스킨 넘기기)
 
 const FONT := preload("res://assets/fonts/Poppins-ExtraLight.ttf")
 const LAVENDER := Color(0.788, 0.722, 1.0)       # #C9B8FF: 방울 테와 같은 연보라
@@ -16,10 +17,9 @@ const LINE_SIZE := 40      # BEST·조작 안내: 게임의 BEST 줄과 같은 �
 const BEST_TOP := 560.0
 const GUIDE_TOP := 640.0
 const GUIDE_ROW := 64.0
-const ICON_COLUMN := 96.0  # 조작 안내 기호 칸 폭
+const ICON_COLUMN := 72.0  # 조작 안내 기호 칸 폭 (v0.11.0: 96 → 72, 9:16 화면에서 젤리 옆에 들어가게)
 const GUIDE_ART := 0.7     # 조작 안내 기호 크기 (글자 높이에 맞춘다)
 const TEXT_COLUMN := 150.0
-const START_GAP := 40.0     # 젤리 빛 웅덩이 앞 끝에서 "SWIPE TO START"까지 (v0.9.1: 빛 바깥 아래)
 const START_BOTTOM := 190.0  # 화면 아래에서 "SWIPE TO START"까지 가장 높은 자리 (세로 화면: 길 위 가운데쯤)
 const START_FLOOR := 64.0    # 화면 아래에서 이만큼은 비운다 (버전 글자 자리)
 const START_LOW := 0.4     # 박에 맞춰 이 밝기와 START_HIGH 사이를 천천히 오간다 (v0.9.1: 더 밝게, BEST 0.7보다 살짝 어둡게)
@@ -34,6 +34,12 @@ const DOT_RADIUS := 7.0      # 오늘 아직 안 했으면 버튼 오른쪽 위�
 const DAILY_TITLE_SIZE := 110
 const DAILY_TITLE_TOP := 300.0
 const SWITCH_TIME := 0.3     # 메인 ↔ 오늘의 판 시작 화면
+const NAME_GAP := 6.0        # v0.11.0: 젤리 빛 웅덩이 앞 끝에서 스킨 이름까지
+const DOTS_ROW := 28.0       # 스킨 위치 점 8개 줄 높이
+const DOT_SMALL := 5.0       # 점 반지름 (지금 스킨은 DOT_RADIUS)
+const DOT_STEP := 26.0
+const START_AFTER_DOTS := 16.0
+const GUIDE_SIDE_GAP := 24.0  # 안내를 젤리 옆에 둘 때 젤리 가장자리에서 안내 오른쪽 끝까지
 
 var best_label: Label
 var guide: VBoxContainer
@@ -49,6 +55,10 @@ var _daily_items: Control  # 오늘의 판 시작 화면에만 있는 글자
 var _daily_title: Label
 var _daily_lines: Label   # TODAY BEST / STREAK / NEW IN
 var _switch: Tween
+var skin_name: Label   # 젤리 아래 스킨 이름, 잠긴 스킨은 조건·진행도
+var skin_dots: Control  # 그 아래 스킨 위치 점
+var _skin_index := 0
+var _skin_count := 1
 
 
 func _init() -> void:
@@ -69,10 +79,18 @@ func _init() -> void:
 	_menu_items.add_child(best_label)
 	_build_guide()
 	_build_daily()
-	start_label = text_label("StartLabel", "SWIPE TO START", LINE_SIZE, Color.WHITE)
+	skin_name = text_label("SkinName", "", LINE_SIZE, Color(1, 1, 1, 0.7))
+	_menu_items.add_child(skin_name)
+	skin_dots = Control.new()
+	skin_dots.name = "SkinDots"
+	skin_dots.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	skin_dots.set_anchors_preset(Control.PRESET_TOP_WIDE)
+	skin_dots.draw.connect(_draw_dots)
+	_menu_items.add_child(skin_dots)
+	start_label = text_label("StartLabel", "TAP TO START", LINE_SIZE, Color.WHITE)
 	start_label.set_anchors_and_offsets_preset(Control.PRESET_BOTTOM_WIDE)
 	add_child(start_label)
-	place_start(0.0, 1280.0)
+	place(0.0, Rect2(330, 700, 60, 100), Vector2(720, 1280))
 	sound = UiIcon.new(UiIcon.Kind.SOUND_ON, Color(1, 1, 1, 0.7), SOUND_SIDE)
 	sound.name = "SoundButton"
 	corner(sound, true)
@@ -95,15 +113,68 @@ static func corner(icon: Control, right: bool) -> void:
 	icon.offset_bottom = SOUND_MARGIN + side
 
 
-## "SWIPE TO START"를 젤리 빛 웅덩이(pool: 화면 y) 아래에 둔다. 화면이 짧으면 아래 끝까지만 (main._fit_camera가 부른다)
-func place_start(pool: float, height: float) -> void:
+## 메인 화면 글자 자리 (화면 좌표, 720x1280 기준 높이). pool: 젤리 빛 웅덩이 앞 끝 y, jelly: 젤리 몸의 화면 사각형, size: 화면 크기.
+## 아래로 쌓기: 웅덩이 → 스킨 이름 → 점 → TAP TO START → DAILY. 화면이 짧으면 아래 끝(START_FLOOR)에 닿을 때까지만 내려가고 넘치면 위로 민다.
+## 조작 안내(GUIDE_TOP부터 3줄)가 젤리 위 끝에 닿으면 안내를 젤리 왼쪽 옆으로 옮긴다 (짧은 PC 창·9:16 화면). 결과 {name, dots, start, daily, guide_side, guide_right, guide_top}
+static func layout(pool: float, jelly: Rect2, size: Vector2) -> Dictionary:
 	var line := LINE_SIZE * 1.6
-	var top := clampf(pool + START_GAP, height - START_BOTTOM - DAILY_ROW, height - START_FLOOR - line - DAILY_GAP - DAILY_ROW)
+	var name := pool + NAME_GAP
+	var start := maxf(name + line + DOTS_ROW + START_AFTER_DOTS, size.y - START_BOTTOM - DAILY_ROW)
+	var over := start + line + DAILY_GAP + DAILY_ROW - (size.y - START_FLOOR)
+	if over > 0.0:
+		start -= over
+		name = minf(name, start - START_AFTER_DOTS - DOTS_ROW - line)
+	var guide_bottom := GUIDE_TOP + GUIDE_ROW * 3.0
+	var side := guide_bottom > jelly.position.y
+	return {
+		"name": name,
+		"dots": name + line,
+		"start": start,
+		"daily": start + line + DAILY_GAP,
+		"guide_side": side,
+		"guide_right": jelly.position.x - GUIDE_SIDE_GAP,  # 화면 왼쪽 끝에서 안내 오른쪽 끝까지
+		"guide_top": jelly.get_center().y - GUIDE_ROW * 1.5 if side else GUIDE_TOP,
+	}
+
+
+func place(pool: float, jelly: Rect2, size: Vector2) -> void:
+	var at := layout(pool, jelly, size)
+	var line := LINE_SIZE * 1.6
 	start_label.set_anchors_preset(Control.PRESET_TOP_WIDE)
-	start_label.offset_top = top
-	start_label.offset_bottom = top + line
-	daily_button.offset_top = top + line + DAILY_GAP
-	daily_button.offset_bottom = daily_button.offset_top + DAILY_ROW
+	start_label.offset_top = at["start"]
+	start_label.offset_bottom = at["start"] + line
+	daily_button.offset_top = at["daily"]
+	daily_button.offset_bottom = at["daily"] + DAILY_ROW
+	skin_name.offset_top = at["name"]
+	skin_name.offset_bottom = at["name"] + line
+	skin_dots.offset_top = at["dots"]
+	skin_dots.offset_bottom = at["dots"] + DOTS_ROW
+	var width := ICON_COLUMN + TEXT_COLUMN
+	if at["guide_side"]:
+		guide.set_anchors_preset(Control.PRESET_TOP_LEFT)
+		guide.offset_left = at["guide_right"] - width
+	else:
+		guide.set_anchors_preset(Control.PRESET_CENTER_TOP)
+		guide.offset_left = -width * 0.5
+	guide.offset_right = guide.offset_left + width
+	guide.offset_top = at["guide_top"]
+
+
+## 젤리 아래 글자: 열린 스킨은 이름, 잠긴 스킨은 조건·진행도(흐리게). 점은 index번째가 크다
+func set_skin(index: int, count: int, text: String, locked: bool) -> void:
+	_skin_index = index
+	_skin_count = count
+	skin_name.text = text
+	skin_name.label_settings.font_color = Color(1, 1, 1, 0.45 if locked else 0.7)
+	skin_dots.queue_redraw()
+
+
+func _draw_dots() -> void:
+	var mid := skin_dots.size.x * 0.5
+	for i in _skin_count:
+		var at := Vector2(mid + (i - (_skin_count - 1) * 0.5) * DOT_STEP, DOTS_ROW * 0.5)
+		var current := i == _skin_index
+		skin_dots.draw_circle(at, DOT_RADIUS if current else DOT_SMALL, LAVENDER if current else Color(1, 1, 1, 0.35), true, -1.0, true)
 
 
 ## 메인 화면을 다시 보일 때: 기록(없으면 숨김), 조작 안내, 소리 상태, 오늘의 판 번호와 점(오늘 안 했으면)

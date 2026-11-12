@@ -74,6 +74,15 @@ func streak_on(today: int) -> int:
 	return streak if last_day >= today - 1 else 0
 
 
+## 남아 있는 날짜 중 가장 높은 점수 (스킨 해금에 기존 기록을 넣을 때)
+func best_ever() -> int:
+	var top := best
+	if _file.has_section("best"):
+		for key in _file.get_section_keys("best"):
+			top = maxi(top, _read("best", key, 0))
+	return top
+
+
 func played(today: int) -> bool:
 	return last_day == today
 

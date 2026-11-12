@@ -1,0 +1,70 @@
+{
+  "errors": [],
+  "logs": [],
+  "perf": {
+    "mint": {
+      "frames": 720,
+      "over20": 0,
+      "p50": 16.7,
+      "p99": 16.8,
+      "max": 16.8,
+      "renderer": "ANGLE (Apple, ANGLE Metal Renderer: Apple M3, Unspecified Version)"
+    },
+    "strawberry": {
+      "frames": 719,
+      "over20": 0,
+      "p50": 16.7,
+      "p99": 16.8,
+      "max": 16.8,
+      "renderer": "ANGLE (Apple, ANGLE Metal Renderer: Apple M3, Unspecified Version)"
+    },
+    "lemon": {
+      "frames": 720,
+      "over20": 0,
+      "p50": 16.7,
+      "p99": 16.8,
+      "max": 16.8,
+      "renderer": "ANGLE (Apple, ANGLE Metal Renderer: Apple M3, Unspecified Version)"
+    },
+    "grape": {
+      "frames": 719,
+      "over20": 0,
+      "p50": 16.7,
+      "p99": 16.8,
+      "max": 16.8,
+      "renderer": "ANGLE (Apple, ANGLE Metal Renderer: Apple M3, Unspecified Version)"
+    },
+    "soda": {
+      "frames": 720,
+      "over20": 0,
+      "p50": 16.7,
+      "p99": 16.8,
+      "max": 16.8,
+      "renderer": "ANGLE (Apple, ANGLE Metal Renderer: Apple M3, Unspecified Version)"
+    },
+    "night": {
+      "frames": 720,
+      "over20": 0,
+      "p50": 16.7,
+      "p99": 16.8,
+      "max": 16.8,
+      "renderer": "ANGLE (Apple, ANGLE Metal Renderer: Apple M3, Unspecified Version)"
+    },
+    "aurora": {
+      "frames": 720,
+      "over20": 0,
+      "p50": 16.7,
+      "p99": 16.8,
+      "max": 16.8,
+      "renderer": "ANGLE (Apple, ANGLE Metal Renderer: Apple M3, Unspecified Version)"
+    },
+    "gold": {
+      "frames": 720,
+      "over20": 0,
+      "p50": 16.7,
+      "p99": 16.8,
+      "max": 16.8,
+      "renderer": "ANGLE (Apple, ANGLE Metal Renderer: Apple M3, Unspecified Version)"
+    }
+  }
+}

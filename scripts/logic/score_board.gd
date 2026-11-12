@@ -13,6 +13,7 @@ var orbs := 0        # 이번 판에 먹은 방울 수
 var missed := 0      # 이번 판에 놓친 방울 수
 var close := 0       # 이번 판 아슬아슬 횟수
 var trail_streak := 0  # 지금 방울 줄 안에서 연속으로 먹은 수 (소리 높이)
+var top_multiplier := 1  # 이번 판에 닿은 가장 큰 배수 (스킨 해금)
 
 var _trail := -1
 var _last_jump := -INF
@@ -50,6 +51,7 @@ func take_orb(trail: int) -> int:
 	_trail = trail
 	combo += 1
 	orbs += 1
+	top_multiplier = maxi(top_multiplier, multiplier(combo))
 	var gained: int = data()["orb_points"] * multiplier(combo)
 	points += gained
 	return gained

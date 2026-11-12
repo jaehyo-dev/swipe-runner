@@ -1,0 +1,13 @@
+{
+	"_설명": "젤리 스킨. band(안쪽 띠)·transmit(몸 뒤가 물드는 색)·line(비쳐 보이는 밝은 선 색)·body_fix(화면 색조 보정)는 MINT만 v0.10 값을 적고 나머지는 몸 색에서 계산한다 (SkinBook.shader_params). (ART_BIBLE.md 16장). 순서 = 메인 화면에서 넘기는 순서. body: 몸, rim: 테두리 빛, core: 속 빛. pattern: none·seeds(씨앗 점)·slice(레몬 단면 결)·soda(올라가는 거품)·stars(별 반짝임)·aurora(흐르는 색 띠)·sheen(지나가는 광택). pattern_strength: 무늬 세기. core_strength: 속 빛 세기(기본 1). opacity: 맑은 몸 가운데 불투명도(없으면 0.66, MINT는 v0.10 값 0.5). unlock.kind: start(처음부터)·perfects(PERFECT 누적)·score(한 판 점수, 일반·오늘의 판 중 한 판)·orbs(방울 누적)·streak(오늘의 판 연속 일수)·multiplier(한 판 최대 배수). MINT는 v0.10까지의 색 그대로(테두리 #C8FFFA). 장애물·방울과 색이 겹쳐 비켜 조정한 값: LEMON·GRAPE·SODA·GOLD는 시안과 다르며 이유는 review/v0.11.0/colors.md",
+	"skins": [
+		{"id": "mint", "name": "MINT", "body": "#86E3E6", "rim": "#C8FFFA", "core": "#EAFFFF", "pattern": "none", "pattern_strength": 0.0, "core_strength": 1.0, "unlock": {"kind": "start", "goal": 0}, "band": "#2F97A8", "transmit": [0.18, 1.0, 0.58], "line": [0.6, 1.0, 1.0], "body_fix": [0.88, 1.03, 0.96], "opacity": 0.5},
+		{"id": "strawberry", "name": "STRAWBERRY", "body": "#FF8FA8", "rim": "#FFE3EA", "core": "#FFF0F3", "pattern": "seeds", "pattern_strength": 1.0, "core_strength": 1.0, "unlock": {"kind": "perfects", "goal": 30}},
+		{"id": "lemon", "name": "LEMON", "body": "#FFE873", "rim": "#FFFBD9", "core": "#FFFFF0", "pattern": "slice", "pattern_strength": 1.0, "core_strength": 1.0, "unlock": {"kind": "score", "goal": 5000}, "opacity": 0.74},
+		{"id": "grape", "name": "GRAPE", "body": "#AC86FF", "rim": "#EFE5FF", "core": "#F6F0FF", "pattern": "none", "pattern_strength": 0.0, "core_strength": 1.8, "unlock": {"kind": "orbs", "goal": 500}},
+		{"id": "soda", "name": "SODA", "body": "#A5DCFF", "rim": "#EAF7FF", "core": "#FFFFFF", "pattern": "soda", "pattern_strength": 1.0, "core_strength": 1.0, "unlock": {"kind": "streak", "goal": 3}},
+		{"id": "night", "name": "NIGHT", "body": "#2B2A6E", "rim": "#9C9BFF", "core": "#5C5BD6", "pattern": "stars", "pattern_strength": 1.0, "core_strength": 1.4, "unlock": {"kind": "score", "goal": 8000}},
+		{"id": "aurora", "name": "AURORA", "body": "#7FF0C8", "rim": "#F3E6FF", "core": "#FFFFFF", "pattern": "aurora", "pattern_strength": 1.0, "core_strength": 1.0, "unlock": {"kind": "multiplier", "goal": 8}},
+		{"id": "gold", "name": "GOLD", "body": "#FAD66A", "rim": "#FFF2C7", "core": "#FFF8E0", "pattern": "sheen", "pattern_strength": 1.0, "core_strength": 1.0, "unlock": {"kind": "score", "goal": 10000}, "opacity": 0.72}
+	]
+}

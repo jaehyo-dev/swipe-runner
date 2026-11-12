@@ -28,6 +28,12 @@ uniform float rim_energy = 2.4;     // 테두리 발광: 화면에서 가장 밝
 uniform vec3 band_color : source_color = vec3(0.184, 0.592, 0.659); // #2F97A8 안쪽 띠
 uniform vec3 mint : source_color = vec3(0.525, 0.890, 0.902);      // #86E3E6 몸 (아쿠아 민트)
 uniform vec3 core_color : source_color = vec3(0.918, 1.0, 1.0);     // #EAFFFF 속빛
+uniform vec3 body_fix = vec3(0.88, 1.03, 0.96);  // 몸 색조 보정 (민트만: 맑은 몸이 보라 바닥과 섞이며 올라오는 파랑을 뺀다)
+
+// --- 스킨 (v0.11.0, data/skins.json → SkinBook.shader_params). 스킨마다 셰이더를 따로 만들지 않고 값만 바꾼다 (렉 없음) ---
+uniform int pattern = 0;            // 0 없음, 1 씨앗 점, 2 레몬 단면 결, 3 올라가는 거품, 4 별 반짝임, 5 흐르는 색 띠, 6 지나가는 광택
+uniform float pattern_strength = 0.0;
+uniform float shine = 1.0;          // 반사광 세기 (잠긴 스킨의 실루엣은 낮춘다)
 
 // --- runner.gd가 매 프레임 넣는 값 ---
 uniform float height = 1.0;  // 메시 높이 (아래 0 ~ 위 height)
@@ -123,7 +129,7 @@ void fragment() {
 	// 위에서 내려다보는 정수리가 띠 색으로 칠해져 뚜껑처럼 보이지 않게, 띠는 옆면(위로 갈수록 약하게)에만 둔다
 	float band = smoothstep(0.3, 0.68, f) * (1.0 - smoothstep(0.55, 0.9, vy));
 	// 맑은 몸은 어두운 보라 바닥과 섞이며 파랑이 올라오므로, 파랑을 살짝 빼서 화면에서 #86E3E6 색조(약 182°)로 읽히게 한다
-	vec3 col = mix(mint * vec3(0.88, 1.03, 0.96), band_color, band);
+	vec3 col = mix(mint * body_fix, band_color, band);
 	// 바닥에 닿은 부분: 진한 청록으로 모인다
 	float ground = (1.0 - smoothstep(0.0, 0.22, vy)) * ground_dark;
 	col = mix(col, band_color * 0.75, ground);
@@ -160,13 +166,76 @@ void fragment() {
 	}
 	// 기포 테두리는 글로우 기준(0.9) 아래 색: 번지면 흰 얼룩이 된다
 	col = mix(col, rim_color * 0.85, bub * bubble_strength);
-	col += vec3(hl) * 2.4;
+	// 스킨 무늬: 몸 좌표(lp)에 그려 출렁임을 따라간다. 가장자리는 fwidth로 화면 1픽셀 아래로 얇아지지 않게 (낮은 품질 단계에서도 뭉개지지 않게)
+	float pat = 0.0;  // 무늬가 덮은 정도 (불투명도에 더한다)
+	if (pattern == 1) {  // 딸기: 크림색 씨앗 점 7개 (세로로 살짝 긴 타원)
+		for (int i = 0; i < 7; i++) {
+			float fi = float(i);
+			vec2 c = vec2((fract(fi * 0.618 + 0.1) - 0.5) * 1.25 * radius, (0.22 + 0.55 * fract(fi * 0.382 + 0.2)) * height);
+			vec2 q = (lp.xy - c) * vec2(1.0, 0.7);
+			float d = length(q);
+			float w = max(0.004, fwidth(d));
+			pat = max(pat, 1.0 - smoothstep(0.026 - w, 0.026 + w, d));
+		}
+		col = mix(col, vec3(1.0, 0.95, 0.82) * 0.86, pat * pattern_strength);
+	} else if (pattern == 2) {  // 레몬: 단면 결 (가운데에서 퍼지는 선 6줄 + 껍질 쪽 둥근 선)
+		vec2 q = lp.xy - vec2(0.0, 0.42 * height);
+		float d = length(q);
+		float ang = atan(q.y, q.x);
+		float line_d = d * abs(sin(ang * 3.0));  // 6줄까지의 거리
+		float w = max(0.005, fwidth(line_d));
+		float rays = (1.0 - smoothstep(0.006, 0.006 + w, line_d)) * smoothstep(0.04, 0.07, d) * (1.0 - smoothstep(0.24 * radius / 0.5, 0.27 * radius / 0.5, d));
+		float wr = max(0.005, fwidth(d));
+		float peel = 1.0 - smoothstep(0.007, 0.007 + wr, abs(d - 0.3 * radius / 0.5));
+		pat = max(rays, peel) * 0.85;
+		col = mix(col, core_color * 0.88, pat * pattern_strength);
+	} else if (pattern == 3) {  // 소다: 작은 거품이 속에서 천천히 올라간다 (속이 찬 점)
+		for (int i = 0; i < 7; i++) {
+			float fi = float(i);
+			float t = fract(TIME * (0.09 + 0.04 * fract(fi * 0.53)) + fi * 0.37);
+			vec2 c = vec2((fract(fi * 0.71 + 0.33) - 0.5) * 0.9 * radius + 0.015 * sin(TIME * 1.7 + fi * 2.0), mix(0.08, 0.78, t) * height);
+			float r = 0.016 + 0.012 * fract(fi * 0.29 + 0.5);
+			float d = length(lp.xy - c);
+			float w = max(0.004, fwidth(d));
+			float fade = smoothstep(0.0, 0.1, t) * (1.0 - smoothstep(0.75, 1.0, t));
+			pat = max(pat, (1.0 - smoothstep(r - w, r + w, d)) * fade);
+		}
+		col = mix(col, core_color * 0.85, pat * pattern_strength);
+	} else if (pattern == 4) {  // 밤: 몸속 별이 천천히 깜빡인다
+		vec2 g = lp.xy / 0.075;
+		vec2 cell = floor(g);
+		float h = fract(sin(dot(cell, vec2(12.9898, 78.233))) * 43758.5453);
+		if (h > 0.55) {
+			vec2 c = (cell + 0.25 + 0.5 * fract(h * vec2(7.13, 3.71))) * 0.075;
+			float d = length(lp.xy - c);
+			float w = max(0.004, fwidth(d));
+			float twinkle = 0.35 + 0.65 * (0.5 + 0.5 * sin(TIME * 1.4 + h * 40.0));
+			pat = (1.0 - smoothstep(0.011 - w, 0.011 + w, d)) * twinkle;
+		}
+		col = mix(col, rim_color * 1.1, pat * pattern_strength);  // 별은 몸보다 밝다 (작아서 번지지 않는다)
+	} else if (pattern == 5) {  // 오로라: 민트·하늘·보라·분홍 띠가 비스듬히 천천히 흐른다
+		float u = fract(lp.y / height * 1.3 + lp.x * 0.7 - TIME * 0.12) * 4.0;
+		vec3 c0 = vec3(0.50, 0.94, 0.78);
+		vec3 c1 = vec3(0.55, 0.80, 1.00);
+		vec3 c2 = vec3(0.74, 0.60, 1.00);
+		vec3 c3 = vec3(1.00, 0.66, 0.86);
+		vec3 aur = u < 1.0 ? mix(c0, c1, smoothstep(0.0, 1.0, u)) : u < 2.0 ? mix(c1, c2, smoothstep(1.0, 2.0, u)) : u < 3.0 ? mix(c2, c3, smoothstep(2.0, 3.0, u)) : mix(c3, c0, smoothstep(3.0, 4.0, u));
+		pat = 0.6 * (1.0 - band);  // 띠 색(두께 가장자리)은 남겨 몸 윤곽이 읽히게
+		col = mix(col, aur * 0.8, pat * pattern_strength);
+	} else if (pattern == 6) {  // 금: 2초마다 광택이 표면을 비스듬히 지나간다
+		float u = lp.x / radius * 0.35 + lp.y / height;
+		float pos = fract(TIME * 0.5) * 2.6 - 0.8;
+		float w = max(0.02, fwidth(u));
+		pat = (1.0 - smoothstep(0.03, 0.03 + w * 3.0, abs(u - pos))) * 0.8;
+		col += vec3(1.0, 0.93, 0.75) * pat * pattern_strength * 0.9;
+	}
+	col += vec3(hl) * 2.4 * shine;
 
 	// 굴절: 가운데(두꺼운 곳)일수록 뒤 화면을 법선 쪽으로 휘어 읽는다 (렌즈처럼)
 	vec3 back = texture(screen_tex, SCREEN_UV - n.xy * refraction * (1.0 - f)).rgb;
 	float lum = max(back.g, back.b);
 	vec3 behind = mix(back * transmit_tint, line_tint * lum, smoothstep(0.35, 0.8, lum));  // 어두운 배경은 물들이고 밝은 선은 밝기만 살려 하늘빛 민트로
-	float alpha = clamp(mix(alpha_center, alpha_edge, smoothstep(0.5, 0.95, f)) + ground * 0.4 + min(core, 1.0) * 0.5 + hl + bub * 0.5, 0.0, 1.0);
+	float alpha = clamp(mix(alpha_center, alpha_edge, smoothstep(0.5, 0.95, f)) + ground * 0.4 + min(core, 1.0) * 0.5 + hl * shine + bub * 0.5 + pat * pattern_strength * 0.5, 0.0, 1.0);
 	ALBEDO = mix(behind, col, alpha);
 	ALPHA = 1.0;
 	}

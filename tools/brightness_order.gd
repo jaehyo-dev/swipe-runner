@@ -35,3 +35,20 @@ static func table(t: float, hero_peak: float) -> Dictionary:
 		"streak": c["streak_alpha"],
 		"ground": maxf(maxf(peak(c["sky_top"]), peak(c["horizon"])), peak(c["floor"])),
 	}
+
+
+## 스킨 몸 색과 다른 요소(장애물·난간·방울)의 구분 (v0.11.0, tests/test_skins.gd·review/v0.11.0/colors.md).
+## 통과: 색상 30도 이상, 또는 밝기(WCAG) 대비 1.5 이상, 또는 색상 15도 이상 + 상대가 더 진함(ART_BIBLE 4장 파랑 예외). HDR 값은 화면처럼 1에서 자른다
+static func skin_gap(hero: Color, other: Color) -> Dictionary:
+	var o := Color(minf(other.r, 1.0), minf(other.g, 1.0), minf(other.b, 1.0))
+	var hue := absf(hero.h - o.h) * 360.0
+	hue = minf(hue, 360.0 - hue)
+	var la := _luminance(hero)
+	var lb := _luminance(o)
+	var contrast := (maxf(la, lb) + 0.05) / (minf(la, lb) + 0.05)
+	return {"hue": snappedf(hue, 0.1), "contrast": snappedf(contrast, 0.01), "ok": hue >= 30.0 or contrast >= 1.5 or (hue >= 15.0 and o.s > hero.s)}
+
+
+static func _luminance(c: Color) -> float:
+	var l := c.srgb_to_linear()
+	return 0.2126 * l.r + 0.7152 * l.g + 0.0722 * l.b

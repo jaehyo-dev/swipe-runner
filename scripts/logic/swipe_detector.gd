@@ -13,6 +13,7 @@ const MIN_DISTANCE := 48.0
 const DOMINANCE := 1.5
 
 var _origins := {}  # 터치 번호 -> 누른 위치. 이미 판정을 돌려준 손가락은 지운다(뗄 때까지 무시)
+var _dragged := {}  # 방향 없이(대각선) 임계 거리보다 멀리 움직인 손가락: 떼도 탭이 아니다
 
 
 ## 이동량(delta)이 스와이프인지, 어느 방향인지 판정한다.
@@ -31,6 +32,7 @@ static func classify(delta: Vector2, min_distance: float = MIN_DISTANCE, dominan
 ## 손가락을 댔다
 func press(pos: Vector2, index: int = 0) -> void:
 	_origins[index] = pos
+	_dragged.erase(index)
 
 
 ## 손가락이 움직였다. 스와이프가 완성되면 방향을 한 번만 돌려주고, 그 손가락은 뗄 때까지 무시한다.
@@ -40,9 +42,11 @@ func move(pos: Vector2, index: int = 0) -> Dir:
 	var dir := classify(pos - _origins[index])
 	if dir != Dir.NONE:
 		_origins.erase(index)
+	elif (pos - _origins[index]).length() >= MIN_DISTANCE:
+		_dragged[index] = true
 	return dir
 
 
-## 손가락을 뗐다
-func release(index: int = 0) -> void:
-	_origins.erase(index)
+## 손가락을 뗐다. 방향을 돌려주지 않은 손가락이면 true (탭: 메인 화면의 시작)
+func release(index: int = 0) -> bool:
+	return _origins.erase(index) and not _dragged.erase(index)
