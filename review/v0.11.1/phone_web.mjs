@@ -1,7 +1,7 @@
 // v0.11.1 휴대폰 흉내 확인 (창 없이: 헤드리스 크롬 + 맥 Metal GPU).
 // 사용: PW=<playwright 폴더> CHROME=<크롬> DEBUG=pw:browser node phone_web.mjs <주소> <결과 폴더> perf <이름>
 //       PW=... CHROME=... node phone_web.mjs <주소> <결과 폴더> shots
-// perf: 390x844, 배율 3, 터치, CPU 4배 느리게, ?bpm=160 → 메인 4초 + 시작 뒤 12초의 rAF 간격, 긴 작업(longtask), 가비지 수집(--trace-gc), 캔버스 크기
+// perf: 390x844, 배율 3, 터치, CPU 4배 느리게, ?bpm=160 → 메인 4초 + 시작 뒤 12초의 rAF 간격, 긴 작업(longtask), 가비지 수집(JS 힙 감소), 캔버스 크기
 // shots: 효과 단계 0~4 × 스킨 MINT·NIGHT·AURORA 달리기, 성능 표시(메인·플레이), GRAPHICS 설정, 10000점 연출 GIF 프레임(?points=9990)
 import { createRequire } from 'module'; import fs from 'fs'; import os from 'os'; import path from 'path';
 const { chromium } = createRequire(import.meta.url)(process.env.PW || 'playwright');
@@ -10,20 +10,21 @@ fs.mkdirSync(out, { recursive: true });
 const PHONE = { width: 390, height: 844 };
 const U = PHONE.width / 720;  // UI 1단위 = CSS px (세로 화면은 폭이 720에 맞는다)
 const report = { errors: [], logs: [] };
-const gc = [];
 
 // 페이지가 열리기 전에: rAF 간격과 긴 작업을 모은다 (게임과 따로)
 const INIT = `
-window.probe = { on: false, frames: [], long: [] };
-(() => { let last = 0; const tick = t => { if (window.probe.on && last) window.probe.frames.push(t - last); last = t; requestAnimationFrame(tick); }; requestAnimationFrame(tick); })();
+window.probe = { on: false, frames: [], long: [], gc: [] };
+// 가비지 수집: JS 힙(performance.memory)이 줄어든 프레임을 수집으로 센다 (--trace-gc 출력은 Playwright에서 받을 수 없었다). [그 프레임 간격, 줄어든 MB]
+(() => { let last = 0, heap = 0; const tick = t => { const h = performance.memory ? performance.memory.usedJSHeapSize : 0;
+  if (window.probe.on && last) { window.probe.frames.push(t - last); if (h < heap) window.probe.gc.push([+(t - last).toFixed(1), +((heap - h) / 1048576).toFixed(2)]); }
+  last = t; heap = h; requestAnimationFrame(tick); }; requestAnimationFrame(tick); })();
 try { new PerformanceObserver(l => { if (window.probe.on) for (const e of l.getEntries()) window.probe.long.push(e.duration); }).observe({ entryTypes: ['longtask'] }); } catch (e) {}
 `;
 
 async function open(query, throttle) {
-  const args = ['--disable-audio-output', '--autoplay-policy=no-user-gesture-required', '--use-angle=metal', '--enable-gpu', '--ignore-gpu-blocklist', '--js-flags=--trace-gc'];
+  const args = ['--disable-audio-output', '--autoplay-policy=no-user-gesture-required', '--use-angle=metal', '--enable-gpu', '--ignore-gpu-blocklist', '--enable-precise-memory-info'];
   const ctx = await chromium.launchPersistentContext(fs.mkdtempSync(path.join(os.tmpdir(), 'v0111-')), {
     executablePath: process.env.CHROME, headless: true, viewport: PHONE, deviceScaleFactor: 3, isMobile: true, hasTouch: true, args,
-    logger: { isEnabled: () => true, log: (name, sev, msg) => { if (/Scavenge|Mark-Compact|Mark-sweep/.test(String(msg))) gc.push(String(msg)); } },
   });
   const page = ctx.pages()[0] || await ctx.newPage();
   await page.addInitScript(INIT);
@@ -32,13 +33,14 @@ async function open(query, throttle) {
     if (/^(QUALITY|SCORE V2|SAVE|SETTINGS)/.test(m.text())) report.logs.push(`${query}: ${m.text()}`);
   });
   page.on('pageerror', e => report.errors.push(`${query}: ${e}`));
-  if (throttle) {
-    const cdp = await ctx.newCDPSession(page);
-    await cdp.send('Emulation.setCPUThrottlingRate', { rate: throttle });
-  }
   await page.goto(url + query);
   await page.waitForFunction(() => window.gameReady > 0, null, { timeout: 600000 });
   await page.waitForTimeout(3000);  // 2단계 셰이더 준비
+  if (throttle) {  // 불러오기(wasm 컴파일)는 느리게 하지 않는다: 4배로는 10분 넘게 걸려 측정 대상이 아니다
+    const cdp = await ctx.newCDPSession(page);
+    await cdp.send('Emulation.setCPUThrottlingRate', { rate: throttle });
+    await page.waitForTimeout(2000);
+  }
   return { ctx, page };
 }
 
@@ -48,25 +50,22 @@ const stats = a => {
   return { frames: s.length, median: +q(0.5).toFixed(2), p95: +q(0.95).toFixed(2), p99: +q(0.99).toFixed(2), max: +q(1).toFixed(2), over25: s.filter(x => x > 25).length, over50: s.filter(x => x > 50).length };
 };
 async function window_(page, ms) {
-  await page.evaluate(() => { window.probe.frames = []; window.probe.long = []; window.probe.on = true; });
+  await page.evaluate(() => { window.probe.frames = []; window.probe.long = []; window.probe.gc = []; window.probe.on = true; });
   await page.waitForTimeout(ms);
-  return page.evaluate(() => { window.probe.on = false; return { frames: window.probe.frames, long: window.probe.long }; });
+  return page.evaluate(() => { window.probe.on = false; return { frames: window.probe.frames, long: window.probe.long, gc: window.probe.gc }; });
 }
 
 if (mode === 'perf') {
   const { ctx, page } = await open('?seed=7&bpm=160', 4);
   const canvas = await page.evaluate(() => { const c = document.querySelector('canvas'); return { width: c.width, height: c.height, dpr: devicePixelRatio, css: [c.clientWidth, c.clientHeight] }; });
-  const gc0 = gc.length;
   const menu = await window_(page, 4000);
   await tap(page, 360, 900);  // 탭(뗄 때)으로 시작
   const play = await window_(page, 12000);
-  const gcLines = gc.slice(gc0);
-  const pauses = gcLines.map(l => +(/([\d.]+) \/ [\d.]+ ms/.exec(l) || [0, 0])[1]).filter(x => x > 0);
   await page.keyboard.press('F3');  // 성능 표시 (고친 뒤 빌드만 있음)
   await page.waitForTimeout(600);
   await page.screenshot({ path: `${out}/perf_${label}.png` });
   Object.assign(report, { label, canvas, menu: stats(menu.frames), play: stats(play.frames), longtasks: { count: play.long.length, total: Math.round(play.long.reduce((a, b) => a + b, 0)), max: Math.round(Math.max(0, ...play.long)) },
-    gc: { count: gcLines.length, pauseTotal: +pauses.reduce((a, b) => a + b, 0).toFixed(1), pauseMax: +Math.max(0, ...pauses).toFixed(1), sample: gcLines.slice(0, 3) } });
+    gc: { count: play.gc.length, freedMB: +play.gc.reduce((a, g) => a + g[1], 0).toFixed(1), slowFrames: play.gc.filter(g => g[0] > 25).length, sample: play.gc.slice(0, 5) } });
   await ctx.close();
 }
 
@@ -115,4 +114,4 @@ if (mode === 'shots') {
 }
 
 fs.writeFileSync(`${out}/${mode === 'perf' ? `perf_${label}` : 'shots'}.json`, JSON.stringify(report, null, 1));
-console.log(JSON.stringify({ errors: report.errors.length, logs: report.logs.slice(0, 6), ...(mode === 'perf' ? { canvas: report.canvas, play: report.play, gc: report.gc.count, long: report.longtasks } : {}) }));
+console.log(JSON.stringify({ errors: report.errors.length, logs: report.logs.slice(0, 6), ...(mode === 'perf' ? { canvas: report.canvas, play: report.play, gc: report.gc, long: report.longtasks } : {}) }));

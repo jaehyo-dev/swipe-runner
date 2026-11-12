@@ -324,7 +324,7 @@ func _ready() -> void:
 	add_child(runner)
 	_build_ui()
 	if OS.has_feature("web"):
-		phone = JavaScriptBridge.eval("matchMedia('(pointer: coarse)').matches") == true
+		phone = int(JavaScriptBridge.eval("matchMedia('(pointer: coarse)').matches ? 1 : 0")) == 1  # 웹은 JS 참·거짓을 정수로 돌려준다
 	apply_graphics(save.graphics)
 	if OS.has_feature("web"):
 		_dev_view()
@@ -1289,8 +1289,11 @@ func _dev_view() -> void:
 	var level := int(query.call("quality"))
 	var slow := float(query.call("slow"))
 	_dev_points = float(query.call("points"))  # ?points=9990: 판마다 이 점수에서 시작 (10000점 연출 캡처). 기록은 저장되지만 이 창의 user://만
-	if _dev_points > 0.0:
+	if _dev_points > 0.0:  # 진짜 기록·스킨 진행도에 섞이지 않게 따로 쓰는 기록으로 (Codex 지적)
 		skins._read_only = true
+		normal_record = BestRecord.new("user://dev_points_best.txt", 0)
+		daily = DailyRecord.new("user://dev_points_daily.cfg", today())
+		record = normal_record
 	if slow > 0.0:
 		Engine.time_scale = slow  # GIF 프레임용: 헤드리스 캡처가 느려 게임을 그만큼 느리게 돌린다
 	if level > 0:
@@ -2019,10 +2022,10 @@ func _build_ui() -> void:
 	add_child(perf_layer)
 	_perf_label = Label.new()
 	_perf_label.name = "PerfLabel"
-	_perf_label.position = Vector2(PerfStats.TAP_ZONE.position.x, 24.0)
+	_perf_label.position = Vector2(PerfStats.TAP_ZONE.position.x, 22.0)  # 두 줄이 점수 숫자(위 90px부터, 글자는 더 아래) 위에 들어간다
 	_perf_label.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	var ps := LabelSettings.new()
-	ps.font_size = 22
+	ps.font_size = 18
 	ps.font_color = Color(0.85, 1.0, 0.9)
 	ps.outline_size = 6
 	ps.outline_color = Color(0, 0, 0, 0.85)

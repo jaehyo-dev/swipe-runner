@@ -58,7 +58,8 @@ func tap(now: float) -> bool:
 	return true
 
 
-## 표시 글자. render: 3D를 그리는 해상도, level: 효과 단계, setting: GRAPHICS, dpr: 기기 배율
+## 표시 글자 두 줄 (점수 숫자 위에 들어가게 짧게). render: 3D를 그리는 해상도, level: 효과 단계, setting: GRAPHICS, dpr: 기기 배율
+## 프레임은 최근 1초 평균 / 최대 ms
 func text(render: Vector2i, level: int, setting: String, dpr: float) -> String:
-	return "FPS %.0f  %dHz\nFRAME %.1f / %.1f ms\n3D %dx%d\nQUALITY %d %s\nDPR %.2f" % [
+	return "FPS %.0f · %dHz · %.1f / %.1f ms\n3D %dx%d · Q%d %s · DPR %.2f" % [
 		fps(), refresh_rate(), average() * 1000.0, worst() * 1000.0, render.x, render.y, level, setting.to_upper(), dpr]

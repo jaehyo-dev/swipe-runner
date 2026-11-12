@@ -1,0 +1,45 @@
+{
+ "errors": [],
+ "logs": [
+  "?seed=7&bpm=160: SAVE /userfs/godot/app_userdata/SWIPE PULSE (옛 폴더에서 옮긴 파일 0개)"
+ ],
+ "label": "before",
+ "canvas": {
+  "width": 1170,
+  "height": 2532,
+  "dpr": 3,
+  "css": [
+   390,
+   844
+  ]
+ },
+ "menu": {
+  "frames": 239,
+  "median": 16.7,
+  "p95": 16.7,
+  "p99": 16.8,
+  "max": 33.3,
+  "over25": 2,
+  "over50": 0
+ },
+ "play": {
+  "frames": 717,
+  "median": 16.7,
+  "p95": 16.8,
+  "p99": 16.8,
+  "max": 150,
+  "over25": 5,
+  "over50": 1
+ },
+ "longtasks": {
+  "count": 0,
+  "total": 0,
+  "max": 0
+ },
+ "gc": {
+  "count": 0,
+  "pauseTotal": 0,
+  "pauseMax": 0,
+  "sample": []
+ }
+}

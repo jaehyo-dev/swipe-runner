@@ -1,0 +1,46 @@
+{
+ "errors": [],
+ "logs": [
+  "?seed=7&bpm=160: SAVE /userfs/godot/app_userdata/SWIPE PULSE (옛 폴더에서 옮긴 파일 0개)",
+  "?seed=7&bpm=160: SCORE V2 best false daily false"
+ ],
+ "label": "after",
+ "canvas": {
+  "width": 1170,
+  "height": 2532,
+  "dpr": 3,
+  "css": [
+   390,
+   844
+  ]
+ },
+ "menu": {
+  "frames": 241,
+  "median": 16.7,
+  "p95": 16.7,
+  "p99": 16.8,
+  "max": 16.8,
+  "over25": 0,
+  "over50": 0
+ },
+ "play": {
+  "frames": 701,
+  "median": 16.7,
+  "p95": 16.8,
+  "p99": 33.4,
+  "max": 50.1,
+  "over25": 14,
+  "over50": 1
+ },
+ "longtasks": {
+  "count": 1,
+  "total": 50,
+  "max": 50
+ },
+ "gc": {
+  "count": 0,
+  "pauseTotal": 0,
+  "pauseMax": 0,
+  "sample": []
+ }
+}

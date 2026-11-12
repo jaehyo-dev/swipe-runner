@@ -36,4 +36,4 @@ func test_표시_글자() -> void:
 	var p := PerfStats.new()
 	for i in 60:
 		p.push(1.0 / 60.0)
-	assert_eq(p.text(Vector2i(786, 1704), 1, "auto", 3.0), "FPS 60  60Hz\nFRAME 16.7 / 16.7 ms\n3D 786x1704\nQUALITY 1 AUTO\nDPR 3.00")
+	assert_eq(p.text(Vector2i(786, 1704), 1, "auto", 3.0), "FPS 60 · 60Hz · 16.7 / 16.7 ms\n3D 786x1704 · Q1 AUTO · DPR 3.00")

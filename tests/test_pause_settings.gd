@@ -185,7 +185,7 @@ func test_왼쪽_위_세_번_탭으로_성능_표시를_켜고_끄고_시작하�
 	assert_true(main._perf_label.visible, "세 번 탭")
 	assert_false(main.started, "메인 화면 탭으로 시작하지 않음")
 	assert_true(main._perf_label.text.begins_with("FPS"), main._perf_label.text)
-	assert_true(main._perf_label.text.contains("QUALITY 0 AUTO"))
+	assert_true(main._perf_label.text.contains("Q0 AUTO"))
 	for i in 3:
 		tap.call()
 	assert_false(main._perf_label.visible, "다시 세 번이면 숨김")
