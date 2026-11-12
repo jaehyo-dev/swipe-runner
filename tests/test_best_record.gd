@@ -25,6 +25,22 @@ func test_깨진_파일은_기록_없음으로() -> void:
 		assert_eq(BestRecord.new(PATH).best, 0, text)
 
 
+func test_옛_기록은_새_파일로_한_번만_반으로() -> void:
+	var old := "user://test_best_old.txt"
+	DirAccess.remove_absolute(PATH)
+	BestRecord.write_atomic(old, "17001")
+	assert_true(BestRecord.convert_old(old, PATH), "옮김")
+	assert_eq(BestRecord.new(PATH).best, 8500, "0.5배, 소수점 버림")
+	assert_eq(FileAccess.get_file_as_string(old), "17001", "옛 파일은 그대로 (versions/의 옛 버전)")
+	BestRecord.write_atomic(old, "30000")
+	assert_false(BestRecord.convert_old(old, PATH), "새 파일이 있으면 다시 옮기지 않음")
+	assert_eq(BestRecord.new(PATH).best, 8500)
+	DirAccess.remove_absolute(PATH)
+	DirAccess.remove_absolute(old)
+	assert_false(BestRecord.convert_old(old, PATH), "옛 파일이 없으면 아무것도 안 함")
+	assert_false(FileAccess.file_exists(PATH))
+
+
 func test_새로_열어도_기록이_남음() -> void:
 	var record := _fresh()
 	record.update(42)

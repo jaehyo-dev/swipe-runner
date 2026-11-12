@@ -1,13 +1,15 @@
 class_name ScoreBoard
 extends RefCounted
 ## 점수·콤보·배수·아슬아슬 판정 (화면과 분리, 자동 테스트 대상). 값은 data/score.json 한 곳.
-## 점수 = 이동 거리(1m당 1점) + 방울 orb_points × 배수 + PERFECT(아슬아슬) close_points × 배수. 배수는 방울을 먹어 콤보가 오른 뒤의 값으로 곱한다.
+## 점수 = 이동 거리 × distance_points + 방울 orb_points × 배수 + PERFECT(아슬아슬) close_points × 배수 (v0.11.1부터 모두 0.5배, 소수점은 합친 뒤 버림). 배수는 방울을 먹어 콤보가 오른 뒤의 값으로 곱한다.
 
 const DATA_PATH := "res://data/score.json"
+## 마의 구간 (v0.11.1 배점): 넘는 순간 점수가 말랑 + 빛나고, 그 판은 연보라로 남는다. 공유 글에 10K+
+const MILESTONE := 10000
 
 static var _data := {}
 
-var points := 0      # 방울과 아슬아슬로 얻은 점수 (거리 점수 제외)
+var points := 0.0    # 방울과 아슬아슬로 얻은 점수 (거리 점수 제외). 방울 32.5점 때문에 소수
 var combo := 0       # 연속으로 먹은 방울 수
 var orbs := 0        # 이번 판에 먹은 방울 수
 var missed := 0      # 이번 판에 놓친 방울 수
@@ -41,18 +43,23 @@ static func multiplier(of_combo: int) -> int:
 	return mini(level, int(d["multiplier_max"]))
 
 
+## 오늘의 판 공유 글: "SWIPE PULSE Daily #12 — 5320", 10000점 이상은 끝에 " · 10K+"
+static func share_text(day_number: int, final_score: int) -> String:
+	return "SWIPE PULSE Daily #%d — %d%s" % [day_number, final_score, " · 10K+" if final_score >= MILESTONE else ""]
+
+
 func total(distance: float) -> int:
-	return int(distance) + points
+	return int(distance * float(data()["distance_points"]) + points)
 
 
 ## 방울을 먹었다. 얻은 점수를 돌려준다.
-func take_orb(trail: int) -> int:
+func take_orb(trail: int) -> float:
 	trail_streak = trail_streak + 1 if trail == _trail else 1
 	_trail = trail
 	combo += 1
 	orbs += 1
 	top_multiplier = maxi(top_multiplier, multiplier(combo))
-	var gained: int = data()["orb_points"] * multiplier(combo)
+	var gained: float = data()["orb_points"] * multiplier(combo)
 	points += gained
 	return gained
 
@@ -95,7 +102,7 @@ func passed(kind: ObstacleField.Kind, item_lane: int, arrive: float, lane: int) 
 	if lead < 0.0 or lead > data()["close_window"]:
 		return 0
 	close += 1
-	var gained: int = data()["close_points"] * multiplier(combo)
+	var gained := int(data()["close_points"]) * multiplier(combo)
 	points += gained
 	return gained
 

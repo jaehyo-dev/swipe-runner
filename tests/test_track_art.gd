@@ -273,7 +273,7 @@ func test_대시는_새로_들어온_줄만_다시_씀() -> void:
 	main.queue_free()
 
 
-func test_프레임이_밀리면_줄기_반사_MSAA_빛_번짐_순서로_낮춤() -> void:
+func test_프레임이_밀리면_반사_줄기_넓은_빛_번짐_MSAA_순서로_낮추고_설정으로_되돌림() -> void:
 	var main := _make_main()
 	await wait_frames()
 	var msaa: int = get_viewport().msaa_3d
@@ -283,17 +283,28 @@ func test_프레임이_밀리면_줄기_반사_MSAA_빛_번짐_순서로_낮춤(
 	var streaks: int = main._streaks.visible_instance_count
 	assert_eq(streaks, 64, "t=1 빛 줄기")
 	main.apply_quality(1)
-	assert_true(main._streaks.visible_instance_count < streaks, "1단계 줄기")
-	assert_true(main.runner._mirror.visible, "반사는 그대로")
-	main.apply_quality(2)
-	assert_eq(main._kind_meshes[K.BLOCK]["reflect"].get_shader_parameter("reflect_on"), 0.0, "2단계 반사 끔")
+	assert_eq(main._kind_meshes[K.BLOCK]["reflect"].get_shader_parameter("reflect_on"), 0.0, "1단계 반사 끔")
 	assert_false(main.runner._mirror.visible, "주인공 반사도")
-	assert_eq(get_viewport().msaa_3d, msaa, "MSAA는 그대로")
+	assert_eq(main._streaks.visible_instance_count, streaks, "줄기는 그대로")
+	main.apply_quality(2)
+	assert_true(main._streaks.visible_instance_count < streaks, "2단계 줄기")
+	assert_true(main._env.get_glow_level(3) > 0.0, "넓은 번짐은 그대로")
 	main.apply_quality(3)
-	assert_eq(get_viewport().msaa_3d, Viewport.MSAA_2X, "3단계 MSAA 2x")
-	assert_eq(main._env.glow_intensity, glow, "빛 번짐은 그대로")
+	assert_eq(main._env.get_glow_level(3), 0.0, "3단계 넓은 번짐 층 끔")
+	assert_eq(get_viewport().msaa_3d, Viewport.MSAA_4X, "MSAA는 그대로 (PC)")
 	main.apply_quality(4)
-	assert_true(main._env.glow_intensity < glow, "4단계 빛 번짐 낮춤")
+	assert_eq(get_viewport().msaa_3d, Viewport.MSAA_2X, "4단계 MSAA 2x, 그 아래로는 안 내림")
+	assert_eq(main._env.glow_intensity, glow, "장애물 테두리 빛의 세기는 어느 단계에서도 그대로")
+	main.save.graphics = "high"
+	main.apply_graphics("high")
+	assert_eq(main._effect_level, 0, "HIGH: 0단계")
+	assert_true(main.runner._mirror.visible and main._env.get_glow_level(3) > 0.0, "되돌림")
+	assert_eq(get_viewport().msaa_3d, Viewport.MSAA_4X)
+	main.apply_graphics("low")
+	assert_eq(main._effect_level, QualityGuard.LEVELS, "LOW: 가장 낮은 단계")
+	main.phone = true
+	main.apply_quality(0)
+	assert_eq(get_viewport().msaa_3d, Viewport.MSAA_2X, "휴대폰은 처음부터 2x")
 	get_viewport().msaa_3d = msaa
 	main.queue_free()
 

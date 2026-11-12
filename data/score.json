@@ -1,7 +1,8 @@
 {
-	"_설명": "점수·보상 값 (GAME_SPEC.md v0.8.1). 점수 = 이동 거리(1m당 1점) + 방울 orb_points × 배수 + PERFECT(아슬아슬) close_points × 배수. multiplier_from[i]: 콤보가 이 값 이상이면 ×(i+1). 마지막 단계 뒤로는 multiplier_every마다 +1, multiplier_max까지. close_window: 장애물 도착 이 시간(초) 안에 피한 입력이면 PERFECT. trail_orbs: 방울 줄 하나의 방울 수 [최소, 최대], trail_gap: 줄 사이 빈 박 [최소, 최대], move_rate: 방울 하나마다 레인을 옮기기 시작할 확률.",
-	"orb_points": 65,
-	"close_points": 100,
+	"_설명": "점수·보상 값 (GAME_SPEC.md v0.11.1). 점수 = 이동 거리 × distance_points(1m당) + 방울 orb_points × 배수 + PERFECT(아슬아슬) close_points × 배수, 소수점은 버린다. v0.11.1에서 모두 0.5배(전에는 1, 65, 100). multiplier_from[i]: 콤보가 이 값 이상이면 ×(i+1). 마지막 단계 뒤로는 multiplier_every마다 +1, multiplier_max까지. close_window: 장애물 도착 이 시간(초) 안에 피한 입력이면 PERFECT. trail_orbs: 방울 줄 하나의 방울 수 [최소, 최대], trail_gap: 줄 사이 빈 박 [최소, 최대], move_rate: 방울 하나마다 레인을 옮기기 시작할 확률.",
+	"distance_points": 0.5,
+	"orb_points": 32.5,
+	"close_points": 50,
 	"close_window": 0.16,
 	"multiplier_from": [0, 10, 20, 35, 55],
 	"multiplier_every": 30,

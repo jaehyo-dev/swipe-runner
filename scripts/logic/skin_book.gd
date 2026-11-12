@@ -7,7 +7,8 @@ extends RefCounted
 
 const PATH := "user://skins.cfg"
 const DATA_PATH := "res://data/skins.json"
-const FORMAT := 1
+## 2(v0.11.1): 점수가 0.5배가 되며 진행도의 점수(score)를 반으로 옮겼다. 열린 스킨은 그대로
+const FORMAT := 2
 const STATS := ["perfects", "orbs", "score", "streak", "multiplier"]
 const PATTERNS := ["none", "seeds", "slice", "soda", "stars", "aurora", "sheen"]  # jelly.gdshader pattern 번호
 const BODY_MAX := 0.8  # 몸 색의 가장 센 채널(선형) 상한: 글로우 기준 0.9를 넘으면 몸 전체가 번져 뿌옇다 (ART_BIBLE 5장)
@@ -85,11 +86,14 @@ func _init(path := PATH) -> void:
 	_path = path
 	var file := ConfigFile.new()
 	var ok := file.load(path) == OK
-	var version: Variant = file.get_value("meta", "version", FORMAT) if ok else FORMAT
+	var version: Variant = file.get_value("meta", "version", 1) if ok else FORMAT
 	_read_only = version is int and version > FORMAT
 	for key in STATS:
 		var value: Variant = file.get_value("stats", key, 0) if ok else 0
 		stats[key] = value if value is int and value >= 0 else 0
+	var converting: bool = ok and not _read_only and version != FORMAT
+	if converting:  # 형식 1: 옛 점수 → 새 점수 한 번만 (저장하면 형식 2)
+		stats["score"] = int(stats["score"] * BestRecord.SCORE_SCALE)
 	var ids: Variant = file.get_value("skins", "unlocked", []) if ok else []
 	if ids is Array or ids is PackedStringArray:
 		for id: Variant in ids:
@@ -98,6 +102,8 @@ func _init(path := PATH) -> void:
 	_unlock_reached()
 	var pick: Variant = file.get_value("skins", "selected", "mint") if ok else "mint"
 	selected = pick if pick is String and is_unlocked(pick) else list()[0]["id"]
+	if converting:
+		save()
 
 
 func is_unlocked(id: String) -> bool:

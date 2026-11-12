@@ -13,8 +13,12 @@ const START_STALL_TIME := 1.0
 const READ_NOISE := 0.005
 
 ## 재생 위치는 오디오 블록 단위로 계단처럼 오른다. 그대로 쓰면 프레임마다 세상이 가는 거리가 들쭉날쭉하므로(120Hz에서 특히) 화면에는 프레임 시간으로 잇고 차이만 조금씩 메운 값을 쓴다.
-const SMOOTH_TIME := 0.1   # 차이를 메우는 시간 상수(초)
-const SNAP := 0.03         # 이보다 벌어지면 메우지 않고 바로 맞춘다 (긴 프레임, 첫 소리)
+## v0.11.1: 아이폰 WebKit은 계단이 크고(수십 ms) 지연 값이 바뀌며 위치가 뒤로 가기도 한다. 전에는 계단마다 차이를 빨리 메워 이동량이 20%씩 흔들렸고,
+## 30ms 넘게 뒤처지면 세상을 멈췄다가 한 번에 맞췄다(멈춤 → 점프). 이제 천천히 메우고, 한 프레임에 메우는 양을 프레임 시간의 MAX_CATCH배로 묶는다
+## (뒤처져도 멈추지 않고 조금 느리게 간다). 크게 벌어질 때만 바로 맞춘다. 표: review/v0.11.1/clock_before.md → clock_after.md
+const SMOOTH_TIME := 0.5   # 차이를 메우는 시간 상수(초)
+const SNAP := 0.1          # 이보다 앞서 벌어지면 메우지 않고 바로 맞춘다 (긴 프레임, 탭 전환)
+const MAX_CATCH := 0.08    # 한 프레임에 메우는 양의 상한 (프레임 시간 대비)
 
 ## 판 처음부터 흐른 음악 시간
 var time := 0.0
@@ -64,7 +68,7 @@ func smoothed(delta: float) -> float:
 	var gap := time - ahead
 	if not _heard or gap > SNAP:
 		smooth = maxf(smooth, time)
-	elif gap >= -SNAP:
-		smooth = maxf(smooth, ahead + gap * (1.0 - exp(-delta / SMOOTH_TIME)))
-	# gap < -SNAP: 재생 위치가 뒤처졌다. 시간은 되돌리지 않고 따라올 때까지 기다린다
+	else:  # 뒤처졌으면(gap < 0) 조금 느리게, 앞섰으면 조금 빠르게. 멈추지 않는다
+		var catch_up := clampf(gap * (1.0 - exp(-delta / SMOOTH_TIME)), -delta * MAX_CATCH, delta * MAX_CATCH)
+		smooth = maxf(smooth, ahead + catch_up)
 	return smooth

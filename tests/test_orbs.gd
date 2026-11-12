@@ -156,12 +156,13 @@ func test_배수표() -> void:
 
 
 func test_점수는_거리와_방울_곱하기_배수() -> void:
+	# v0.11.1: 모두 0.5배 (1m 0.5점, 방울 32.5, PERFECT 50). 소수점은 합친 뒤 버린다
 	var board := ScoreBoard.new()
 	for i in 9:
-		assert_eq(board.take_orb(0), 65)
-	assert_eq(board.take_orb(0), 130, "10번째 방울은 x2")
-	assert_eq(board.points, 715)
-	assert_eq(board.total(152.7), 867)
+		assert_eq(board.take_orb(0), 32.5)
+	assert_eq(board.take_orb(0), 65.0, "10번째 방울은 x2")
+	assert_eq(board.points, 357.5)
+	assert_eq(board.total(152.7), 433, "76.35 + 357.5")
 	assert_eq(board.orbs, 10)
 
 
@@ -183,13 +184,13 @@ func test_놓치면_콤보가_끊기고_줄_안_음높이도_처음으로() -> v
 func test_PERFECT는_도착_0_16초_안의_입력만() -> void:
 	var board := ScoreBoard.new()
 	board.note_jump(10.0)
-	assert_eq(board.passed(Kind.LOW, 1, 10.15, 1), 100, "0.15초 전 점프")
+	assert_eq(board.passed(Kind.LOW, 1, 10.15, 1), 50, "0.15초 전 점프")
 	assert_eq(board.passed(Kind.LOW, 1, 10.2, 1), 0, "0.2초 전 (v0.8.0에서는 PERFECT)")
 	board.note_slide(20.0)
-	assert_eq(board.passed(Kind.HIGH, 1, 20.15, 1), 100)
+	assert_eq(board.passed(Kind.HIGH, 1, 20.15, 1), 50)
 	assert_eq(board.passed(Kind.HIGH, 0, 20.1, 1), 0, "다른 레인 막대는 슬라이드와 상관없음")
 	board.note_move(30.0, 1)
-	assert_eq(board.passed(Kind.BLOCK, 1, 30.1, 2), 100, "방금 떠난 레인의 기둥")
+	assert_eq(board.passed(Kind.BLOCK, 1, 30.1, 2), 50, "방금 떠난 레인의 기둥")
 	assert_eq(board.passed(Kind.BLOCK, 0, 30.1, 2), 0, "멀리 떨어진 레인")
 	assert_eq(board.passed(Kind.BLOCK, 2, 30.1, 2), 0, "내 레인")
 	assert_eq(board.close, 3)
@@ -200,7 +201,7 @@ func test_PERFECT_보너스도_배수를_곱함() -> void:
 	for i in 20:
 		board.take_orb(0)
 	board.note_jump(5.0)
-	assert_eq(board.passed(Kind.LOW, 0, 5.1, 0), 300)
+	assert_eq(board.passed(Kind.LOW, 0, 5.1, 0), 150)
 
 
 ## v0.8.1 목표 (시드 50, 중앙값): 욕심쟁이(잘하는 모델 + 방울 쫓기)는 안전 모델(잘하는 모델) 점수의 1.25배 이상이고 버틴 시간은 조금 짧다.
@@ -223,9 +224,9 @@ func test_욕심쟁이와_도전_모델은_위험만큼_점수를_더_받음() -
 		var t: float = med.call(runs[key], "time")
 		assert_true(t < safe_time and t >= safe_time * 0.8, "%s 시간 %.1f vs %.1f" % [key, t, safe_time])
 	assert_true(perfect.call("dare") >= perfect.call("safe") * 2.0, "도전 PERFECT %.1f vs %.1f" % [perfect.call("dare"), perfect.call("safe")])
-	# v0.10.1: 사람 모델을 강하게 다시 맞춘 뒤 도전 모델은 고비 전에 더 자주 죽어 중앙값은 안전 모델보다 낮다. 대신 높은 점수(10000점 이상)가 더 자주 나온다
-	var top := func(key: String) -> int: return runs[key].filter(func(r: Dictionary) -> bool: return r["score"] >= 10000).size()
-	assert_true(top.call("dare") > top.call("safe"), "도전 10000점 이상 %d판 vs 안전 %d판" % [top.call("dare"), top.call("safe")])
+	# v0.10.1: 사람 모델을 강하게 다시 맞춘 뒤 도전 모델은 고비 전에 더 자주 죽어 중앙값은 안전 모델보다 낮다. 대신 높은 점수(10000점 이상, v0.11.1 배점으로 5000점)가 더 자주 나온다
+	var top := func(key: String) -> int: return runs[key].filter(func(r: Dictionary) -> bool: return r["score"] >= 5000).size()
+	assert_true(top.call("dare") > top.call("safe"), "도전 5000점(옛 10000) 이상 %d판 vs 안전 %d판" % [top.call("dare"), top.call("safe")])
 
 
 ## 시간이 크게 건너뛰어(탭 전환) 처리 전에 지워진 방울도 놓친 것으로 센다 (Codex 리뷰)

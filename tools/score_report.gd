@@ -1,4 +1,5 @@
 extends SceneTree
+## v0.11.1: 배점이 0.5배가 되어 고비(140BPM)는 5000점이 아니라 박(약 66초)에 온다. "고비 시점 점수" 열: 고비 박에 닿은 판의 그때 점수(중앙·최소~최대).
 ## 점수 분포 표 (v0.10.1 점수 목표): 사람 모델(보통·잘함·욕심쟁이) 시드 50개의 최종 점수 구간 비율, 5000점 도달 시점의 속도·압박·보이는 시간,
 ## 생존 곡선(0~12000점, 500점마다 "이 점수에 도달한 판 비율"). 결과는 표준 출력(markdown) + 곡선 CSV(인자로 경로를 주면)
 ##   godot --headless --path . -s tools/score_report.gd -- [곡선.csv]
@@ -27,15 +28,21 @@ func _report() -> void:
 			models[title].merge(over[title], true)
 	var curves := {}
 	var scores := {}
-	print("| 모델 | 중앙값 | 5000 도달 | 5000~8000 사망 | 5000~7000 사망 | 8000 이상 | 10000 이상 | 5000 도달 시각(중앙) | 그때 단계·BPM·속도·압박·보이는 시간 |")
-	print("|---|---|---|---|---|---|---|---|---|")
+	var wall_beat: float = MusicLadder.wall()["step"] * MusicLadder.STEP_BEATS
+	print("| 모델 | 중앙값 | 5000 도달 | 5000~8000 사망 | 5000~7000 사망 | 8000 이상 | 10000 이상 | 5000 도달 시각(중앙) | 그때 단계·BPM·속도·압박·보이는 시간 | 고비(박 %d) 도달 | 고비 시점 점수 중앙 (최소~최대) |" % wall_beat)
+	print("|---|---|---|---|---|---|---|---|---|---|---|")
 	for title in models:
 		var finals: Array[int] = []
 		var walls: Array = []
+		var at_wall: Array[int] = []
 		for s in range(1, SEEDS + 1):
 			var trace := []
 			var r: Dictionary = sim.run(s, human.new(s, models[title]), LIMIT, 0, trace)
 			finals.append(r["score"])
+			for row in trace:
+				if row[3] >= wall_beat:
+					at_wall.append(row[1])
+					break
 			for row in trace:
 				if row[1] >= WALL:
 					walls.append(row)
@@ -51,7 +58,9 @@ func _report() -> void:
 			var info := MusicLadder.info(w[2])
 			wall_text = "%.0f초" % w[0]
 			at_text = "%d · %dBPM · %.1f · %d · %.2f초" % [w[2], info["bpm"], info["speed"], BeatPattern.pressure(w[3]), MusicLadder.visible_time(w[2])]
-		print("| %s | %d | %.0f%% | %.0f%% | %.0f%% | %.0f%% | %.0f%% | %s | %s |" % [title, finals[SEEDS / 2], share.call(WALL, 1 << 30), share.call(WALL, 8000), share.call(WALL, 7000), share.call(8000, 1 << 30), share.call(10000, 1 << 30), wall_text, at_text])
+		at_wall.sort()
+		var wall_score := "%d (%d~%d)" % [at_wall[at_wall.size() / 2], at_wall[0], at_wall[-1]] if not at_wall.is_empty() else "-"
+		print("| %s | %d | %.0f%% | %.0f%% | %.0f%% | %.0f%% | %.0f%% | %s | %s | %.0f%% | %s |" % [title, finals[SEEDS / 2], share.call(WALL, 1 << 30), share.call(WALL, 8000), share.call(WALL, 7000), share.call(8000, 1 << 30), share.call(10000, 1 << 30), wall_text, at_text, 100.0 * at_wall.size() / SEEDS, wall_score])
 		var curve := []
 		for p in range(0, CURVE_TOP + 1, CURVE_STEP):
 			curve.append(100.0 * finals.filter(func(v: int) -> bool: return v >= p).size() / SEEDS)

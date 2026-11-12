@@ -38,6 +38,41 @@ func test_블록_단위_재생_위치도_60Hz와_120Hz에서_고르게_흐름() 
 		assert_true(worst < 0.002, "프레임 %f: 들쭉날쭉 %f초" % [frame, worst])
 
 
+## 아이폰 WebKit 흉내: 재생 위치가 큰 계단(stair초)으로 오르고, 가끔 지연 값이 바뀌어 20ms 뒤로 간다(back). 프레임 간격도 ±1ms 흔들린다.
+## 결과 {stalls: 세상이 거의 안 움직인 프레임 수(이동 < 프레임 시간의 절반), worst: 프레임마다 이동량이 프레임 시간과 다른 가장 큰 비율}
+static func webkit_motion(frame: float, stair: float, back: bool, frames := 1200) -> Dictionary:
+	var clock := BeatClock.new()
+	var rng := RandomNumberGenerator.new()
+	rng.seed = 7
+	var t := 0.0
+	var last := 0.0
+	var stalls := 0
+	var worst := 0.0
+	for i in frames:
+		var dt := frame + rng.randf_range(-0.001, 0.001)
+		t += dt
+		var raw := floorf(t / stair) * stair - (0.02 if back and (i / 300) % 2 == 1 else 0.0)
+		clock.update(raw, dt)
+		var now := clock.smoothed(dt)
+		if i > 120:  # 첫 소리 맞춤 뒤
+			var moved := now - last
+			if moved < dt * 0.5:
+				stalls += 1
+			worst = maxf(worst, absf(moved - dt) / dt)
+		last = now
+	return {"stalls": stalls, "worst": worst}
+
+
+func test_WebKit처럼_큰_계단과_되돌림에도_멈춤_없이_고르게() -> void:
+	for frame in [1.0 / 60.0, 1.0 / 120.0]:
+		for stair in [0.010, 0.0213, 0.0427]:
+			for back in [false, true]:
+				var r := webkit_motion(frame, stair, back)
+				var name := "%dHz 계단 %.1fms%s" % [roundi(1.0 / frame), stair * 1000.0, " 되돌림" if back else ""]
+				assert_eq(r["stalls"], 0, name + " 멈춘 프레임")
+				assert_true(r["worst"] <= 0.08, "%s 이동량 흔들림 %.1f%%" % [name, r["worst"] * 100.0])
+
+
 func test_크게_벌어지면_바로_맞춤() -> void:
 	var clock := BeatClock.new()
 	clock.update(1.0, DT)

@@ -13,6 +13,7 @@ var music := 1.0       # 음악 크기 0~1 (설정 슬라이더)
 var sfx := 1.0         # 효과음 크기 0~1
 var vibration := true  # 진동 (기본 켬)
 var guide_left := 0    # 설정의 SHOW GUIDE: 앞으로 이만큼의 판에 조작 안내를 다시 보인다
+var graphics := "auto" # 설정의 GRAPHICS: QualityGuard.SETTINGS
 
 var _path: String
 
@@ -32,6 +33,8 @@ func _init(path := PATH) -> void:
 	vibration = buzz if buzz is bool else true
 	var left: Variant = file.get_value("play", "guide_left", 0)
 	guide_left = clampi(left, 0, GUIDE_RUNS) if left is int else 0
+	var look: Variant = file.get_value("play", "graphics", "auto")
+	graphics = look if look in QualityGuard.SETTINGS else "auto"
 
 
 ## 0~1 크기 값. 숫자가 아니면 처음 값(1)
@@ -70,6 +73,7 @@ func save() -> void:
 	file.set_value("sound", "sfx", sfx)
 	file.set_value("play", "vibration", vibration)
 	file.set_value("play", "guide_left", guide_left)
+	file.set_value("play", "graphics", graphics)
 	file.save(_path)  # 저장소가 막힌 브라우저(시크릿 창 등)에서도 게임은 계속된다
 
 

@@ -21,6 +21,8 @@ window.gameMusic = (() => {
   let held = false;
   c.resume = () => held ? Promise.resolve() : resume();
   let run = null, t0 = 0, cur = null, unloops = [];
+  // v0.11.1: 디코드한 묶음마다 새 배열을 만들지 않고 같은 바이트 배열을 다시 쓴다 (아이폰 WebKit 가비지 수집 멈춤 줄이기)
+  let bytes = new Uint8Array(0), floats = new Float32Array(0);
   const source = (i, gain) => {
     const s = c.createBufferSource();
     s.buffer = bufs[i]; s.loop = true; s.loopEnd = ends[i]; s.fader = c.createGain();
@@ -33,11 +35,12 @@ window.gameMusic = (() => {
     alloc(i, frames, rate, loopEnd) { bufs[i] = c.createBuffer(2, frames, rate); ends[i] = loopEnd; filled[i] = 0; },
     drop(i) { delete bufs[i]; },
     feed(i, data) {
-      const raw = atob(data), bytes = new Uint8Array(raw.length);
-      for (let k = 0; k < raw.length; k++) bytes[k] = raw.charCodeAt(k);
-      const f = new Float32Array(bytes.buffer), l = bufs[i].getChannelData(0), r = bufs[i].getChannelData(1), at = filled[i];
-      for (let k = 0; k < f.length / 2; k++) { l[at + k] = f[2 * k]; r[at + k] = f[2 * k + 1]; }
-      filled[i] = at + f.length / 2;
+      const raw = atob(data), n = raw.length;
+      if (bytes.length < n) { bytes = new Uint8Array(n); floats = new Float32Array(bytes.buffer); }
+      for (let k = 0; k < n; k++) bytes[k] = raw.charCodeAt(k);
+      const frames = n / 8, l = bufs[i].getChannelData(0), r = bufs[i].getChannelData(1), at = filled[i];
+      for (let k = 0; k < frames; k++) { l[at + k] = floats[2 * k]; r[at + k] = floats[2 * k + 1]; }
+      filled[i] = at + frames;
     },
     // 판을 시작한다. fade초 동안 이전 판의 곡과 겹치며 넘어간다 (예약돼 있던 다음 곡도 같이 사라진다)
     play(i, fade) {
@@ -75,7 +78,7 @@ window.gameMusic = (() => {
       run.sources.push(next);
       cur = next;
     },
-    tick() { unloops = unloops.filter(u => { if (c.currentTime < u.at) return true; u.s.loop = false; return false; }); },
+    tick() { if (unloops.length) unloops = unloops.filter(u => { if (c.currentTime < u.at) return true; u.s.loop = false; return false; }); },
     position() { return c.currentTime - t0 - c.baseLatency - (c.outputLatency || 0); },
     // 일시정지: AudioContext를 멈춰 음악·효과음과 시계(currentTime)를 함께 세운다. 예약해 둔 곡 경계도 같은 시계라 그대로 맞는다
     hold(on) { held = on; return on ? c.suspend() : resume(); },

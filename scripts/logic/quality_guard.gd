@@ -10,7 +10,10 @@ const LIMIT := 0.020          # 한 구간의 99% 프레임이 이보다 길면 
 const SLOW_WINDOWS := 3       # 느린 구간이 이만큼 연속(3초)일 때만 한 단계 낮춘다
 const GRACE := 5.0            # 페이지를 연 뒤, 탭이 가려졌다 돌아온 뒤, 화면 전환·단계를 낮춘 뒤 이 시간(초)은 판단하지 않는다
 const IGNORE_OVER := 0.25     # 이보다 긴 멈춤은 탭 전환 같은 것이라 렉이 아니다 (돌아온 뒤 GRACE만큼 쉰다)
-const LEVELS := 4             # 1 빛 줄기 줄이기, 2 반사 끄기, 3 MSAA 2x, 4 빛 번짐 낮추기
+## v0.11.1 순서 (젤리 투명감·장애물 테두리 빛·글자는 어느 단계에서도 그대로): 1 반사 끄기, 2 빛 줄기 줄이기, 3 넓게 퍼지는 빛 번짐 층 끄기, 4 MSAA 4x → 2x (휴대폰은 처음부터 2x). MSAA는 2x 아래로 내리지 않는다
+const LEVELS := 4
+const MAX_DPR := 2.0          # 3D는 기기 배율 2.0까지만 (아이폰 배율 3: 1179x2556 → 786x1704). 글자는 원래 해상도
+const SETTINGS := ["auto", "high", "low"]  # 설정 GRAPHICS: AUTO(밀리면 낮춤) / HIGH(0단계 고정) / LOW(가장 낮은 단계 고정)
 const STREAK_LOW := 0.35      # 1단계부터 빛 줄기를 이 비율로
 
 var level := 0
@@ -24,15 +27,26 @@ var _slow: Array[float] = []  # 연속된 느린 구간의 99% 프레임(초)
 
 
 ## 창 크기(실제 화소)에서 3D를 그릴 배율. 글자는 이 배율과 상관없이 원래 해상도로 그려진다.
-static func render_scale(size: Vector2i) -> float:
+## dpr: 기기 배율(devicePixelRatio). 배율 2.0을 넘는 화면은 2.0만큼만 그린다
+static func render_scale(size: Vector2i, dpr := 1.0) -> float:
 	if size.x <= 0 or size.y <= 0:
 		return 1.0
-	return minf(minf(1.0, MAX_HEIGHT / size.y), sqrt(MAX_PIXELS / (size.x * size.y)))
+	return minf(minf(minf(1.0, MAX_HEIGHT / size.y), sqrt(MAX_PIXELS / (size.x * size.y))), MAX_DPR / maxf(dpr, MAX_DPR))
+
+
+## 설정과 자동 단계로 정한 실제 효과 단계
+static func level_for(setting: String, auto_level: int) -> int:
+	match setting:
+		"high":
+			return 0
+		"low":
+			return LEVELS
+	return auto_level
 
 
 ## 품질 단계 level에서 그릴 빛 줄기 수
 static func streaks(count: float, at_level: int) -> int:
-	return int(count * (STREAK_LOW if at_level >= 1 else 1.0))
+	return int(count * (STREAK_LOW if at_level >= 2 else 1.0))
 
 
 ## seconds초 동안 판단하지 않는다. 모으던 구간과 연속 기록도 버린다

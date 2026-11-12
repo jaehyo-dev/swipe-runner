@@ -145,6 +145,13 @@ func test_설정은_크기_진동_안내를_바로_적용하고_저장한다() -
 	assert_false(main.save.vibration)
 	assert_false(main.haptics.enabled)
 	assert_eq(panel.vibration_value.text, "OFF")
+	assert_eq(panel.graphics_value.text, "AUTO", "GRAPHICS 처음은 AUTO")
+	panel.tap(_center(panel._rows["GRAPHICS"]))
+	assert_eq(panel.graphics_value.text, "HIGH")
+	assert_eq(main._effect_level, 0)
+	panel.tap(_center(panel._rows["GRAPHICS"]))
+	assert_eq(panel.graphics_value.text, "LOW")
+	assert_eq(main._effect_level, QualityGuard.LEVELS, "바로 적용")
 	main.save.plays = 10
 	panel.tap(_center(panel._rows["SHOW GUIDE"]))
 	assert_eq(main.save.guide_left, SaveData.GUIDE_RUNS)
@@ -154,7 +161,39 @@ func test_설정은_크기_진동_안내를_바로_적용하고_저장한다() -
 	assert_eq(again.music, 0.0, "저장")
 	assert_false(again.vibration)
 	assert_true(again.shows_guide(), "다음 판에 안내")
+	assert_eq(again.graphics, "low", "GRAPHICS 저장")
+	panel.open(main.save, main.haptics)
+	panel.tap(_center(panel._rows["GRAPHICS"]))
+	assert_eq(main.save.graphics, "auto", "LOW 다음은 AUTO")
+	assert_eq(main._effect_level, 0, "AUTO는 처음부터 다시 판단")
+	panel.close()
 	AudioManager.set_volumes(1.0, 1.0)
+	_done(main)
+
+
+func test_왼쪽_위_세_번_탭으로_성능_표시를_켜고_끄고_시작하지_않음() -> void:
+	var main: Node3D = await _make_main()
+	var tap := func() -> void:
+		for pressed in [true, false]:
+			var touch := InputEventScreenTouch.new()
+			touch.pressed = pressed
+			touch.position = PerfStats.TAP_ZONE.get_center()
+			main._input(touch)
+	assert_false(main._perf_label.visible)
+	for i in 3:
+		tap.call()
+	assert_true(main._perf_label.visible, "세 번 탭")
+	assert_false(main.started, "메인 화면 탭으로 시작하지 않음")
+	assert_true(main._perf_label.text.begins_with("FPS"), main._perf_label.text)
+	assert_true(main._perf_label.text.contains("QUALITY 0 AUTO"))
+	for i in 3:
+		tap.call()
+	assert_false(main._perf_label.visible, "다시 세 번이면 숨김")
+	var f3 := InputEventKey.new()
+	f3.pressed = true
+	f3.keycode = KEY_F3
+	main._input(f3)
+	assert_true(main._perf_label.visible, "PC는 F3")
 	_done(main)
 
 
@@ -163,7 +202,7 @@ func test_진동을_지원하지_않으면_설정에서_숨김() -> void:
 	main.haptics = Haptics.new(false)
 	main.open_settings()
 	assert_false(main._settings._rows["VIBRATION"].is_visible_in_tree())
-	assert_eq(main._settings._rows["SHOW GUIDE"].position.y, SettingsPanel.TOP + SettingsPanel.ROW * 2, "아래 줄이 올라온다")
+	assert_eq(main._settings._rows["SHOW GUIDE"].position.y, SettingsPanel.TOP + SettingsPanel.ROW * 3, "아래 줄이 올라온다 (MUSIC·SFX·GRAPHICS 다음)")
 	main._settings.close()
 	_done(main)
 

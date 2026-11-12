@@ -106,6 +106,25 @@ func test_깨진_값은_처음_상태로_열린_목록은_줄지_않음() -> voi
 	assert_eq(SkinBook.new(PATH).unlocked, ["mint"] as Array[String])
 
 
+func test_형식_1은_점수만_반으로_열린_스킨은_그대로() -> void:
+	DirAccess.remove_absolute(PATH)
+	var file := ConfigFile.new()
+	file.set_value("meta", "version", 1)
+	file.set_value("stats", "score", 11000)
+	file.set_value("stats", "orbs", 30)
+	file.set_value("skins", "unlocked", PackedStringArray(["mint", "lemon", "night", "gold"]))
+	file.set_value("skins", "selected", "gold")
+	file.save(PATH)
+	var book := SkinBook.new(PATH)
+	assert_eq(book.stats["score"], 5500)
+	assert_eq(book.stats["orbs"], 30, "점수 말고는 그대로")
+	assert_true(book.is_unlocked("gold") and book.is_unlocked("night"), "이미 열린 스킨은 잠그지 않음")
+	assert_eq(book.selected, "gold")
+	file.load(PATH)
+	assert_eq(file.get_value("meta", "version"), 2, "바로 형식 2로 저장")
+	assert_eq(SkinBook.new(PATH).stats["score"], 5500, "다시 열어도 한 번만")
+
+
 func test_저장_형식_버전과_더_새_형식은_덮어쓰지_않음() -> void:
 	var book := _fresh()
 	book.finish_run(10, 1, 1, 1, 0)

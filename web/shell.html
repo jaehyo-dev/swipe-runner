@@ -28,6 +28,11 @@ body {
 	background-color: #05040d;
 	overflow: hidden;
 	touch-action: none;
+	/* v0.11.1: iOS에서 빠른 여러 번 탭(숨은 성능 표시)이 글자 선택·길게 누름 메뉴·확대로 먹히지 않게 */
+	-webkit-user-select: none;
+	user-select: none;
+	-webkit-touch-callout: none;
+	-webkit-tap-highlight-color: transparent;
 }
 
 #canvas {
@@ -121,6 +126,8 @@ body {
 		<div id="status-notice"></div>
 
 		<script>
+// iOS: 두 번 탭 확대·핀치 확대 제스처를 막는다 (숨은 성능 표시의 세 번 탭이 확대로 먹히지 않게). 터치 자체는 엔진이 받는다
+for (const type of ['dblclick', 'gesturestart']) document.addEventListener(type, e => e.preventDefault(), { passive: false });
 // 로딩 막대. 엔진 스크립트보다 먼저 돌아 첫 화면부터 보인다
 (function () {
 	const loading = document.getElementById('loading');

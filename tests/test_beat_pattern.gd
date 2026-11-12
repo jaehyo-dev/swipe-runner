@@ -252,9 +252,11 @@ func _assert_mixed(runs: Array) -> void:
 	assert_true(by_shape.values().max() <= 25, "쏠림 %s" % str(by_shape))
 
 
-## v0.10.1 점수 목표 (사람 모델 시드 50): 5000점 무렵 고비, 잘한 판 8000점, 10000점은 마의 구간
+## v0.10.1 난이도 목표 (사람 모델 시드 50): 5000점 무렵 고비, 잘한 판 8000점, 10000점은 마의 구간.
+## v0.11.1에서 배점만 0.5배가 되었고 난이도는 그대로라, 이 테스트는 옛 배점(점수 ÷ 0.5)으로 난이도가 v0.10.1과 같은지 지킨다
 func _score_share(runs: Array, lo: int, hi := 1 << 30) -> float:
-	return 100.0 * runs.filter(func(r: Dictionary) -> bool: return r["score"] >= lo and r["score"] < hi).size() / runs.size()
+	var old := func(r: Dictionary) -> float: return r["score"] / BestRecord.SCORE_SCALE
+	return 100.0 * runs.filter(func(r: Dictionary) -> bool: return old.call(r) >= lo and old.call(r) < hi).size() / runs.size()
 
 
 func test_보통_모델은_절반쯤_5000점에_닿고_대부분_7000점_전에_죽음() -> void:

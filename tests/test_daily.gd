@@ -122,6 +122,27 @@ func test_일반_최고_점수와_섞이지_않음() -> void:
 	assert_eq(FileAccess.get_file_as_string(BEST_PATH), "1000")
 
 
+func test_옛_오늘의_판_기록은_한_번만_반으로_연속은_그대로() -> void:
+	var old := "user://test_daily_old.cfg"
+	DirAccess.remove_absolute(PATH)
+	var file := ConfigFile.new()
+	file.set_value("best", str(D1), 9001)
+	file.set_value("tries", str(D1), 4)
+	file.set_value("streak", "count", 2)
+	file.set_value("streak", "last_day", D1)
+	file.save(old)
+	assert_true(DailyRecord.convert_old(old, PATH))
+	var r := DailyRecord.new(PATH, D1)
+	assert_eq(r.best, 4500)
+	assert_eq(r.tries, 4)
+	assert_eq(r.streak, 2)
+	file.load(PATH)
+	assert_eq(file.get_value("meta", "version"), DailyRecord.FORMAT)
+	assert_false(DailyRecord.convert_old(old, PATH), "한 번만")
+	assert_eq(DailyRecord.new(PATH, D1).best, 4500)
+	DirAccess.remove_absolute(old)
+
+
 func test_깨진_파일은_빈_기록() -> void:
 	var file := FileAccess.open(PATH, FileAccess.WRITE)
 	file.store_string("[best]\n20769=\"abc\"\n[streak]\ncount=-3\nlast_day=1.5\n")

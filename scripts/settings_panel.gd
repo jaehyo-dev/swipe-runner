@@ -1,11 +1,12 @@
 class_name SettingsPanel
 extends Control
 ## 설정 (메인 화면 톱니, 일시정지의 SETTINGS): 화면 가운데 반투명 패널.
-## MUSIC·SFX 크기 슬라이더, VIBRATION 켜기/끄기(지원하지 않는 기기는 숨김), SHOW GUIDE(다음 3판 안내), DONE.
+## MUSIC·SFX 크기 슬라이더, VIBRATION 켜기/끄기(지원하지 않는 기기는 숨김), GRAPHICS(AUTO → HIGH → LOW), SHOW GUIDE(다음 3판 안내), DONE.
 ## 글자는 메인 화면과 같은 Poppins ExtraLight, 연보라 포인트. 값은 바로 적용하고 손을 떼거나 닫을 때 저장한다.
 ## 트리가 일시정지여도 움직인다 (process_mode ALWAYS). 누름은 여기서 자리로 판단한다.
 
 signal closed
+signal graphics_changed(setting: String)
 
 const WIDTH := 600.0
 const ROW := 96.0
@@ -23,6 +24,7 @@ var music_slider: UiSlider
 var sfx_slider: UiSlider
 var vibration_value: Label
 var guide_value: Label
+var graphics_value: Label
 var done_label: Label
 
 var _rows := {}       # 이름 -> 누르는 줄 (Control)
@@ -58,6 +60,7 @@ func _init() -> void:
 	music_slider = _slider_row("MUSIC")
 	sfx_slider = _slider_row("SFX")
 	vibration_value = _value_row("VIBRATION")
+	graphics_value = _value_row("GRAPHICS")
 	guide_value = _value_row("SHOW GUIDE")
 	done_label = TitleScreen.text_label("Done", "DONE", LABEL_SIZE, Color.WHITE)
 	panel.add_child(done_label)
@@ -110,7 +113,7 @@ func open(data: SaveData, buzz: Haptics) -> void:
 	sfx_slider.value = save.sfx
 	_rows["VIBRATION"].visible = haptics.supported
 	var y := TOP
-	for key in ["MUSIC", "SFX", "VIBRATION", "SHOW GUIDE"]:
+	for key in ["MUSIC", "SFX", "VIBRATION", "GRAPHICS", "SHOW GUIDE"]:
 		var row: Control = _rows[key]
 		if row.visible:
 			row.position = Vector2(0.0, y)
@@ -129,13 +132,14 @@ func open(data: SaveData, buzz: Haptics) -> void:
 
 func _show_values() -> void:
 	vibration_value.text = "ON" if save.vibration else "OFF"
+	graphics_value.text = save.graphics.to_upper()
 	guide_value.text = "NEXT %d RUNS" % save.guide_left if save.guide_left > 0 else ""
 
 
 func close() -> void:
 	_drag = null
 	save.save()
-	print("SETTINGS 음악 %.2f 효과음 %.2f 진동 %s 안내 %d판" % [save.music, save.sfx, save.vibration, save.guide_left])  # 저장 확인용 한 줄
+	print("SETTINGS 음악 %.2f 효과음 %.2f 진동 %s 그래픽 %s 안내 %d판" % [save.music, save.sfx, save.vibration, save.graphics, save.guide_left])  # 저장 확인용 한 줄
 	visible = false
 	closed.emit()
 
@@ -175,6 +179,11 @@ func tap(point: Vector2, index := 0) -> void:
 		haptics.enabled = save.vibration
 		save.save()
 		haptics.fire(Haptics.Event.PERFECT)  # 켜면 바로 한 번 짧게 울려 알려 준다
+	elif _hit("GRAPHICS", point):
+		var settings := QualityGuard.SETTINGS
+		save.graphics = settings[(settings.find(save.graphics) + 1) % settings.size()]
+		save.save()
+		graphics_changed.emit(save.graphics)
 	elif _hit("SHOW GUIDE", point):
 		save.replay_guide()
 	elif _hit("DONE", point) or not panel.get_global_rect().has_point(point):

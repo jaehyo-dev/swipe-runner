@@ -70,7 +70,21 @@ func test_페이지를_연_뒤_탭에서_돌아온_뒤_화면_전환_뒤_5초는
 	assert_eq(_feed(guard, 0.025, 0.2), 1, "그 뒤 3초 연속이면 낮춤")
 
 
-func test_빛_줄기가_가장_먼저_줄어듦() -> void:
-	assert_eq(QualityGuard.LEVELS, 4, "줄기, 반사, MSAA, 빛 번짐")
+func test_빛_줄기는_반사_다음에_줄어듦() -> void:
+	assert_eq(QualityGuard.LEVELS, 4, "반사, 줄기, 넓은 빛 번짐, MSAA")
 	assert_eq(QualityGuard.streaks(48.0, 0), 48)
-	assert_true(QualityGuard.streaks(48.0, 1) < 48, "1단계 줄기")
+	assert_eq(QualityGuard.streaks(48.0, 1), 48, "1단계는 반사만")
+	assert_true(QualityGuard.streaks(48.0, 2) < 48, "2단계 줄기")
+
+
+func test_기기_배율_2_0까지만_그림() -> void:
+	var s := QualityGuard.render_scale(Vector2i(1179, 2556), 3.0)  # 아이폰 15 Pro
+	assert_eq(Vector2i(roundi(1179 * s), roundi(2556 * s)), Vector2i(786, 1704))
+	assert_eq(QualityGuard.render_scale(Vector2i(780, 1688), 2.0), 1.0, "배율 2는 그대로")
+	assert_eq(QualityGuard.render_scale(Vector2i(1280, 720), 1.0), 1.0)
+
+
+func test_설정_GRAPHICS() -> void:
+	assert_eq(QualityGuard.level_for("auto", 2), 2)
+	assert_eq(QualityGuard.level_for("high", 2), 0)
+	assert_eq(QualityGuard.level_for("low", 0), QualityGuard.LEVELS)

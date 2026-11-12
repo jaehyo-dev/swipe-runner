@@ -126,7 +126,7 @@ func test_시간이_가면_거리가_늘고_장애물_노드가_생기고_지나
 	await wait_frames()  # 지워진 노드(queue_free)가 정리될 때까지
 	assert_eq(main.travel, RunLogic.SPEED * 12.0)
 	var label: Label = main.find_child("ScoreLabel", true, false)
-	assert_eq(label.text, "180")
+	assert_eq(label.text, "90", "180m × 0.5점")
 	assert_eq(main._obstacles.size(), main.field.items.size(), "화면의 장애물 수 = 살아 있는 장애물 수")
 	main.queue_free()
 
@@ -178,8 +178,8 @@ func test_화면에_점수와_버전_안내_글자만_있음() -> void:
 	assert_eq(labels.size(), 9, "점수 + 최고 + (숨겨진) 다시 시작 안내·배수·PERFECT 한 줄·게임 오버 한 줄·SHARE·NEW SKIN·EQUIP")
 	assert_eq(main._title.find_children("*", "Label", true, false).size(), 10, "메인 화면: 제목 + BEST + 안내 세 줄(기호는 선으로 그림) + 스킨 이름 + 시작 안내 + DAILY 버튼, 오늘의 판: 번호 + 기록 줄")
 	assert_eq(main._pause_menu.find_children("*", "Label", true, false).size(), 5, "일시정지: PAUSED + 버튼 셋 + 숫자")
-	assert_eq(main._settings.find_children("*", "Label", true, false).size(), 8, "설정: 제목 + 줄 이름 넷 + 값 둘 + DONE")
-	assert_eq(main.find_children("*", "Label", true, false).size(), 20 + 5 + 8, "+ 버전")
+	assert_eq(main._settings.find_children("*", "Label", true, false).size(), 10, "설정: 제목 + 줄 이름 다섯 + 값 셋 + DONE")
+	assert_eq(main.find_children("*", "Label", true, false).size(), 20 + 5 + 10 + 1, "+ 버전 + 숨은 성능 표시")
 	assert_false(main.find_child("ShareButton", true, false).visible, "SHARE 처음엔 숨김")
 	assert_false(main._pause_menu.visible or main._settings.visible, "일시정지·설정은 처음엔 숨김")
 	for hidden in ["MultiplierLabel", "StatsLabel", "RestartLabel", "PerfectLabel"]:
@@ -699,7 +699,7 @@ func test_첫_판에는_최고_줄을_숨기고_게임_오버에_거리를_보�
 	assert_false(_best_label(main).visible, "기록 없음")
 	_run_past(main, 25.0)
 	assert_false(_best_label(main).visible, "첫 판 내내 숨김")
-	assert_true(main.record.best >= 25)
+	assert_true(main.record.best >= 12, "25m × 0.5점")
 	_place(main, _add_obstacle(main), 0.0)
 	main.advance(0.0)
 	assert_true(main.dead)
@@ -717,10 +717,10 @@ func test_최고를_넘는_순간_숫자가_커졌다_돌아오고_NEW_BEST로_�
 	var old: int = main.record.best
 	assert_eq(_best_label(main).text, "BEST %d" % old)
 	assert_true(_best_label(main).visible)
-	_run_past(main, old - 1.0)
+	_run_past(main, (old - 1.0) / main.score.data()["distance_points"])  # 1m에 0.5점
 	assert_eq(_best_label(main).text, "BEST %d" % old, "넘기 전")
 	assert_eq(main._score_label.scale, Vector2.ONE)
-	_run_past(main, old + 1.0)
+	_run_past(main, (old + 1.0) / main.score.data()["distance_points"])
 	assert_eq(_best_label(main).text, "NEW BEST")
 	assert_eq(FileAccess.get_file_as_string(TEST_BEST).to_int(), main.record.best, "게임이 끝나기 전에 저장")
 	# 실제 시간을 기다리면 느린 CI에서 흔들리므로 트윈을 직접 진행한다
@@ -731,6 +731,33 @@ func test_최고를_넘는_순간_숫자가_커졌다_돌아오고_NEW_BEST로_�
 	_place(main, _add_obstacle(main), 0.0)
 	main.advance(0.0)
 	assert_eq(_best_label(main).text, "NEW BEST %d" % main.record.best)
+	main.queue_free()
+
+
+func test_10000점을_넘는_순간_말랑하고_빛나며_그_판은_연보라() -> void:
+	var main := _make_main()
+	await wait_frames()
+	main.score.points = ScoreBoard.MILESTONE - 1.0 - int(main.travel * 0.5)
+	main.field.items.clear()
+	main.advance(0.0)
+	assert_false(main._over_milestone, "9999점")
+	assert_eq(main._score_label.label_settings.font_color, Color.WHITE)
+	_run_past(main, main.travel + 4.0)
+	assert_true(main._over_milestone, "넘음")
+	assert_eq(main._score_label.label_settings.font_color, main.MILESTONE_COLOR)
+	main._pop.custom_step(main.POP_UP)
+	assert_true(is_equal_approx(main._score_label.scale.x, main.MILESTONE_POP), "말랑 %f" % main._score_label.scale.x)
+	main._milestone_tween.custom_step(main.MILESTONE_GLOW_TIME + 0.01)
+	assert_true(is_equal_approx(main._score_label.label_settings.shadow_color.a, 0.3), "빛은 옅게 남음")
+	var pops: Tween = main._pop
+	_run_past(main, main.travel + 4.0)
+	assert_true(main._pop == pops, "한 판에 한 번만")
+	main.dead = true
+	main.restart()
+	assert_false(main._over_milestone, "다음 판은 흰 숫자부터")
+	assert_eq(main._score_label.label_settings.font_color, Color.WHITE)
+	assert_eq(ScoreBoard.share_text(6, 9999), "SWIPE PULSE Daily #6 — 9999")
+	assert_eq(ScoreBoard.share_text(6, 10000), "SWIPE PULSE Daily #6 — 10000 · 10K+")
 	main.queue_free()
 
 
@@ -777,8 +804,8 @@ func test_방울을_먹으면_점수와_소리_놓치면_콤보가_끊기고_배
 	_put_orb(main, 1)
 	main.advance(STEP)
 	assert_eq(main.score.orbs, 1)
-	assert_eq(main.score.points, 130, "10번째 방울은 x2")
-	assert_eq(main._score_label.text, str(int(main.travel) + 130))
+	assert_eq(main.score.points, 65.0, "10번째 방울은 x2 (32.5 × 2)")
+	assert_eq(main._score_label.text, str(int(main.travel * 0.5 + 65.0)))
 	assert_true(main._mult_label.visible, "x2 표시")
 	assert_eq(main._mult_label.text, "×2")
 	assert_true("orb" in played, "톡")
@@ -849,10 +876,10 @@ func test_PERFECT는_점수_아래_글자와_더해진_점수_세어_올라가�
 	assert_false(main.dead, "피함")
 	assert_eq(main.score.close, 1, "도착 0.15초 전 이동")
 	assert_true(main._perfect_label.visible)
-	assert_eq(main._perfect_label.text, "PERFECT  +100", "더해진 점수는 같은 줄 오른쪽")
+	assert_eq(main._perfect_label.text, "PERFECT  +50", "더해진 점수는 같은 줄 오른쪽")
 	assert_true(main._perfect_label.label_settings == main._best_label.label_settings, "BEST와 같은 글꼴·크기·색")
 	assert_eq(main._perfect_label.offset_top - main.BEST_TOP, main.BEST_TOP - main.MULT_TOP, "BEST 바로 아래, 배수-BEST와 같은 줄 간격")
-	assert_true(shown.min() < 0 and shown.min() > -100, "점수 숫자가 세어 올라가는 중: %s" % str(shown))
+	assert_true(shown.min() < 0 and shown.min() > -50, "점수 숫자가 세어 올라가는 중: %s" % str(shown))
 	_run(main, main.COUNT_TIME)
 	assert_eq(main._score_label.text, str(main.score.total(main.travel)), "0.3초 동안 다 올라감")
 	assert_true(item.has("passed"))

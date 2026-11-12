@@ -28,7 +28,6 @@ const FLOOR_HAZE_FROM := 0.4  # 바닥 안개 띠는 안개 거리의 이 비율
 const FOG_DENSITY := 0.025   # 안개 거리 약 30~45에서 하늘 아래 먼 세상을 덮는 값. 세상 전체의 안개. 장애물만 안개를 끄고 직접 섞는다 (block.gdshader)
 const GLOW_INTENSITY := 1.3  # 얇은 관에서도 바깥으로 빛이 번지게
 const GLOW_WIDE := 0.6       # 넓게 퍼지는 번짐 층
-const GLOW_LOW := 0.5        # 프레임이 밀릴 때 낮춘 빛 번짐 세기
 
 const RESTART_DELAY := 0.5
 const OBSTACLE_FADE := 0.15  # 다시 시작할 때 앞 판 장애물이 작아져 사라지는 시간(초): 한 프레임에 툭 없어지지 않게
@@ -68,6 +67,11 @@ const FOV_FAST := 68.0
 const POP_SCALE := 1.22      # 새 기록 순간 거리 숫자가 커지는 배율 (말랑)
 const POP_UP := 0.08
 const POP_DOWN := 0.32
+## 10000점 (ScoreBoard.MILESTONE)을 넘는 순간: 더 크게 말랑 + 연보라 빛이 확 번졌다가 옅게 남고, 숫자는 그 판 동안 연보라
+const MILESTONE_POP := 1.32
+const MILESTONE_GLOW_TIME := 0.6
+const MILESTONE_COLOR := Color("e4dbff")   # 숫자 색: 흰색에 가까운 연보라 (방울 테 c9b8ff보다 밝게, 읽기 쉽게)
+const MILESTONE_HALO := Color("c9b8ff")    # 숫자 둘레 빛 = 방울 테 색
 ## 빛 방울과 점수 연출 (ART_BIBLE.md 13)
 const ORB_MAX := 48            # 방울 풀: z -85~+6에 들어오는 방울 수보다 넉넉하다 (반 박 간격 줄, 줄 사이 빈 박)
 const ORB_RADIUS := 0.21       # 지름 0.42 (보이는 크기만, 먹기 범위는 OrbTrail 그대로)
@@ -125,6 +129,7 @@ const PREVIEW_SIZE := Vector2(150.0, 130.0)
 ## 자동 낮춤이 잘못 걸렸다 (review/v0.9.0/quality.md: rAF 16.8ms인 2초 동안 _process 간격 99% 25.8ms)
 const FRAMES_JS := "window.gameFrames = []; { let last = 0; const tick = t => { if (last) window.gameFrames.push(t - last); last = t; requestAnimationFrame(tick); }; requestAnimationFrame(tick); }"
 const FRAMES_POLL := 30      # 이 프레임마다 모인 간격을 한 번에 가져온다
+const PERF_REFRESH := 0.25   # 성능 표시 글자를 바꾸는 간격(초)
 
 ## 0이면 실행할 때마다 무작위. 테스트에서는 0이 아닌 값을 줘서 장애물 레인을 고정한다.
 @export var seed_value := 0
@@ -187,6 +192,14 @@ var _row_segments := 0            # 대시 줄을 쓸 때의 사다리 구간 �
 var _row_ladder: MusicLadder
 var _quality := QualityGuard.new()
 var _effect_level := 0  # 지금 적용된 효과 단계
+var phone := false        # 누르는 화면(휴대폰·태블릿): MSAA를 처음부터 2x로
+var dpr := 1.0            # 기기 배율 (devicePixelRatio)
+var perf := PerfStats.new()  # 숨은 성능 표시의 프레임 통계
+var _perf_label: Label
+var _dev_points := 0.0
+var _used_slots := {}         # _sync_pieces가 다시 쓰는 종류별 칸 수
+var _far_first := _is_farther
+var _perf_wait := 0.0
 var _title: TitleScreen
 var _hud: Control          # 게임 중 글자(점수·BEST·배수·PERFECT·게임 오버). 메인 화면에서는 숨는다
 var _home: UiIcon          # 게임 오버 왼쪽 위 집 버튼
@@ -209,6 +222,8 @@ var _camera: Camera3D
 var _score_label: Label
 var _best_label: Label
 var _pop: Tween
+var _over_milestone := false  # 이번 판이 10000점을 넘었나
+var _milestone_tween: Tween
 var _scroll := 0.0
 var _music_t := 0.0  # 박자 기준 시간
 var _orbs: MultiMesh
@@ -281,6 +296,8 @@ func _ready() -> void:
 	if best_path == BestRecord.PATH:  # 실제 게임만: 이름이 바뀌기 전 폴더의 기록을 옮겨 온다 (테스트·도구는 임시 파일)
 		var copied := SaveData.migrate(SaveData.old_user_dir(), OS.get_user_data_dir())
 		print("SAVE %s (옛 폴더에서 옮긴 파일 %d개)" % [OS.get_user_data_dir(), copied])  # 저장 위치 확인용 한 줄
+		# v0.11.1: 점수가 0.5배 → 옛 기록을 새 파일로 한 번만 반으로 옮긴다 (스킨 진행도는 SkinBook이 형식 1 → 2로)
+		print("SCORE V2 best %s daily %s" % [BestRecord.convert_old(), DailyRecord.convert_old()])
 	normal_record = BestRecord.new(best_path)
 	record = normal_record
 	daily = DailyRecord.new(DailyRecord.DAILY_PATH if best_path == BestRecord.PATH else best_path.get_basename() + "_daily.cfg", today())
@@ -307,6 +324,9 @@ func _ready() -> void:
 	add_child(runner)
 	_build_ui()
 	if OS.has_feature("web"):
+		phone = JavaScriptBridge.eval("matchMedia('(pointer: coarse)').matches") == true
+	apply_graphics(save.graphics)
+	if OS.has_feature("web"):
 		_dev_view()
 	skin_view = SkinBook.index_of(skins.selected)
 	_apply_skin_view()
@@ -327,6 +347,26 @@ func _process(delta: float) -> void:
 	_sync_orbs()
 	if OS.has_feature("web") and warmed:
 		_watch_frames()
+	elif not OS.has_feature("web"):
+		perf.push(delta)
+	if _perf_label.visible:
+		_perf_wait -= delta
+		if _perf_wait <= 0.0:
+			_perf_wait = PERF_REFRESH
+			_show_perf()
+
+
+## 숨은 성능 표시: 왼쪽 위 빠른 세 번 탭(PC는 F3)으로 켜고 끈다
+func toggle_perf() -> void:
+	_perf_label.visible = not _perf_label.visible
+	_perf_wait = 0.0
+	if _perf_label.visible:
+		_show_perf()
+
+
+func _show_perf() -> void:
+	var render := Vector2i(Vector2(DisplayServer.window_get_size()) * get_viewport().scaling_3d_scale)
+	_perf_label.text = perf.text(render, _effect_level, save.graphics, dpr)
 
 
 ## 브라우저가 그린 프레임 간격으로 밀림을 판단해 효과를 한 단계 낮춘다 (기준은 QualityGuard)
@@ -334,29 +374,37 @@ func _watch_frames() -> void:
 	if Engine.get_process_frames() % FRAMES_POLL != 0:
 		return
 	for ms in str(JavaScriptBridge.eval("window.gameFrames.splice(0).join()")).split(",", false):
-		if _quality.push(ms.to_float() / 1000.0):
+		perf.push(ms.to_float() / 1000.0)
+		if save.graphics == "auto" and _quality.push(ms.to_float() / 1000.0):
 			apply_quality(_quality.level)
 			print("QUALITY %d %.1f %s" % [_quality.level, Time.get_ticks_msec() / 1000.0, _quality.reason])  # 언제, 왜 낮췄는지
 
 
-## 효과 단계: 1 빛 줄기 줄이기, 2 반사 끄기, 3 MSAA 2x, 4 빛 번짐 낮추기. 이 단계까지 전부 적용한다.
+## 효과 단계 (QualityGuard.LEVELS): 1 반사 끄기, 2 빛 줄기 줄이기, 3 넓은 빛 번짐 층 끄기, 4 MSAA 2x. 이 단계까지 전부 적용하고 위 단계는 되돌린다 (설정으로 올릴 수 있다)
 func apply_quality(level: int) -> void:
 	_effect_level = level
 	var t := _tint
 	_tint = -1.0
 	_apply_tint(t)  # 줄기 수는 진하기 값과 함께 정해진다
 	for kind in _kind_meshes:
-		_kind_meshes[kind]["reflect"].set_shader_parameter("reflect_on", 0.0 if level >= 2 else 1.0)
-	runner.set_reflection(level < 2)
-	if level >= 3:
-		get_viewport().msaa_3d = Viewport.MSAA_2X
-	if level >= 4:
-		_env.glow_intensity = GLOW_LOW
+		_kind_meshes[kind]["reflect"].set_shader_parameter("reflect_on", 0.0 if level >= 1 else 1.0)
+	runner.set_reflection(level < 1)
+	_env.set_glow_level(3, 0.0 if level >= 3 else GLOW_WIDE)
+	get_viewport().msaa_3d = Viewport.MSAA_2X if level >= 4 or phone else Viewport.MSAA_4X
+
+
+## 설정 GRAPHICS를 적용한다. AUTO로 돌아오면 자동 단계를 처음부터 다시 판단한다
+func apply_graphics(setting: String) -> void:
+	if setting == "auto":
+		_quality = QualityGuard.new()
+	apply_quality(QualityGuard.level_for(setting, _quality.level))
 
 
 ## 3D만 낮은 해상도로 그리고 늘린다. 글자는 원래 해상도 그대로다.
 func _fit_render_scale() -> void:
-	get_viewport().scaling_3d_scale = QualityGuard.render_scale(DisplayServer.window_get_size())
+	if OS.has_feature("web"):  # 브라우저 확대·창 옮김으로 바뀔 수 있다
+		dpr = float(JavaScriptBridge.eval("window.devicePixelRatio || 1"))
+	get_viewport().scaling_3d_scale = QualityGuard.render_scale(DisplayServer.window_get_size(), dpr)
 
 
 ## 메인 화면의 시작 입력: 음악 0초와 함께 세상이 출발한다. 제목은 흐려지고 카메라가 게임 자리로 들어간다.
@@ -463,6 +511,8 @@ func _show_score(delta := 0.0) -> void:
 	_score_label.text = str(total - ceili(_count_lag))
 	if record.update(total):
 		_on_new_record()
+	if not _over_milestone and total >= ScoreBoard.MILESTONE:
+		_on_milestone()
 
 
 ## 이번 프레임에 먹은 방울·끊긴 콤보·아슬아슬의 소리와 연출
@@ -765,7 +815,7 @@ func _sync_pieces() -> void:
 	if not _pieces_dirty and _animating == 0:
 		return
 	_pieces_dirty = false
-	var used := {}
+	var used := _used_slots  # v0.11.1: 프레임마다 새 사전을 만들지 않는다
 	for kind in _kind_meshes:
 		used[kind] = 0
 	for piece: Piece in _pieces_far_first():
@@ -790,8 +840,12 @@ func _sync_pieces() -> void:
 ## 반투명 기둥은 MultiMesh 안의 순서대로 쌓이므로 먼 것부터 쓴다
 func _pieces_far_first() -> Array:
 	var pieces: Array = _obstacles.values() + _leaving
-	pieces.sort_custom(func(a: Piece, b: Piece) -> bool: return a.position.z < b.position.z)
+	pieces.sort_custom(_far_first)  # 비교 함수는 한 번만 만든다 (장애물이 움직이는 동안 매 프레임)
 	return pieces
+
+
+static func _is_farther(a: Piece, b: Piece) -> bool:
+	return a.position.z < b.position.z
 
 
 ## 부딪힌 뒤: 세상이 아주 잠깐 느려졌다 멈추고, 주인공은 충돌 모션을 이어 간다.
@@ -911,6 +965,8 @@ func _reset_round() -> void:
 	_reset_multiplier()
 	_hide_perfect()
 	_score_label.text = "0"
+	_set_milestone_look(false)
+	score.points = _dev_points
 
 
 ## 게임 오버의 집 버튼: 0.4초 페이드로 메인 화면에 간다
@@ -1111,9 +1167,9 @@ func _refresh_daily() -> void:
 	_title.set_daily(DailyRecord.number(d), daily.best, daily.streak_on(d), DailyRecord.countdown(now_unix()))
 
 
-## SHARE: 휴대폰은 공유 창(Web Share), 아니면 클립보드에 "SWIPE PULSE Daily #12 — 5320 주소"를 복사하고 COPIED를 0.8초
+## SHARE: 휴대폰은 공유 창(Web Share), 아니면 클립보드에 "SWIPE PULSE Daily #12 — 5320 주소"(10000점 이상은 " · 10K+")를 복사하고 COPIED를 0.8초
 func share() -> void:
-	var text := "SWIPE PULSE Daily #%d — %d" % [DailyRecord.number(daily.day), _final_score]
+	var text := ScoreBoard.share_text(DailyRecord.number(daily.day), _final_score)
 	shared_text = text + " " + GAME_URL
 	var how := "copy"
 	if OS.has_feature("web"):
@@ -1140,10 +1196,43 @@ func _on_new_record() -> void:
 	_pop.tween_property(_score_label, "scale", Vector2.ONE, POP_DOWN).set_trans(Tween.TRANS_BACK).set_ease(Tween.EASE_OUT)
 
 
+## 10000점을 넘은 순간: 숫자가 크게 말랑하고 둘레 빛이 확 번졌다 옅어진다. 그 뒤로 이 판은 연보라 숫자 + 옅은 빛
+func _on_milestone() -> void:
+	_set_milestone_look(true)
+	var settings := _score_label.label_settings
+	_score_label.pivot_offset = _score_label.size * 0.5
+	if _pop:
+		_pop.kill()
+	_pop = create_tween()
+	_pop.tween_property(_score_label, "scale", Vector2.ONE * MILESTONE_POP, POP_UP).set_trans(Tween.TRANS_SINE).set_ease(Tween.EASE_OUT)
+	_pop.tween_property(_score_label, "scale", Vector2.ONE, POP_DOWN).set_trans(Tween.TRANS_BACK).set_ease(Tween.EASE_OUT)
+	_milestone_tween = create_tween()
+	_milestone_tween.tween_property(settings, "shadow_color", Color(MILESTONE_HALO, 0.3), MILESTONE_GLOW_TIME).from(Color(MILESTONE_HALO, 1.0)).set_ease(Tween.EASE_OUT)
+
+
+## 점수 숫자 모양: 보통(흰색) / 10000점을 넘은 판(연보라 + 둘레 빛). 둘레 빛은 글자 그림자를 크게 번지게 해 그린다
+func _set_milestone_look(on: bool) -> void:
+	_over_milestone = on
+	if _milestone_tween:
+		_milestone_tween.kill()
+	var settings := _score_label.label_settings
+	settings.font_color = MILESTONE_COLOR if on else Color.WHITE
+	settings.shadow_size = 18 if on else 1
+	settings.shadow_offset = Vector2.ZERO
+	settings.shadow_color = Color(MILESTONE_HALO, 0.3) if on else Color(0, 0, 0, 0)
+
+
 func _input(event: InputEvent) -> void:
 	if (not started and not prewarmed) or _going_home or paused or _settings.visible:  # 가림막·페이드·일시정지·설정 뒤의 입력은 받지 않는다
 		return
 	var pressed: bool = (event is InputEventScreenTouch or event is InputEventKey) and event.pressed
+	if event is InputEventScreenTouch and pressed and PerfStats.TAP_ZONE.has_point(event.position):  # 성능 표시 자리: 시작·다시 시작·스와이프로 쓰지 않는다
+		if perf.tap(Time.get_ticks_msec() / 1000.0):
+			toggle_perf()
+		return
+	if event is InputEventKey and pressed and event.keycode == KEY_F3 and not event.echo:
+		toggle_perf()
+		return
 	if not started:
 		_menu_input(event, pressed)
 		return
@@ -1183,7 +1272,7 @@ func _input(event: InputEvent) -> void:
 
 
 ## 화면 확인 기록(review/)용 주소 값. 쓰면 이 창에서는 스킨 진행도를 저장하지 않는다.
-## ?skin=lemon 은 잠겨 있어도 그 스킨으로, ?skin=all 은 모두 열린 것처럼, ?orbs=499 는 방울 진행도를 그 값으로 (NEW SKIN 캡처), ?quality=4 는 효과 단계를 그만큼 낮춘다, ?slow=0.1 은 시간 배율
+## ?points=9990 은 판마다 그 점수에서 시작, ?skin=lemon 은 잠겨 있어도 그 스킨으로, ?skin=all 은 모두 열린 것처럼, ?orbs=499 는 방울 진행도를 그 값으로 (NEW SKIN 캡처), ?quality=4 는 효과 단계를 그만큼 낮춘다, ?slow=0.1 은 시간 배율
 func _dev_view() -> void:
 	var query := func(key: String) -> String: return str(JavaScriptBridge.eval("new URLSearchParams(location.search).get('%s') || ''" % key))
 	var dev_skin: String = query.call("skin")
@@ -1199,6 +1288,9 @@ func _dev_view() -> void:
 		skins.selected = dev_skin
 	var level := int(query.call("quality"))
 	var slow := float(query.call("slow"))
+	_dev_points = float(query.call("points"))  # ?points=9990: 판마다 이 점수에서 시작 (10000점 연출 캡처). 기록은 저장되지만 이 창의 user://만
+	if _dev_points > 0.0:
+		skins._read_only = true
 	if slow > 0.0:
 		Engine.time_scale = slow  # GIF 프레임용: 헤드리스 캡처가 느려 게임을 그만큼 느리게 돌린다
 	if level > 0:
@@ -1921,8 +2013,25 @@ func _build_ui() -> void:
 	_pause_menu.home_pressed.connect(_on_pause_home)
 	_pause_menu.settings_pressed.connect(open_settings)
 	root.add_child(_pause_menu)
+	# 숨은 성능 표시: 메인 화면·플레이·게임 오버 어디서든 (점수 글자 층과 따로, 맨 위)
+	var perf_layer := CanvasLayer.new()
+	perf_layer.layer = 50
+	add_child(perf_layer)
+	_perf_label = Label.new()
+	_perf_label.name = "PerfLabel"
+	_perf_label.position = Vector2(PerfStats.TAP_ZONE.position.x, 24.0)
+	_perf_label.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	var ps := LabelSettings.new()
+	ps.font_size = 22
+	ps.font_color = Color(0.85, 1.0, 0.9)
+	ps.outline_size = 6
+	ps.outline_color = Color(0, 0, 0, 0.85)
+	_perf_label.label_settings = ps
+	_perf_label.visible = false
+	perf_layer.add_child(_perf_label)
 	_settings = SettingsPanel.new()
 	_settings.closed.connect(_on_settings_closed)
+	_settings.graphics_changed.connect(apply_graphics)
 	root.add_child(_settings)
 	var top := CanvasLayer.new()
 	top.layer = 50

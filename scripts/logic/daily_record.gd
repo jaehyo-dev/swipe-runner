@@ -5,7 +5,9 @@ extends BestRecord
 ## 기록은 일반 최고 점수(BestRecord.PATH)와 다른 파일: 날짜별 최고 점수·도전 횟수, 연속 참여(STREAK)와 마지막으로 한 날.
 ## 판은 시작한 날짜의 기록이다: 플레이 중에 날짜가 바뀌어도 다음 start()까지 day는 그대로다.
 
-const DAILY_PATH := "user://daily.cfg"
+const DAILY_PATH := "user://daily_v2.cfg"  # v0.11.1: 점수 0.5배. [meta] version = 2
+const OLD_DAILY_PATH := "user://daily.cfg"
+const FORMAT := 2
 const DAY := 86400
 const FIRST_DAY := 20769  # 2026-11-12 (UTC, 1970-01-01부터 센 날) = DAILY #1
 const MOD := 1 << 31
@@ -43,6 +45,20 @@ func view(today: int) -> void:
 	previous = best
 
 
+## 옛 오늘의 판 기록을 새 점수로 한 번만 옮긴다 (날짜별 최고 × 0.5, 도전 횟수·연속은 그대로). 옛 파일은 지우지 않는다. 옮겼으면 true
+static func convert_old(old_path := OLD_DAILY_PATH, new_path := DAILY_PATH) -> bool:
+	var file := ConfigFile.new()
+	if FileAccess.file_exists(new_path) or file.load(old_path) != OK:
+		return false
+	if file.has_section("best"):
+		for key in file.get_section_keys("best"):
+			var value: Variant = file.get_value("best", key)
+			if value is int:
+				file.set_value("best", key, int(maxi(value, 0) * SCORE_SCALE))
+	file.set_value("meta", "version", FORMAT)
+	return BestRecord.write_atomic(new_path, file.encode_to_text())
+
+
 ## 한 판을 시작한다: 오늘 도전 횟수 +1, 연속 참여는 어제 했으면 +1·오늘 이미 했으면 그대로·빠졌으면 1
 func start(today: int) -> void:
 	if today != day:
@@ -59,6 +75,7 @@ func start(today: int) -> void:
 					_file.erase_section_key(section, key)
 	_file.set_value("streak", "count", streak)
 	_file.set_value("streak", "last_day", last_day)
+	_file.set_value("meta", "version", FORMAT)
 	_file.save(_path)  # 저장소가 막힌 브라우저에서도 게임은 계속된다
 	begin_run()
 
@@ -66,6 +83,7 @@ func start(today: int) -> void:
 ## 최고 점수는 이번 판을 시작한 날짜(day)에 쓴다
 func _write() -> bool:
 	_file.set_value("best", str(day), best)
+	_file.set_value("meta", "version", FORMAT)
 	return _file.save(_path) == OK
 
 
