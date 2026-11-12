@@ -20,10 +20,11 @@ var _saved := 0
 var _saved_at := -INF
 
 
-func _init(path := PATH) -> void:
+## start: 0 이상이면 파일을 읽지 않고 이 값에서 시작한다 (오늘의 판 DailyRecord)
+func _init(path := PATH, start := -1) -> void:
 	_path = path
 	# 깨진 파일은 기록 없음으로 본다
-	best = maxi(FileAccess.get_file_as_string(path).strip_edges().to_int(), 0)
+	best = start if start >= 0 else maxi(FileAccess.get_file_as_string(path).strip_edges().to_int(), 0)
 	_saved = best
 	previous = best
 
@@ -51,9 +52,15 @@ func update(distance: int, now := Time.get_ticks_msec() / 1000.0) -> bool:
 func save() -> void:
 	if best == _saved:
 		return
+	if _write():
+		_saved = best
+
+
+## 파일에 쓴다. 못 쓰면 false (저장소가 막힌 브라우저(시크릿 창 등)에서도 게임은 계속된다)
+func _write() -> bool:
 	var file := FileAccess.open(_path, FileAccess.WRITE)
-	if file == null:  # 저장소가 막힌 브라우저(시크릿 창 등)에서도 게임은 계속된다
-		return
+	if file == null:
+		return false
 	file.store_string(str(best))
 	file.close()
-	_saved = best
+	return true

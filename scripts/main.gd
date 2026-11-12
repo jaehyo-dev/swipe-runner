@@ -39,6 +39,15 @@ const PREWARM_MAX_FRAMES := 120  # 아주 느린 기기도 언젠가는 화면�
 const WARM_MAX_FRAMES := 20      # 2단계 한 묶음에 쓰는 최대 프레임: 셰이더는 첫 프레임에 만들어지고, 느린 기기도 시작을 오래 기다리지 않게
 const PREWARM_TINY := 0.002     # 메인 화면 뒤에서 미리 그릴 때의 크기: 그리기는 하지만 한 화소도 안 된다
 const DRIFT_TIME := 3.0
+const GAME_URL := "https://jaehyo-dev.github.io/swipe-runner/"
+const COPIED_TIME := 0.8
+## 휴대폰(누르는 화면)에 공유 창이 있으면 그걸 쓰고 "share", 아니면 클립보드에 복사하고 "copy"
+const SHARE_JS := """(() => { const t = %s, u = %s;
+if (navigator.share && matchMedia('(pointer: coarse)').matches) { navigator.share({text: t, url: u}).catch(() => {}); return 'share'; }
+const all = t + ' ' + u;
+if (navigator.clipboard && window.isSecureContext) { navigator.clipboard.writeText(all).catch(() => {}); return 'copy'; }
+const area = document.createElement('textarea'); area.value = all; document.body.appendChild(area); area.select();
+document.execCommand('copy'); area.remove(); return 'copy'; })()"""
 const RESUME_WAIT_FRAMES := 20   # 이어 할 때 소리가 다시 돌기를 기다리는 최대 프레임 (못 돌아도 게임은 이어진다)
 const STAGE_GLOW_TIME := 0.3  # 음악 단계가 오를 때 난간과 빛 대시가 밝아지는 시간(초)
 ## 무대 (ART_BIBLE.md 10). 밝기 순서: 주인공 > 장애물 기호 > 테두리·파란 기둥 > 난간 > 빛 줄기 > 바닥·하늘
@@ -119,7 +128,12 @@ var lane := RunLogic.START_LANE
 var travel := 0.0
 ## 지금 세상이 다가오는 속도
 var speed := RunLogic.SPEED
-var record: BestRecord
+var record: BestRecord  # 이번 판의 기록: 일반 모드는 normal_record, 오늘의 판은 daily
+var normal_record: BestRecord
+var daily: DailyRecord     # 오늘의 판 기록 (일반 최고 점수와 다른 파일)
+var daily_mode := false    # 오늘의 판 시작 화면이거나 오늘의 판을 하는 중
+## 0 이상이면 지금 시각(유닉스 초, UTC) 대신 쓴다 (테스트용 시간 덮어쓰기)
+var clock_override := -1.0
 var save: SaveData  # 플레이 횟수(조작 안내)·소리 켜기/끄기
 var score := ScoreBoard.new()
 var field: ObstacleField
@@ -210,6 +224,11 @@ var _count_rate := 0.0           # 초당 올라가는 점수
 var _stats_label: Label
 var _swish: MeshInstance3D
 var _swish_material: StandardMaterial3D
+var _share: Label          # 오늘의 판 게임 오버의 SHARE
+var shared_text := ""      # 마지막으로 공유·복사한 글 (테스트에서 확인)
+var _share_tween: Tween
+var _final_score := 0      # 게임 오버 점수 (SHARE 글)
+var _menu_second := -1     # 오늘의 판 남은 시간을 고친 마지막 초
 
 
 ## 장애물 하나의 화면 상태. 노드 대신 MultiMesh 한 칸에 옮겨 그린다.
@@ -224,9 +243,20 @@ class Piece:
 	var hidden := false        # 2칸 벽의 짝: 판정 항목만 있고 그림은 벽 하나가 맡는다
 
 
-## 시드를 고정했으면(주소의 ?seed, 테스트) 판마다 같은 배치, 아니면 판마다 새 배치
+## 오늘의 판은 그날의 씨앗. 시드를 고정했으면(주소의 ?seed, 테스트) 판마다 같은 배치, 아니면 판마다 새 배치
+## shortcut: 개발용 ?bpm(시작 단계)으로 열면 오늘의 판도 배치가 달라진다. 일반 사용자는 쓰지 않는 주소라 막지 않는다
 func _new_field() -> void:
-	field = ObstacleField.new(seed_value if seed_value != 0 else randi() | 1, AudioManager.ladder)
+	var s := DailyRecord.seed_of(daily.day) if daily_mode else (seed_value if seed_value != 0 else randi() | 1)
+	field = ObstacleField.new(s, AudioManager.ladder)
+
+
+## 지금 시각(유닉스 초, UTC)과 오늘 날짜
+func now_unix() -> float:
+	return clock_override if clock_override >= 0.0 else Time.get_unix_time_from_system()
+
+
+func today() -> int:
+	return DailyRecord.day_of(now_unix())
 
 
 func _ready() -> void:
@@ -236,7 +266,11 @@ func _ready() -> void:
 	if best_path == BestRecord.PATH:  # 실제 게임만: 이름이 바뀌기 전 폴더의 기록을 옮겨 온다 (테스트·도구는 임시 파일)
 		var copied := SaveData.migrate(SaveData.old_user_dir(), OS.get_user_data_dir())
 		print("SAVE %s (옛 폴더에서 옮긴 파일 %d개)" % [OS.get_user_data_dir(), copied])  # 저장 위치 확인용 한 줄
-	record = BestRecord.new(best_path)
+	normal_record = BestRecord.new(best_path)
+	record = normal_record
+	daily = DailyRecord.new(DailyRecord.DAILY_PATH if best_path == BestRecord.PATH else best_path.get_basename() + "_daily.cfg", today())
+	if OS.has_feature("web") and str(JavaScriptBridge.eval("new URLSearchParams(location.search).get('dailyhash') || ''")) == "1":
+		print("DAILYHASH\n" + DailyRecord.hash_report(30))  # 기기 비교용 (tools/daily_hash.gd와 같은 표)
 	save = SaveData.new(SaveData.PATH if best_path == BestRecord.PATH else best_path.get_basename() + "_settings.cfg")
 	AudioManager.set_muted(save.muted)
 	AudioManager.set_volumes(save.music, save.sfx)
@@ -259,7 +293,7 @@ func _ready() -> void:
 	get_viewport().size_changed.connect(_fit_render_scale)
 	_fit_camera()
 	_fit_render_scale()
-	_title.show_menu(record.best, save.shows_guide(), save.muted)
+	_show_title()
 	if OS.has_feature("web"):
 		JavaScriptBridge.eval(FRAMES_JS, true)
 		_watch_page()
@@ -312,12 +346,16 @@ func begin() -> void:
 		JavaScriptBridge.eval("window.gameStarted = performance.now()")  # 첫 판 프레임 측정의 시작점
 	_quality.hold()
 	save.count_play()
+	if daily_mode:  # 날짜는 시작하는 순간에 다시 센다: 시작 화면을 띄운 채 자정이 지났을 수 있다
+		daily.start(today())
 	if AudioManager.is_music_on():
 		AudioManager.restart_music()
 	else:
 		AudioManager.start_music()
 	AudioManager.unblock()
 	_dash_material.set_shader_parameter("sparkle_on", 1.0)
+	if daily_mode:
+		_new_field()
 	field.ladder = AudioManager.ladder  # 음악과 함께 시작한 사다리: 경계가 여기에 쌓인다
 	_music_t = AudioManager.music_time
 	runner.running = true
@@ -352,6 +390,9 @@ func _advance_menu(delta: float) -> void:
 	var music := AudioManager.is_music_on()
 	var beat := AudioManager.ladder.beat_at(AudioManager.music_time) if music else _menu_t / MusicLadder.beat_time(AudioManager.start_step)
 	_title.pulse(beat)
+	if floori(_menu_t) != _menu_second:  # 오늘의 판 번호·남은 시간은 1초마다 (자정이 지나면 새 판)
+		_menu_second = floori(_menu_t)
+		_refresh_daily()
 	runner.running = false
 	if floori(beat) != _menu_beat:
 		_menu_beat = floori(beat)
@@ -748,6 +789,7 @@ func _advance_dead(delta: float) -> void:
 	_camera.v_offset = shake.y
 	_restart_label.visible = _dead_time >= RESTART_DELAY
 	_home.visible = _restart_label.visible
+	_share.visible = _restart_label.visible and daily_mode
 
 
 ## 부딪혔다: 실수로 바로 넘기지 않게 잠깐 뒤부터 다시 시작할 수 있다.
@@ -761,9 +803,13 @@ func _game_over(item: Dictionary) -> void:
 	_dash_material.set_shader_parameter("pulse", 0.0)
 	_dash_material.set_shader_parameter("sparkle_on", 0.0)
 	record.save()
+	_final_score = score.total(travel)
 	_best_label.visible = true
-	_best_label.text = ("NEW BEST %d" if record.broken else "BEST %d") % record.best
-	_stats_label.text = "ORBS %d · PERFECT %d · %dm" % [score.orbs, score.close, int(travel)]
+	_best_label.text = ("NEW %sBEST %d" if record.broken else "%sBEST %d") % ["DAILY " if daily_mode else "", record.best]
+	if daily_mode:  # 오늘의 판: 점수, DAILY BEST, 도전 횟수, SHARE
+		_stats_label.text = "TRIES %d" % daily.tries
+	else:
+		_stats_label.text = "ORBS %d · PERFECT %d · %dm" % [score.orbs, score.close, int(travel)]
 	_stats_label.visible = true
 	if _mult_tween:  # 게임 오버 화면은 점수·BEST·한 줄만
 		_mult_tween.kill()
@@ -782,6 +828,8 @@ func restart() -> void:
 	_dead_time = 0.0
 	_quality.hold()
 	save.count_play()
+	if daily_mode:  # 자정이 지났으면 이 판부터 새 날의 판 (앞 판은 시작한 날짜에 이미 저장했다)
+		daily.start(today())
 	_tint_from = _tint  # 부딪힌 순간의 색에서 돌아간다
 	AudioManager.restart_music()
 	_music_t = AudioManager.music_time
@@ -829,6 +877,7 @@ func _reset_round() -> void:
 	_restart_label.visible = false
 	_stats_label.visible = false
 	_home.visible = false
+	_share.visible = false
 	_mult_shown = 1
 	if _mult_tween:
 		_mult_tween.kill()
@@ -857,6 +906,8 @@ func _enter_menu() -> void:
 		_unpause()
 	dead = false
 	started = false
+	daily_mode = false  # 게임 오버·일시정지의 집은 언제나 메인 화면으로
+	record = normal_record
 	_dead_time = 0.0
 	_quality.hold()
 	AudioManager.play_menu_music()
@@ -881,7 +932,7 @@ func _enter_menu() -> void:
 	_set_view(1.0)
 	_hud.modulate.a = 0.0
 	_pause_btn.visible = false
-	_title.show_menu(record.best, save.shows_guide(), save.muted)
+	_show_title()
 	_sync_pieces()  # 페이드가 걷히기 전 프레임부터 앞 판 장애물이 보이지 않게
 	_sync_orbs()
 
@@ -991,7 +1042,57 @@ func toggle_sound() -> void:
 ## 기록이 있으면 숫자 아래에 작게. 첫 판에는 숨긴다.
 func _show_best() -> void:
 	_best_label.visible = record.previous > 0
-	_best_label.text = "BEST %d" % record.previous
+	_best_label.text = ("DAILY BEST %d" if daily_mode else "BEST %d") % record.previous
+
+
+## 메인 화면 글자 (오늘의 판 번호, 오늘 안 했으면 점)
+func _show_title() -> void:
+	var d := today()
+	_title.show_menu(normal_record.best, save.shows_guide(), save.muted, DailyRecord.number(d), not daily.played(d))
+
+
+## 메인 → 오늘의 판 시작 화면 (같은 무대 위 0.3초). 배치는 시작할 때 그날 씨앗으로 만든다
+func open_daily() -> void:
+	daily_mode = true
+	record = daily
+	daily.view(today())
+	_refresh_daily()
+	_title.show_daily(true)
+
+
+## 오늘의 판 시작 화면의 집 버튼 → 메인 화면
+func close_daily() -> void:
+	daily_mode = false
+	record = normal_record
+	_title.show_daily(false)
+
+
+## 메인 화면의 DAILY 번호·점, 시작 화면의 기록·남은 시간. 시작 화면에서 날짜가 바뀌면 새 날을 보인다
+func _refresh_daily() -> void:
+	var d := today()
+	if daily_mode and daily.day != d:
+		daily.view(d)
+	_title.set_daily_button(DailyRecord.number(d), not daily.played(d))
+	_title.set_daily(DailyRecord.number(d), daily.best, daily.streak_on(d), DailyRecord.countdown(now_unix()))
+
+
+## SHARE: 휴대폰은 공유 창(Web Share), 아니면 클립보드에 "SWIPE PULSE Daily #12 — 5320 주소"를 복사하고 COPIED를 0.8초
+func share() -> void:
+	var text := "SWIPE PULSE Daily #%d — %d" % [DailyRecord.number(daily.day), _final_score]
+	shared_text = text + " " + GAME_URL
+	var how := "copy"
+	if OS.has_feature("web"):
+		how = str(JavaScriptBridge.eval(SHARE_JS % [JSON.stringify(text), JSON.stringify(GAME_URL)]))
+	elif DisplayServer.has_feature(DisplayServer.FEATURE_CLIPBOARD):  # 헤드리스(테스트)에는 클립보드가 없다
+		DisplayServer.clipboard_set(shared_text)
+	if how != "copy":
+		return
+	if _share_tween:
+		_share_tween.kill()
+	_share.text = "COPIED"
+	_share_tween = create_tween()
+	_share_tween.tween_interval(COPIED_TIME)
+	_share_tween.tween_callback(func() -> void: _share.text = "SHARE")
 
 
 ## 예전 기록을 넘은 순간: 숫자가 한 번 말랑하게 커졌다 돌아온다. 소리는 내지 않는다.
@@ -1015,6 +1116,10 @@ func _input(event: InputEvent) -> void:
 			toggle_sound()
 		elif event is InputEventScreenTouch and _title.gear.hit(event.position):
 			open_settings()
+		elif not daily_mode and ((event is InputEventScreenTouch and _title.daily_hit(event.position)) or (event is InputEventKey and event.keycode == KEY_D)):
+			open_daily()
+		elif daily_mode and ((event is InputEventScreenTouch and _title.daily_home.hit(event.position)) or (event is InputEventKey and event.keycode == KEY_ESCAPE)):
+			close_daily()
 		elif not warmed:  # 장애물 셰이더를 아직 준비하는 중: 남은 것을 한꺼번에 그리고 시작한다
 			_begin_waiting = true
 		else:
@@ -1024,6 +1129,9 @@ func _input(event: InputEvent) -> void:
 		if pressed and _dead_time >= RESTART_DELAY:
 			if event is InputEventScreenTouch and _home.hit(event.position):
 				go_home()
+				return
+			if event is InputEventScreenTouch and _share.is_visible_in_tree() and _share.get_global_rect().has_point(event.position):
+				share()
 				return
 			restart()
 			if event is InputEventScreenTouch:  # 다시 시작한 손가락 그대로 밀어도 스와이프가 된다
@@ -1297,6 +1405,11 @@ func _fit_camera() -> void:
 	var size := get_viewport().get_visible_rect().size
 	_camera.keep_aspect = Camera3D.KEEP_WIDTH if size.y >= size.x else Camera3D.KEEP_HEIGHT
 	_restart_label.offset_top = 370.0 if size.y >= size.x else 200.0  # 웅덩이와 겹치지 않는 자리 (세로는 아래, 가로는 위)
+	# SHARE: 세로는 다시 시작 안내 아래, 가로(PC)는 그 자리가 젤리와 겹쳐 TRIES 줄 아래
+	var portrait := size.y >= size.x
+	_share.set_anchors_preset(Control.PRESET_CENTER if portrait else Control.PRESET_CENTER_TOP)
+	_share.offset_top = _restart_label.offset_top + 100.0 if portrait else STATS_TOP + 56.0
+	_share.offset_bottom = _share.offset_top + TitleScreen.DAILY_ROW
 	var short := size.y / size.x < MENU_SHORT
 	_menu_cam = MENU_CAM_SHORT if short else MENU_CAM
 	_menu_look = MENU_LOOK_SHORT if short else MENU_LOOK
@@ -1566,6 +1679,14 @@ func _build_ui() -> void:
 	_restart_label.label_settings = rs
 	_restart_label.visible = false
 	layer.add_child(_restart_label)
+	# 오늘의 판 SHARE: 다시 시작 안내 아래, DAILY 버튼과 같은 연보라 테
+	_share = TitleScreen.text_label("ShareButton", "SHARE", 40, Color(1, 1, 1, 0.8))
+	_share.set_anchors_preset(Control.PRESET_CENTER)
+	_share.grow_horizontal = Control.GROW_DIRECTION_BOTH
+	_share.add_theme_stylebox_override("normal", _title.daily_button.get_theme_stylebox("normal"))
+	_share.custom_minimum_size.x = 240.0
+	_share.visible = false
+	layer.add_child(_share)
 	_home = UiIcon.new(UiIcon.Kind.HOME, Color(1, 1, 1, 0.7), TitleScreen.SOUND_SIDE)
 	_home.name = "HomeButton"
 	TitleScreen.corner(_home, false)

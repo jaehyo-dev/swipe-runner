@@ -5,6 +5,7 @@ const Dir := SwipeDetector.Dir
 
 
 const TEST_BEST := "user://test_best_main.txt"
+const LAUNCH := DailyRecord.FIRST_DAY * 86400
 
 
 func _make_main() -> Node3D:
@@ -12,6 +13,8 @@ func _make_main() -> Node3D:
 	main.seed_value = 1234
 	DirAccess.remove_absolute(TEST_BEST)
 	DirAccess.remove_absolute(TEST_BEST.get_basename() + "_settings.cfg")  # 판 수·소리 설정도 처음부터
+	DirAccess.remove_absolute(TEST_BEST.get_basename() + "_daily.cfg")  # 오늘의 판 기록도
+	main.clock_override = LAUNCH + 5 * 86400 + 3600.0  # DAILY #6, 01:00 UTC
 	main.best_path = TEST_BEST
 	add_child(main)
 	main.set_process(false)  # 시간은 advance()로만 흘려 결과를 고정한다
@@ -171,11 +174,12 @@ func test_화면에_점수와_버전_안내_글자만_있음() -> void:
 		await wait_frames()
 	await wait_frames()
 	var labels: Array = main._hud.find_children("*", "Label", true, false)
-	assert_eq(labels.size(), 6, "점수 + 최고 + (숨겨진) 다시 시작 안내·배수·PERFECT 한 줄·게임 오버 한 줄")
-	assert_eq(main._title.find_children("*", "Label", true, false).size(), 6, "메인 화면: 제목 + BEST + 안내 세 줄(기호는 선으로 그림) + 시작 안내")
+	assert_eq(labels.size(), 7, "점수 + 최고 + (숨겨진) 다시 시작 안내·배수·PERFECT 한 줄·게임 오버 한 줄·SHARE")
+	assert_eq(main._title.find_children("*", "Label", true, false).size(), 9, "메인 화면: 제목 + BEST + 안내 세 줄(기호는 선으로 그림) + 시작 안내 + DAILY 버튼, 오늘의 판: 번호 + 기록 줄")
 	assert_eq(main._pause_menu.find_children("*", "Label", true, false).size(), 5, "일시정지: PAUSED + 버튼 셋 + 숫자")
 	assert_eq(main._settings.find_children("*", "Label", true, false).size(), 8, "설정: 제목 + 줄 이름 넷 + 값 둘 + DONE")
-	assert_eq(main.find_children("*", "Label", true, false).size(), 13 + 5 + 8, "+ 버전")
+	assert_eq(main.find_children("*", "Label", true, false).size(), 17 + 5 + 8, "+ 버전")
+	assert_false(main.find_child("ShareButton", true, false).visible, "SHARE 처음엔 숨김")
 	assert_false(main._pause_menu.visible or main._settings.visible, "일시정지·설정은 처음엔 숨김")
 	for hidden in ["MultiplierLabel", "StatsLabel", "RestartLabel", "PerfectLabel"]:
 		assert_false(main.find_child(hidden, true, false).visible, hidden + " 처음엔 숨김")
@@ -1018,4 +1022,107 @@ func test_메인_화면에_오자마자_시작해도_앞_페이드가_새_음악
 	assert_true(AudioManager.music.playing, "새 게임 음악이 계속 흐름")
 	assert_eq(AudioManager.music.volume_db, 0.0, "제 크기")
 	AudioManager.music.stop()
+	main.queue_free()
+
+
+## 메인 화면에서 DAILY 버튼으로 오늘의 판 시작 화면에 들어간다
+func _open_daily(main: Node3D) -> void:
+	_touch(main, main._title.daily_button.get_global_rect().get_center())
+
+
+func test_메인_화면의_DAILY_버튼과_오늘_안_했으면_점() -> void:
+	var main: Node3D = await _make_menu()
+	assert_true(main._title.daily_button.is_visible_in_tree())
+	assert_eq(main._title.daily_button.text, "DAILY #6")
+	assert_true(main._title.daily_dot.visible, "오늘 아직 안 함")
+	var start: Rect2 = main._title.start_label.get_global_rect()
+	var button: Rect2 = main._title.daily_button.get_global_rect()
+	assert_true(button.position.y >= start.end.y, "SWIPE TO START 아래")
+	assert_true(button.end.y <= main.get_viewport().get_visible_rect().size.y - TitleScreen.START_FLOOR, "버전 글자와 겹치지 않음")
+	main.queue_free()
+
+
+func test_오늘의_판_시작_화면과_집_버튼() -> void:
+	var main: Node3D = await _make_menu()
+	_open_daily(main)
+	assert_true(main.daily_mode)
+	assert_false(main.started, "버튼은 시작이 아님")
+	assert_true(main._title.daily_home.visible)
+	assert_eq(main._title._daily_title.text, "DAILY #6")
+	assert_eq(main._title._daily_lines.text, "STREAK 0\nNEW IN 23H 0M", "기록이 없으면 TODAY BEST 숨김")
+	_touch(main, main._title.daily_home.get_global_rect().get_center())
+	assert_false(main.daily_mode, "집 → 메인")
+	assert_false(main.started)
+	assert_true(main.record == main.normal_record)
+	main.queue_free()
+
+
+func test_오늘의_판은_그날_씨앗이고_기록이_일반_최고와_섞이지_않음() -> void:
+	var main: Node3D = await _make_menu()
+	main.normal_record.update(777)
+	main.normal_record.save()
+	_open_daily(main)
+	_touch(main, Vector2(360, 700))
+	assert_true(main.started)
+	assert_eq(main.daily.tries, 1)
+	assert_eq(main.field._pattern._rng.seed, DailyRecord.seed_of(main.today()), "그날 씨앗")
+	assert_false(main._best_label.visible, "오늘 기록이 없으면 숨김 (일반 BEST 777이 아님)")
+	_run(main, 2.0)
+	_put_in_front(main, ObstacleField.Kind.BLOCK)
+	main.advance(STEP)
+	assert_true(main.dead)
+	var daily_best: int = main.daily.best
+	assert_true(daily_best > 0)
+	assert_eq(main._best_label.text, "DAILY BEST %d" % daily_best)
+	assert_eq(main._stats_label.text, "TRIES 1")
+	_run(main, main.RESTART_DELAY + 0.05)
+	assert_true(main._share.visible, "SHARE")
+	_touch(main, main._share.get_global_rect().get_center())
+	assert_true(main.dead, "SHARE는 다시 시작이 아님")
+	assert_eq(main._share.text, "COPIED")
+	assert_eq(main.shared_text, "SWIPE PULSE Daily #6 — %d %s" % [main._final_score, main.GAME_URL])
+	main._share_tween.custom_step(main.COPIED_TIME + 0.01)
+	assert_eq(main._share.text, "SHARE", "0.8초 뒤 돌아옴")
+	assert_eq(BestRecord.new(TEST_BEST).best, 777, "일반 최고 점수 그대로")
+	# 다시 시작: 도전 2, 플레이 중 BEST 자리에 DAILY BEST
+	_touch(main, Vector2(360, 700))
+	assert_false(main.dead)
+	assert_eq(main.daily.tries, 2)
+	assert_eq(main._best_label.text, "DAILY BEST %d" % daily_best)
+	assert_true(main._best_label.visible)
+	main.queue_free()
+
+
+func test_일반_모드는_SHARE가_없고_DAILY_BEST도_아님() -> void:
+	var main: Node3D = await _make_menu()
+	_touch(main, Vector2(360, 700))
+	assert_false(main.daily_mode)
+	_run(main, 2.0)
+	_put_in_front(main, ObstacleField.Kind.BLOCK)
+	main.advance(STEP)
+	_run(main, main.RESTART_DELAY + 0.05)
+	assert_false(main._share.visible)
+	assert_eq(main.daily.tries, 0, "오늘의 판 도전 횟수 그대로")
+	assert_true(main._stats_label.text.begins_with("ORBS"))
+	main.queue_free()
+
+
+func test_플레이_중_자정을_넘기면_그_판은_시작한_날_다음_판은_새_날() -> void:
+	var main: Node3D = await _make_menu()
+	main.clock_override = LAUNCH + 6 * 86400 - 5.0  # #6의 23:59:55
+	_open_daily(main)
+	_touch(main, Vector2(360, 700))
+	var first_day: int = main.daily.day
+	main.clock_override += 10.0  # 자정이 지남
+	_run(main, 2.0)
+	_put_in_front(main, ObstacleField.Kind.BLOCK)
+	main.advance(STEP)
+	assert_eq(main.daily.day, first_day, "시작한 날의 기록")
+	assert_true(DailyRecord.new(main.daily._path, first_day).best > 0)
+	_run(main, main.RESTART_DELAY + 0.05)
+	_touch(main, Vector2(360, 700))
+	assert_eq(main.daily.day, first_day + 1, "다음 판은 새 날")
+	assert_eq(main.daily.tries, 1)
+	assert_eq(main.field._pattern._rng.seed, DailyRecord.seed_of(first_day + 1))
+	assert_eq(main.daily.streak_on(first_day + 1), 2, "이틀 연속")
 	main.queue_free()
