@@ -41,13 +41,14 @@ const PREWARM_TINY := 0.002     # 메인 화면 뒤에서 미리 그릴 때의 �
 const DRIFT_TIME := 3.0
 const GAME_URL := "https://jaehyo-dev.github.io/swipe-runner/"
 const COPIED_TIME := 0.8
-## 휴대폰(누르는 화면)에 공유 창이 있으면 그걸 쓰고 "share", 아니면 클립보드에 복사하고 "copy"
+## 휴대폰(누르는 화면)에 공유 창이 있으면 그걸 쓰고 "share", 아니면 클립보드에 복사하고 "copy". 클립보드 권한이 거부되면 옛 복사(execCommand)로 한 번 더
+## shortcut: COPIED는 복사 결과를 기다리지 않고 보인다. 둘 다 실패하는 브라우저가 보고되면 결과를 엔진에 돌려받는다
 const SHARE_JS := """(() => { const t = %s, u = %s;
 if (navigator.share && matchMedia('(pointer: coarse)').matches) { navigator.share({text: t, url: u}).catch(() => {}); return 'share'; }
 const all = t + ' ' + u;
-if (navigator.clipboard && window.isSecureContext) { navigator.clipboard.writeText(all).catch(() => {}); return 'copy'; }
-const area = document.createElement('textarea'); area.value = all; document.body.appendChild(area); area.select();
-document.execCommand('copy'); area.remove(); return 'copy'; })()"""
+const old = () => { const area = document.createElement('textarea'); area.value = all; document.body.appendChild(area); area.select(); document.execCommand('copy'); area.remove(); };
+if (navigator.clipboard && window.isSecureContext) { navigator.clipboard.writeText(all).catch(old); return 'copy'; }
+old(); return 'copy'; })()"""
 const RESUME_WAIT_FRAMES := 20   # 이어 할 때 소리가 다시 돌기를 기다리는 최대 프레임 (못 돌아도 게임은 이어진다)
 const STAGE_GLOW_TIME := 0.3  # 음악 단계가 오를 때 난간과 빛 대시가 밝아지는 시간(초)
 ## 무대 (ART_BIBLE.md 10). 밝기 순서: 주인공 > 장애물 기호 > 테두리·파란 기둥 > 난간 > 빛 줄기 > 바닥·하늘
