@@ -16,6 +16,7 @@ const BUTTON_TOP := 660.0
 const BUTTON_GAP := 100.0
 const COUNT_SIZE := 220
 const COUNT_POP := 1.25
+const STUCK_TIME := 1.0  # 오디오 시계가 이만큼 늦게까지 서 있으면 숫자를 끝낸다 (소리 없이도 게임은 이어진다)
 
 var dim: ColorRect
 var title: Label
@@ -26,7 +27,8 @@ var counting := false
 var blocked := false
 
 var _count: PauseCountdown
-var _count_start := 0
+var _count_start := 0.0   # 숫자 세기 시작 (AudioManager.clock 기준)
+var _wall_start := 0       # 실제 시간 시작: 오디오 시계가 서 있으면(브라우저가 소리를 재움) 이것으로 끝낸다
 var _digit := 0
 
 
@@ -80,10 +82,11 @@ func open() -> void:
 	visible = true
 
 
-## 3·2·1 숫자를 세기 시작한다. 다 세면 resumed
-func count(countdown: PauseCountdown) -> void:
+## 3·2·1 숫자를 세기 시작한다. 다 세면 resumed. start: 오디오 시계로 센 시작 시각 (숫자 끝 = 음악이 다시 들리는 순간)
+func count(countdown: PauseCountdown, start: float) -> void:
 	_count = countdown
-	_count_start = Time.get_ticks_usec()
+	_count_start = start
+	_wall_start = Time.get_ticks_usec()
 	_digit = 0
 	counting = true
 	dim.color = Color(DIM, COUNT_DIM)
@@ -97,8 +100,8 @@ func count(countdown: PauseCountdown) -> void:
 func _process(_delta: float) -> void:
 	if not (visible and counting):
 		return
-	var elapsed := (Time.get_ticks_usec() - _count_start) / 1000000.0
-	if _count.done(elapsed):
+	var elapsed := AudioManager.clock() - _count_start
+	if _count.done(elapsed) or (Time.get_ticks_usec() - _wall_start) / 1000000.0 > _count.resume_at() + STUCK_TIME:
 		counting = false
 		count_label.visible = false
 		resumed.emit()

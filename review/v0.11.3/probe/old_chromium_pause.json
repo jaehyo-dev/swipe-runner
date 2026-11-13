@@ -1,0 +1,301 @@
+{
+ "url": "https://jaehyo-dev.github.io/swipe-runner/",
+ "engine": "chromium",
+ "mode": "pause",
+ "info": {
+  "rate": 48000,
+  "base": 0.021333333333333333,
+  "outLat": 0.07200000000000001,
+  "state": "suspended",
+  "ua": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) HeadlessChrome/157.0.0.0 Safari/537.36"
+ },
+ "starts": [],
+ "rows": [
+  {
+   "k": 1,
+   "latBefore": [
+    83,
+    93.3
+   ],
+   "latAfter": [
+    82.2,
+    93.3
+   ],
+   "cont": null,
+   "sfxBefore": {
+    "cmd": 51.8,
+    "sched": 0,
+    "real": 83.4,
+    "total": 135.2
+   },
+   "sfxAfter": null,
+   "game": [
+    -15,
+    -87.9,
+    2.1,
+    157
+   ]
+  },
+  {
+   "k": 2,
+   "latBefore": [
+    82.2,
+    93.3
+   ],
+   "latAfter": [
+    82.6,
+    93.3
+   ],
+   "cont": null,
+   "sfxBefore": {
+    "cmd": 56.2,
+    "sched": 0,
+    "real": 81.6,
+    "total": 137.8
+   },
+   "sfxAfter": {
+    "cmd": 51.3,
+    "sched": 0,
+    "real": 83.1,
+    "total": 134.4
+   },
+   "game": [
+    -16.3,
+    -87.1,
+    -4,
+    98
+   ]
+  },
+  {
+   "k": 3,
+   "latBefore": [
+    83,
+    93.3
+   ],
+   "latAfter": [
+    82.3,
+    93.3
+   ],
+   "cont": null,
+   "sfxBefore": {
+    "cmd": 50.4,
+    "sched": 0,
+    "real": 81.5,
+    "total": 131.9
+   },
+   "sfxAfter": {
+    "cmd": 50.6,
+    "sched": 0,
+    "real": 82.1,
+    "total": 132.7
+   },
+   "game": [
+    -17,
+    -92.3,
+    -5.1,
+    157
+   ]
+  },
+  {
+   "k": 4,
+   "latBefore": [
+    81.5,
+    93.3
+   ],
+   "latAfter": [
+    82.6,
+    93.3
+   ],
+   "cont": null,
+   "sfxBefore": {
+    "cmd": 50.3,
+    "sched": 0,
+    "real": 81,
+    "total": 131.3
+   },
+   "sfxAfter": null,
+   "game": [
+    -14.7,
+    -95.8,
+    8.9,
+    181
+   ]
+  },
+  {
+   "k": 5,
+   "latBefore": [
+    82.4,
+    93.3
+   ],
+   "latAfter": [
+    82.6,
+    93.3
+   ],
+   "cont": null,
+   "sfxBefore": {
+    "cmd": 50.8,
+    "sched": 0,
+    "real": 82,
+    "total": 132.8
+   },
+   "sfxAfter": {
+    "cmd": 50.7,
+    "sched": 0,
+    "real": 81.7,
+    "total": 132.4
+   },
+   "game": [
+    -10.9,
+    -84.8,
+    19.6,
+    147
+   ]
+  },
+  {
+   "k": 6,
+   "latBefore": [
+    83,
+    93.3
+   ],
+   "latAfter": [
+    82.8,
+    93.3
+   ],
+   "cont": null,
+   "sfxBefore": {
+    "cmd": 50.1,
+    "sched": 0,
+    "real": 82.7,
+    "total": 132.8
+   },
+   "sfxAfter": {
+    "cmd": 51.6,
+    "sched": 0,
+    "real": 81.5,
+    "total": 133.1
+   },
+   "game": [
+    -8.8,
+    -90.2,
+    16.7,
+    97
+   ]
+  },
+  {
+   "k": 7,
+   "latBefore": [
+    82.4,
+    93.3
+   ],
+   "latAfter": [
+    82.8,
+    93.3
+   ],
+   "cont": null,
+   "sfxBefore": {
+    "cmd": 50.3,
+    "sched": 0,
+    "real": 81.4,
+    "total": 131.7
+   },
+   "sfxAfter": null,
+   "game": [
+    -12.2,
+    -94.6,
+    13,
+    158
+   ]
+  },
+  {
+   "k": 8,
+   "latBefore": [
+    82.7,
+    93.3
+   ],
+   "latAfter": [
+    82.9,
+    93.3
+   ],
+   "cont": null,
+   "sfxBefore": {
+    "cmd": 56,
+    "sched": 0,
+    "real": 82.2,
+    "total": 138.2
+   },
+   "sfxAfter": {
+    "cmd": 50.1,
+    "sched": 0,
+    "real": 81.2,
+    "total": 131.3
+   },
+   "game": [
+    -21.5,
+    -102.7,
+    -7.3,
+    98
+   ]
+  },
+  {
+   "k": 9,
+   "latBefore": [
+    83.1,
+    93.3
+   ],
+   "latAfter": [
+    82.6,
+    93.3
+   ],
+   "cont": null,
+   "sfxBefore": {
+    "cmd": 50.3,
+    "sched": 0,
+    "real": 82.3,
+    "total": 132.6
+   },
+   "sfxAfter": {
+    "cmd": 49.8,
+    "sched": 0,
+    "real": 82.6,
+    "total": 132.4
+   },
+   "game": [
+    -19.5,
+    -99.7,
+    -6,
+    158
+   ]
+  },
+  {
+   "k": 10,
+   "latBefore": [
+    82.1,
+    93.3
+   ],
+   "latAfter": [
+    83,
+    93.3
+   ],
+   "cont": null,
+   "sfxBefore": {
+    "cmd": 53.3,
+    "sched": 0,
+    "real": 81.6,
+    "total": 134.9
+   },
+   "sfxAfter": {
+    "cmd": 49.7,
+    "sched": 0,
+    "real": 83.4,
+    "total": 133.1
+   },
+   "game": [
+    -20.1,
+    -99.2,
+    -6.7,
+    99
+   ]
+  }
+ ],
+ "errors": []
+}

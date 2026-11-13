@@ -18,18 +18,39 @@ const JS := """
 window.gameMusic = (() => {
   const c = window.gameAudioCtx, out = c.createGain(), bufs = {}, ends = {}, filled = {};
   out.connect(c.destination);
-  // 일시정지 동안에는 엔진이 입력마다 부르는 resume(소리 켜기)을 막는다: 버튼을 누르는 순간 음악 시계가 흐르면 안 된다
-  const resume = c.resume.bind(c);
-  let held = false;
-  c.resume = () => held ? Promise.resolve() : resume();
-  let run = null, t0 = 0, cur = null, unloops = [], top = -Infinity, stampOk = false;
+  let run = null, t0 = 0, cur = null, unloops = [], top = -Infinity, stampOk = false, held = false, fading = [];
+  // v0.11.3 일시정지: AudioContext는 재우지 않는다 (아이폰 WebKit은 suspend → resume 뒤 출력 지연이 바뀌어 음악·효과음이 밀린다).
+  // 곡 노드만 세우고 멈춘 자리를 기억했다가, 이어 할 때 그 자리부터 정확한 시계 시각에 다시 예약하고 기준점 t0도 같은 만큼 옮긴다.
+  let pausedAt = null, saved = [], resumeAt = null;  // 멈춘 자리를 내던 시계 값, 그때 살아 있던 노드와 위치, 다시 트는 시각
   // v0.11.1: 디코드한 묶음마다 새 배열을 만들지 않고 같은 바이트 배열을 다시 쓴다 (아이폰 WebKit 가비지 수집 멈춤 줄이기)
   let bytes = new Uint8Array(0), floats = new Float32Array(0);
-  const source = (i, gain) => {
+  const lat = () => (c.baseLatency || 0) + (c.outputLatency || 0);
+  // 노드 하나: 다시 만들 수 있게 버퍼·시작 시각·버퍼 안 위치·반복·페이드를 노드에 적어 둔다
+  const source = (buf, end, gain, at, offset, loop) => {
     const s = c.createBufferSource();
-    s.buffer = bufs[i]; s.loop = true; s.loopEnd = ends[i]; s.fader = c.createGain();
+    s.buffer = buf; s.loop = loop; s.loopEnd = end; s.fader = c.createGain();
     s.connect(s.fader); s.fader.connect(gain);
+    Object.assign(s, { at, offset, looping: loop, unloopAt: null, end: Infinity, fadeIn: null, fadeOut: null, blend: 0 });
+    s.start(at, offset);
     return s;
+  };
+  const fadeIn = (s, t, blend) => {
+    s.fadeIn = t; s.blend = blend;
+    s.fader.gain.setValueAtTime(0, t);
+    s.fader.gain.linearRampToValueAtTime(1, t + blend);
+  };
+  const fadeOut = (s, t, blend) => {
+    s.fadeOut = t; s.blend = blend; s.end = t + blend;
+    s.fader.gain.setValueAtTime(1, t);
+    s.fader.gain.linearRampToValueAtTime(0, t + blend);
+    s.stop(t + blend);
+  };
+  // 시계 T에 노드가 읽고 있는 버퍼 안 위치(초). 반복은 0 ~ loopEnd(0이면 버퍼 끝)를 돈다. 반복을 끈 뒤로는 곧게 간다
+  const pos = (s, T) => {
+    const L = s.loopEnd || s.buffer.duration, u = s.unloopAt;
+    if (!s.looping) return s.offset + T - s.at;
+    if (u === null || T <= u) return (s.offset + T - s.at) % L;
+    return (s.offset + u - s.at) % L + (T - u);
   };
   return {
     bufs,
@@ -48,50 +69,88 @@ window.gameMusic = (() => {
     play(i, fade) {
       const now = c.currentTime + 0.02, next = c.createGain();  // 약간 앞: 읽는 사이 오디오 스레드가 지나가도 시작 시각이 어긋나지 않게
       next.connect(out);
+      fading = [];
       if (run && fade > 0) {
         run.gain.gain.setValueAtTime(1, now);
         run.gain.gain.linearRampToValueAtTime(0, now + fade);
         next.gain.setValueAtTime(0, now);
         next.gain.linearRampToValueAtTime(1, now + fade);
         run.sources.forEach(s => s.stop(now + fade));
+        fading = run.sources;
       } else if (run) {
         run.sources.forEach(s => s.stop(now));
       }
-      cur = source(i, next);
+      cur = source(bufs[i], ends[i], next, now, 0, true);
       run = { gain: next, sources: [cur] };
+      unloops = [];
+      pausedAt = null; saved = []; resumeAt = null; held = false;
       t0 = now;
-      cur.start(now);
       window.musicStart = performance.now() + 1000 * (now - c.currentTime);
       c.resume();
     },
     // at: 판 시작 뒤 시각 (4마디 경계). 그 표본에 다음 곡을 버퍼 안 offset초부터 시작한다. 두 곡의 파형 값이 달라 딸깍 소리가 나지 않게 짧게 겹친다 (앞 곡은 구간 뒤 꼬리로 이어진다)
     schedule(i, at, blend, offset) {
-      const next = source(i, run.gain), t = t0 + at, leaving = cur;
+      const t = t0 + at, leaving = cur;
       // 마지막 바퀴의 가운데에서 반복을 끈다: 경계가 미뤄졌으면 지금 끄면 첫 바퀴에서 소리가 끝난다. 끄고 나면 구간 뒤 꼬리로 이어진다
       // 오디오 시계로 잰다 (setTimeout은 일시정지 동안에도 흘러 너무 일찍 끈다): tick이 프레임마다 확인한다
       unloops.push({ s: leaving, at: t - leaving.loopEnd * 0.5 });
-      cur.fader.gain.setValueAtTime(1, t);
-      cur.fader.gain.linearRampToValueAtTime(0, t + blend);
-      next.fader.gain.setValueAtTime(0, t);
-      next.fader.gain.linearRampToValueAtTime(1, t + blend);
-      cur.stop(t + blend);
-      next.start(t, offset);
+      fadeOut(cur, t, blend);
+      const next = source(bufs[i], ends[i], run.gain, t, offset, true);
+      fadeIn(next, t, blend);
       run.sources = run.sources.filter(s => s === cur);  // 이미 끝난 곡을 붙들지 않는다
       run.sources.push(next);
       cur = next;
     },
     tick() {
-      if (unloops.length) unloops = unloops.filter(u => { if (c.currentTime < u.at) return true; u.s.loop = false; return false; });
+      if (unloops.length) unloops = unloops.filter(u => { if (c.currentTime < u.at) return true; u.s.loop = false; u.s.unloopAt = c.currentTime; return false; });
       if (held || c.state !== 'running' || !c.getOutputTimestamp) { stampOk = false; return; }
       const s = c.getOutputTimestamp();
       if (s.performanceTime > 0) top = Math.max(top, s.contextTime * 1000 - s.performanceTime);
     },
     // v0.11.2 끊김 추정(AudioGapMeter): 지난 호출 뒤 (오디오 출력 시각 − 실제 시각)의 최댓값(ms). 멈춤이 끼었거나 값이 없으면 null
     peak() { const p = stampOk && top > -Infinity ? top : null; top = -Infinity; stampOk = true; return p; },
-    info() { return c.sampleRate + ',' + ((c.baseLatency || 0) + (c.outputLatency || 0)); },
-    position() { return c.currentTime - t0 - c.baseLatency - (c.outputLatency || 0); },
-    // 일시정지: AudioContext를 멈춰 음악·효과음과 시계(currentTime)를 함께 세운다. 예약해 둔 곡 경계도 같은 시계라 그대로 맞는다
-    hold(on) { held = on; return on ? c.suspend() : resume(); },
+    info() { return c.sampleRate + ',' + lat(); },
+    position() { return c.currentTime - t0 - lat(); },
+    // 지금 귀에 들리는 오디오 시계(초). 3·2·1을 이 시계로 센다
+    now() { return c.currentTime - lat(); },
+    // 일시정지: 곡 노드를 지금 세우고 멈춘 자리를 기억한다. 다시 틀기를 예약해 둔 숫자 세기 중이면 그 예약을 거두고 멈춘 자리는 그대로 둔다
+    // 풀기(on = false): 다시 틀기를 예약하지 않고 풀면(HOME 등) 바로 이어 튼다
+    // at: 멈출 판 시간(초, position과 같은 기준). 화면이 멈춘 음악 시간을 넘기면 이어 할 때 화면과 소리가 같은 자리에서 출발한다. 없으면 지금 들리는 자리
+    hold(on, at) {
+      if (!on) { if (pausedAt !== null) this.resumeIn(0); held = false; return; }
+      held = true;
+      if (pausedAt !== null) return;
+      // 출력 버퍼에 남은 몇십 ms는 이어 할 때 다시 들린다
+      const heard = at === undefined || at === null ? c.currentTime - lat() : t0 + at;
+      pausedAt = resumeAt !== null && resumeAt > heard ? resumeAt : heard;
+      resumeAt = null;
+      fading.forEach(s => s.stop()); fading = [];
+      if (!run) return;
+      saved = run.sources.filter(s => s.end > pausedAt).map(s => ({ s, p: s.at <= pausedAt ? pos(s, pausedAt) : null }));
+      run.sources.forEach(s => s.stop());
+    },
+    // 이어 하기: 들리는 시계로 delay초 뒤에 멈춘 자리부터 다시 들리게 예약한다. 숫자 세기의 시작 시각(now 기준)을 돌려준다
+    resumeIn(delay) {
+      c.resume();  // 탭 전환 때 브라우저가 재웠으면 깨운다
+      const now = c.currentTime, R = Math.max(now + 0.01, now - lat() + delay);
+      if (pausedAt === null) return now - lat();
+      const shift = R - pausedAt, made = new Map();
+      if (run) {
+        run.sources = saved.map(({ s, p }) => {
+          const n = source(s.buffer, s.loopEnd, run.gain, p === null ? s.at + shift : R, p === null ? s.offset : p, s.loop);
+          if (s.fadeIn !== null && s.fadeIn > pausedAt) fadeIn(n, s.fadeIn + shift, s.blend);
+          if (s.fadeOut !== null) fadeOut(n, Math.max(s.fadeOut + shift, R), s.blend);
+          made.set(s, n);
+          return n;
+        });
+        cur = made.get(cur) || cur;
+        unloops = unloops.filter(u => made.has(u.s)).map(u => ({ s: made.get(u.s), at: u.at + shift }));
+        t0 += shift;
+        window.musicStart += 1000 * shift;
+      }
+      pausedAt = null; saved = []; resumeAt = R;
+      return R - delay;
+    },
     running() { return !held && c.state === 'running'; },
     setDb(db) { out.gain.setTargetAtTime(Math.pow(10, db / 20), c.currentTime, 0.01); },
   };
@@ -180,8 +239,19 @@ func position() -> float:
 	return float(_js.position())
 
 
-func hold(on: bool) -> void:
-	_js.hold(on)
+## at: 멈출 판 시간(초, position 기준). 화면이 멈춘 음악 시간
+func hold(on: bool, at: float) -> void:
+	_js.hold(on, at)
+
+
+## 이어 하기: 들리는 시계로 delay초 뒤 멈춘 자리부터 다시 들리게 예약한다. 숫자 세기 시작 시각(now 기준)
+func resume_in(delay: float) -> float:
+	return float(_js.resumeIn(delay))
+
+
+## 지금 귀에 들리는 오디오 시계(초)
+func now() -> float:
+	return float(_js.now())
 
 
 func running() -> bool:

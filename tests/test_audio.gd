@@ -423,3 +423,29 @@ func test_웹_빌드는_첫_곡만_pck에_넣고_나머지는_뒤에서_받는�
 	for step in range(1, MusicLadder.STEPS.size()):
 		assert_true(excluded.has(AudioManager.track_path(step).trim_prefix("res://")), "곡 %d은 pck에서 빼고 music/에서 받음" % step)
 	assert_eq(presets.get_value("preset.0.options", "html/custom_html_shell"), "res://web/shell.html", "로딩 화면 셸")
+
+
+func test_일시정지하면_효과음은_멈춰_두지_않고_꺼서_이어_한_뒤_늦게_나지_않음() -> void:
+	AudioManager.unblock()
+	AudioManager.play_action(&"jump")
+	AudioManager.play_orb(1, 0, 1000.0)
+	AudioManager.play_close()
+	var sfx: Array = AudioManager._pool + AudioManager._orb_pool + AudioManager._close_pool
+	assert_true(sfx.any(func(p: AudioStreamPlayer) -> bool: return p.playing), "소리가 나는 중")
+	AudioManager.set_held(true)
+	assert_false(sfx.any(func(p: AudioStreamPlayer) -> bool: return p.playing or p.stream_paused), "멈춤 상태로 남지 않고 꺼짐")
+	AudioManager.set_held(false)
+	assert_false(sfx.any(func(p: AudioStreamPlayer) -> bool: return p.playing), "이어 해도 남은 소리 없음")
+	AudioManager.play_action(&"slide")
+	assert_true(sfx.any(func(p: AudioStreamPlayer) -> bool: return p.playing), "이어 한 뒤 입력하면 바로 남")
+
+
+func test_휴대폰_웹은_다음_곡을_멈췄을_때와_숨_고르기_마디에_몰아서_푼다() -> void:
+	var slice := WebMusic.SLICE_USEC
+	var idle := AudioManager.IDLE_SLICE_USEC
+	assert_eq(AudioManager.decode_budget(false, false, [false, 6.0]), slice, "PC는 늘 같은 양")
+	assert_eq(AudioManager.decode_budget(true, true, [false, 6.0]), idle, "메인 화면·일시정지·숫자 세기")
+	assert_eq(AudioManager.decode_budget(true, false, [true, 6.0]), idle, "숨 고르기 마디")
+	assert_eq(AudioManager.decode_budget(true, false, [false, 6.0]), 0, "보통 마디는 풀지 않음")
+	assert_eq(AudioManager.decode_budget(true, false, [false, AudioManager.DECODE_URGENT - 0.1]), slice, "예약이 급하면 보통 마디에서도")
+	assert_true(idle > slice)

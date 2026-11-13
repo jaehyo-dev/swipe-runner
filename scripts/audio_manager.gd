@@ -46,6 +46,10 @@ const FADE_FLOOR_DB := -60.0
 const SWITCH_BLEND := 0.005     # 곡 경계에서 파형이 튀어 딸깍거리지 않게 겹치는 시간. 틈은 없다
 const GAP_POLL := 30            # 이 프레임마다 오디오 출력 시계를 끊김 추정에 넣는다 (약 0.5초)
 const RESAMPLE_HEAD := 2        # mix_audio가 맨 앞에 내놓는 빈 표본 수. 버리지 않으면 곡 이음매마다 틈이 생긴다
+## 휴대폰 웹(v0.11.3): 다음 곡 디코딩을 플레이 중 보통 마디에서는 하지 않고 메인 화면·일시정지·숫자 세기·숨 고르기 마디에 몰아서 한다.
+## 숨 고르기는 8마디에 한 번이라 4마디마다 필요한 곡을 다 못 풀 수 있다: 예약 시각까지 DECODE_URGENT초 안이면 보통 마디에서도 푼다
+const IDLE_SLICE_USEC := 8000   # 게임이 멈췄거나 쉬운 때 한 프레임에 디코딩하는 시간 (마이크로초)
+const DECODE_URGENT := 4.0
 
 ## 소리를 낸 순간 알림 (이름, 재생 속도). 화면 확인 기록과 테스트에서 쓴다.
 signal played(sound: StringName, pitch: float)
@@ -95,9 +99,11 @@ var _sfx_user_db := 0.0     # 설정 SFX 슬라이더 (dB)
 var _held := false          # 일시정지로 소리를 멈췄다
 var gaps := AudioGapMeter.new()  # 성능 표시의 오디오 끊김 추정 (웹만)
 var _fades := {}  # 음악 플레이어 -> 볼륨 트윈 (플레이어마다 하나만)
+var _phone := false  # 웹 휴대폰 (디코딩 시점을 가린다)
 
 
 func _ready() -> void:
+	process_mode = Node.PROCESS_MODE_ALWAYS  # 일시정지·숫자 세는 동안에도 다음 곡을 풀고 곡을 받는다 (음악 시계는 _held로 멈춘다)
 	AudioServer.set_bus_volume_db(AudioServer.get_bus_index(&"SFX"), SFX_DB)
 	tracks.resize(MusicLadder.STEPS.size())
 	_set_track(0, FIRST_TRACK)
@@ -129,6 +135,7 @@ func _ready() -> void:
 		if start_step != 0:  # 개발용 ?bpm: 시작 곡을 먼저 받는다 (main이 받을 때까지 가림막을 둔다)
 			fetch_rest()
 		_web = WebMusic.new(start_step)
+		_phone = int(JavaScriptBridge.eval("matchMedia('(pointer: coarse)').matches ? 1 : 0")) == 1
 		for sound in SFX:
 			AudioServer.register_stream_as_sample(SFX[sound])
 	_set_music_db(MUSIC_DB)
@@ -186,12 +193,16 @@ func _process(delta: float) -> void:
 	if _web:
 		if not first_ready():  # 개발용 ?bpm: 시작 곡을 다 받은 뒤 풀기 시작한다
 			_web.want(start_step, 0.0)
-		elif not _blocked:  # 게임 오버 화면에서는 경계가 계속 밀리므로 곡을 다시 풀지 않는다
+		elif _blocked:  # 메인 화면·게임 오버: 다음 판의 첫 경계 곡을 미리 푼다 (판 시작에서 늘 같은 자리)
+			var edge := MusicLadder.new(start_step).next_edge(0.0, 0.0)
+			if edge["switch"]:
+				_web.want(edge["step"], edge["from"])
+		else:
 			_want_next_track()
-		_web.decode_slice()
+		_web.decode_slice(decode_budget(_phone, _held or _blocked or get_tree().paused, _until_plan()))
 		if Engine.get_process_frames() % GAP_POLL == 0:
 			gaps.push(_web.peak(), Time.get_ticks_msec() / 1000.0)
-	if not is_music_on():
+	if not is_music_on() or _held:  # 일시정지 동안 음악 시계는 멈춘 자리에 둔다
 		return
 	if not _web:
 		_pump_generator()
@@ -243,6 +254,21 @@ func _want_next_track() -> void:
 	var edge := ladder.next_edge(music_time, SCHEDULE_MIN)
 	if edge["switch"]:
 		_web.want(edge["step"], edge["from"])
+
+
+## 이번 프레임의 디코딩 시간(마이크로초). 휴대폰만 가린다: 멈췄거나 숨 고르기 마디면 넉넉히, 보통 마디는 예약이 급할 때만
+## until_plan: [지금 박이 숨 고르기 마디인가, 다음 곡을 예약할 때까지 남은 초]
+static func decode_budget(phone: bool, idle: bool, until_plan: Array) -> int:
+	if not phone:
+		return WebMusic.SLICE_USEC
+	if idle or until_plan[0]:
+		return IDLE_SLICE_USEC
+	return WebMusic.SLICE_USEC if until_plan[1] < DECODE_URGENT else 0
+
+
+func _until_plan() -> Array:
+	var edge := ladder.next_edge(music_time, SCHEDULE_MIN)
+	return [BeatPattern.is_breather(ladder.beat_at(music_time)), edge["at"] - SCHEDULE_LEAD - music_time]
 
 
 func _next_track_ready() -> bool:
@@ -465,18 +491,33 @@ func set_volumes(music_level: float, sfx_level: float) -> void:
 	_set_music_db(_music_db)
 
 
-## 일시정지: 음악·효과음을 그 자리에서 멈추고 음악 시계도 멈춘다. 풀면 멈췄던 표본부터 이어진다.
-## 웹은 AudioContext를 멈춘다 (시계 currentTime이 서고, 예약해 둔 곡 경계도 같이 밀린다).
+## 일시정지: 음악을 그 자리에서 멈추고 음악 시계도 멈춘다. 풀면 멈췄던 표본부터 이어진다.
+## 효과음은 멈추지 않고 끈다: 멈춰 두면 이어 한 뒤 남은 꼬리가 입력 없이 늦게 들린다 (v0.11.3).
+## 웹은 곡 노드만 세운다 (WebMusic.JS hold: AudioContext는 계속 돈다). 이어 하기는 resume_in이 정확한 시각에 예약한다.
 ## 데스크톱은 플레이어를 멈춘다 (트리 일시정지만으로는 제너레이터 버퍼가 비는 동안 위치가 흐를 수 있어 직접 멈춘다).
 func set_held(on: bool) -> void:
 	_held = on
-	if not on:
+	if on:
+		for player in _pool + _orb_pool + _close_pool:
+			player.stop()
+	else:
 		_clock.rehear()
-	if _web:
-		_web.hold(on)
+	if _web:  # 화면이 멈춘 음악 시간(부드럽게 이은 값)에서 멈춘다: 이어 한 첫 프레임부터 화면과 소리가 같은 자리
+		_web.hold(on, music_time - _clock.offset)
 		return
-	for player in _players + _pool + _orb_pool + _close_pool:
+	for player in _players:
 		player.stream_paused = on
+
+
+## 오디오 시계(초): 웹은 지금 귀에 들리는 AudioContext 시각, 데스크톱은 실제 시간. 3·2·1을 이 시계로 센다
+func clock() -> float:
+	return _web.now() if _web else Time.get_ticks_usec() / 1000000.0
+
+
+## 이어 하기(웹): 들리는 시계로 delay초 뒤에 음악이 멈춘 자리부터 다시 들리게 예약한다 (숫자가 끝나는 순간 = 음악 재개).
+## 숫자 세기 시작 시각(clock 기준)을 돌려준다. 데스크톱은 set_held(false) 때 바로 이어지므로 지금 시각
+func resume_in(delay: float) -> float:
+	return _web.resume_in(delay) if _web else clock()
 
 
 ## 일시정지를 푼 뒤 소리가 실제로 다시 흐르는가 (웹 AudioContext는 몇 ms 늦게 다시 돈다)

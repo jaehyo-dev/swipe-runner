@@ -1,0 +1,161 @@
+{
+ "url": "https://jaehyo-dev.github.io/swipe-runner/",
+ "engine": "chromium",
+ "mode": "hide",
+ "info": {
+  "rate": 48000,
+  "base": 0.021333333333333333,
+  "outLat": 0.07200000000000001,
+  "state": "suspended",
+  "ua": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) HeadlessChrome/157.0.0.0 Safari/537.36"
+ },
+ "starts": [],
+ "rows": [
+  {
+   "k": 1,
+   "latBefore": [
+    83,
+    93.3
+   ],
+   "latAfter": [
+    82.7,
+    93.3
+   ],
+   "cont": null,
+   "sfxBefore": {
+    "cmd": 51.8,
+    "sched": 0,
+    "real": 82.8,
+    "total": 134.6
+   },
+   "sfxAfter": null,
+   "game": [
+    -13.4,
+    -99.1,
+    5.5,
+    157
+   ]
+  },
+  {
+   "k": 2,
+   "latBefore": [
+    82.2,
+    93.3
+   ],
+   "latAfter": [
+    82.3,
+    93.3
+   ],
+   "cont": null,
+   "sfxBefore": {
+    "cmd": 55.2,
+    "sched": 0,
+    "real": 83.4,
+    "total": 138.6
+   },
+   "sfxAfter": {
+    "cmd": 46.9,
+    "sched": 0,
+    "real": 83.5,
+    "total": 130.4
+   },
+   "game": [
+    -10.8,
+    -93.4,
+    14,
+    100
+   ]
+  },
+  {
+   "k": 3,
+   "latBefore": [
+    82,
+    93.3
+   ],
+   "latAfter": [
+    82.5,
+    93.3
+   ],
+   "cont": null,
+   "sfxBefore": {
+    "cmd": 51.7,
+    "sched": 0,
+    "real": 82,
+    "total": 133.7
+   },
+   "sfxAfter": {
+    "cmd": 52.2,
+    "sched": 0,
+    "real": 81.4,
+    "total": 133.6
+   },
+   "game": [
+    -16.9,
+    -106.6,
+    7.2,
+    157
+   ]
+  },
+  {
+   "k": 4,
+   "latBefore": [
+    82.2,
+    93.3
+   ],
+   "latAfter": [
+    82.8,
+    93.3
+   ],
+   "cont": null,
+   "sfxBefore": {
+    "cmd": 50.1,
+    "sched": 0,
+    "real": 82.3,
+    "total": 132.4
+   },
+   "sfxAfter": {
+    "cmd": 48.7,
+    "sched": 0,
+    "real": 81.7,
+    "total": 130.4
+   },
+   "game": [
+    -12.1,
+    -100.9,
+    12.4,
+    105
+   ]
+  },
+  {
+   "k": 5,
+   "latBefore": [
+    82.3,
+    93.3
+   ],
+   "latAfter": [
+    82.9,
+    93.3
+   ],
+   "cont": null,
+   "sfxBefore": {
+    "cmd": 51,
+    "sched": 0,
+    "real": 82.5,
+    "total": 133.5
+   },
+   "sfxAfter": {
+    "cmd": 48,
+    "sched": 0,
+    "real": 82.9,
+    "total": 130.9
+   },
+   "game": [
+    -15.7,
+    -109.7,
+    -0.3,
+    110
+   ]
+  }
+ ],
+ "errors": []
+}

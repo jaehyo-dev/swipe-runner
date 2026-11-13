@@ -1,0 +1,355 @@
+{
+ "url": "http://localhost:8791/",
+ "engine": "webkit",
+ "mode": "pause",
+ "info": {
+  "rate": 48000,
+  "base": 0.0026666666666666666,
+  "outLat": 0.028125,
+  "state": "running",
+  "ua": "Mozilla/5.0 (iPhone; CPU iPhone OS 15_0 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/26.0 Mobile/15E148 Safari/604.1"
+ },
+ "starts": [
+  [
+   -12.8,
+   -18,
+   10,
+   86
+  ],
+  [
+   -13.2,
+   -17.9,
+   6.9,
+   49
+  ],
+  [
+   -16.3,
+   -18.3,
+   -0.1,
+   181
+  ],
+  [
+   -13.1,
+   -16.4,
+   6.6,
+   49
+  ],
+  [
+   -14.7,
+   -18.5,
+   3.9,
+   85
+  ],
+  [
+   -16.1,
+   -20.1,
+   -0.4,
+   151
+  ],
+  [
+   -15.2,
+   -17.6,
+   1,
+   85
+  ],
+  [
+   -15.3,
+   -17.5,
+   1.9,
+   85
+  ]
+ ],
+ "rows": [
+  {
+   "k": 1,
+   "state": [
+    "running",
+    "running"
+   ],
+   "latBefore": [
+    -1.3,
+    30.8
+   ],
+   "latAfter": [
+    -1.3,
+    30.8
+   ],
+   "sfxBefore": {
+    "cmd": 12,
+    "sched": 0,
+    "real": -1.5,
+    "total": 10.5
+   },
+   "sfxAfter": null,
+   "game": [
+    -15.3,
+    -28.9,
+    0.3,
+    147
+   ]
+  },
+  {
+   "k": 2,
+   "state": [
+    "running",
+    "running"
+   ],
+   "latBefore": [
+    -1.3,
+    30.8
+   ],
+   "latAfter": [
+    -1.1,
+    30.8
+   ],
+   "sfxBefore": {
+    "cmd": 10,
+    "sched": 0,
+    "real": -1.4,
+    "total": 8.6
+   },
+   "sfxAfter": null,
+   "game": [
+    -18.8,
+    -32.5,
+    -12.6,
+    180
+   ]
+  },
+  {
+   "k": 3,
+   "state": [
+    "running",
+    "running"
+   ],
+   "latBefore": [
+    -1.3,
+    30.8
+   ],
+   "latAfter": [
+    -1.3,
+    30.8
+   ],
+   "sfxBefore": {
+    "cmd": 17,
+    "sched": 0,
+    "real": -1,
+    "total": 16
+   },
+   "sfxAfter": null,
+   "game": [
+    -14.8,
+    -27.3,
+    0.5,
+    142
+   ]
+  },
+  {
+   "k": 4,
+   "state": [
+    "running",
+    "running"
+   ],
+   "latBefore": [
+    -1.3,
+    30.8
+   ],
+   "latAfter": [
+    -1.4,
+    30.8
+   ],
+   "sfxBefore": {
+    "cmd": 6,
+    "sched": 0,
+    "real": -1.3,
+    "total": 4.7
+   },
+   "sfxAfter": {
+    "cmd": 5,
+    "sched": 0,
+    "real": -1.8,
+    "total": 3.2
+   },
+   "game": [
+    -19.1,
+    -27,
+    -9.3,
+    106
+   ]
+  },
+  {
+   "k": 5,
+   "state": [
+    "running",
+    "running"
+   ],
+   "latBefore": [
+    -1.7,
+    30.8
+   ],
+   "latAfter": [
+    -1.4,
+    30.8
+   ],
+   "sfxBefore": {
+    "cmd": 11,
+    "sched": 0,
+    "real": -2,
+    "total": 9
+   },
+   "sfxAfter": {
+    "cmd": 13,
+    "sched": 0,
+    "real": -1.4,
+    "total": 11.6
+   },
+   "game": [
+    -18.7,
+    -30.3,
+    -12.3,
+    180
+   ]
+  },
+  {
+   "k": 6,
+   "state": [
+    "running",
+    "running"
+   ],
+   "latBefore": [
+    -1.2,
+    30.8
+   ],
+   "latAfter": [
+    -1.2,
+    30.8
+   ],
+   "sfxBefore": {
+    "cmd": 5,
+    "sched": 0,
+    "real": -1.1,
+    "total": 3.9
+   },
+   "sfxAfter": {
+    "cmd": 8,
+    "sched": 0,
+    "real": -1.3,
+    "total": 6.7
+   },
+   "game": [
+    -19.4,
+    -34.3,
+    0,
+    147
+   ]
+  },
+  {
+   "k": 7,
+   "state": [
+    "running",
+    "running"
+   ],
+   "latBefore": [
+    -1.2,
+    30.8
+   ],
+   "latAfter": [
+    -1.2,
+    30.8
+   ],
+   "sfxBefore": {
+    "cmd": 15,
+    "sched": 0,
+    "real": -1.1,
+    "total": 13.9
+   },
+   "sfxAfter": null,
+   "game": [
+    -20.6,
+    -29.8,
+    -13.4,
+    95
+   ]
+  },
+  {
+   "k": 8,
+   "state": [
+    "running",
+    "running"
+   ],
+   "latBefore": [
+    -1.4,
+    30.8
+   ],
+   "latAfter": [
+    -1,
+    30.8
+   ],
+   "sfxBefore": null,
+   "sfxAfter": null,
+   "game": [
+    -16.4,
+    -18.9,
+    -0.9,
+    148
+   ]
+  },
+  {
+   "k": 9,
+   "state": [
+    "running",
+    "running"
+   ],
+   "latBefore": [
+    -0.7,
+    30.8
+   ],
+   "latAfter": [
+    -1.2,
+    30.8
+   ],
+   "sfxBefore": {
+    "cmd": 3,
+    "sched": 0,
+    "real": -1,
+    "total": 2
+   },
+   "sfxAfter": {
+    "cmd": 4,
+    "sched": 0,
+    "real": -0.9,
+    "total": 3.1
+   },
+   "game": null
+  },
+  {
+   "k": 10,
+   "state": [
+    "running",
+    "running"
+   ],
+   "latBefore": [
+    -1.5,
+    30.8
+   ],
+   "latAfter": [
+    -1.3,
+    30.8
+   ],
+   "sfxBefore": {
+    "cmd": 10,
+    "sched": 0,
+    "real": -1.5,
+    "total": 8.5
+   },
+   "sfxAfter": {
+    "cmd": 12,
+    "sched": 0,
+    "real": -1.1,
+    "total": 10.9
+   },
+   "game": null
+  }
+ ],
+ "errors": []
+}

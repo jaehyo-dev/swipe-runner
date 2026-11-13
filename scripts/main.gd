@@ -38,6 +38,7 @@ const PREWARM_MAX_FRAMES := 120  # 아주 느린 기기도 언젠가는 화면�
 const WARM_MAX_FRAMES := 20      # 2단계 한 묶음에 쓰는 최대 프레임: 셰이더는 첫 프레임에 만들어지고, 느린 기기도 시작을 오래 기다리지 않게
 const PREWARM_TINY := 0.002     # 메인 화면 뒤에서 미리 그릴 때의 크기: 그리기는 하지만 한 화소도 안 된다
 const DRIFT_TIME := 3.0
+const DRIFT_SKIP := 0.5   # 판 시작 기준값은 첫 소리가 자리 잡은 뒤부터 잰다
 const GAME_URL := "https://jaehyo-dev.github.io/swipe-runner/"
 const COPIED_TIME := 0.8
 ## 휴대폰(누르는 화면)에 공유 창이 있으면 그걸 쓰고 "share", 아니면 클립보드에 복사하고 "copy". 클립보드 권한이 거부되면 옛 복사(execCommand)로 한 번 더
@@ -161,6 +162,7 @@ var prewarmed := false
 var warmed := false
 ## 일시정지 중 (숫자 세는 동안 포함)
 var paused := false
+var _measuring := false  # 박자 오차를 재는 중: 다시 시작을 빨리 거듭해도 측정이 겹겹이 쌓이지 않게 하나만
 var haptics := Haptics.new()
 
 var _swipe := SwipeDetector.new()
@@ -443,6 +445,7 @@ func begin() -> void:
 	record.begin_run()
 	_show_best()
 	_move_world()
+	_report_drift("시작 뒤", DRIFT_SKIP)
 	_pop_dashes()  # 대시가 메인 화면의 흐르던 자리에서 박 자리로 옮겨 가는 순간을 가린다
 	var fade := create_tween().set_parallel()
 	fade.tween_property(_title, "modulate:a", 0.0, TITLE_FADE)
@@ -918,6 +921,7 @@ func restart() -> void:
 		daily.start(today())
 	_tint_from = _tint  # 부딪힌 순간의 색에서 돌아간다
 	AudioManager.restart_music()
+	_report_drift("시작 뒤", DRIFT_SKIP)
 	_music_t = AudioManager.music_time
 	_tint_clock = _music_t
 	travel = AudioManager.ladder.distance_at(_music_t)  # 출력 지연만큼 음수에서 출발: 다음 프레임에 길이 뒤로 튀지 않게
@@ -1052,7 +1056,8 @@ func pause() -> void:
 func _on_resume_pressed() -> void:
 	var t := AudioManager.music_time
 	var step: int = AudioManager.ladder.segment_at(t)["step"]
-	_pause_menu.count(PauseCountdown.new(MusicLadder.beat_time(step), AudioManager.ladder.beat_at(t)))
+	var countdown := PauseCountdown.new(MusicLadder.beat_time(step), AudioManager.ladder.beat_at(t))
+	_pause_menu.count(countdown, AudioManager.resume_in(countdown.resume_at()))
 
 
 ## 숫자가 끝났다: 소리를 먼저 다시 돌리고(웹은 몇 ms 걸린다) 돌기 시작하면 세상을 푼다
@@ -1068,9 +1073,14 @@ func _on_resumed() -> void:
 		_report_drift()
 
 
-## 이어 한 뒤 DRIFT_TIME초 동안 화면의 음악 시간과 들리는 소리 위치의 차이(+면 화면이 앞섬)를 남긴다 (박자 오차 확인용 한 줄).
+## 이어 한 뒤(또는 판 시작 뒤 skip초부터, 일시정지 전 기준값) DRIFT_TIME초 동안 화면의 음악 시간과 들리는 소리 위치의 차이(+면 화면이 앞섬)를 남긴다 (박자 오차 확인용 한 줄).
 ## 브라우저 오디오 시계는 블록 단위 계단으로 오르므로 프레임마다의 차이에는 계단 크기만큼 흔들림이 섞인다: 평균이 실제 어긋남이다
-func _report_drift() -> void:
+func _report_drift(label := "이어 한 뒤", skip := 0.0) -> void:
+	if _measuring:
+		return
+	_measuring = true
+	if skip > 0.0:
+		await get_tree().create_timer(skip).timeout
 	var low := INF
 	var high := -INF
 	var sum := 0.0
@@ -1083,8 +1093,9 @@ func _report_drift() -> void:
 		sum += d
 		n += 1
 		await get_tree().process_frame
+	_measuring = false
 	if n > 0:
-		print("PAUSE 이어 한 뒤 %.0f초 박자 오차 평균 %+.1fms (%+.1f ~ %+.1f, %d프레임)" % [DRIFT_TIME, sum / n * 1000.0, low * 1000.0, high * 1000.0, n])
+		print("PAUSE %s %.0f초 박자 오차 평균 %+.1fms (%+.1f ~ %+.1f, %d프레임)" % [label, DRIFT_TIME, sum / n * 1000.0, low * 1000.0, high * 1000.0, n])
 
 
 func _unpause() -> void:
