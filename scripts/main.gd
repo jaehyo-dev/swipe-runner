@@ -388,10 +388,13 @@ func apply_safe(safe: Vector2) -> void:
 
 
 ## 메인 화면 홈 화면 앱 버튼: UPDATE(새로고침), INSTALL(설치 창), 안내 ×(다시 안 뜸)
-func _pwa_act(action: String) -> void:
+## 누른 곳이 앱 버튼·안내 글자면 true (안내 글자는 아무 일 없이 터치만 먹는다)
+func _pwa_act(point: Vector2) -> bool:
+	var action: String = _title.pwa_hit(point)
 	if action in ["update", "install", "close"]:
 		JavaScriptBridge.eval("window.pwa && pwa.act('%s')" % action)
 		_pwa_wait = 0.0  # 바로 다시 읽어 버튼을 숨긴다
+	return not action.is_empty()
 
 
 ## 성능 표시: 설정 PERFORMANCE가 기본 방법. 왼쪽 위 빠른 세 번 탭(PC는 F3)도 같은 설정을 바꾼다
@@ -1368,8 +1371,8 @@ func _menu_input(event: InputEvent, pressed: bool) -> void:
 			toggle_sound()
 		elif _title.gear.hit(event.position):
 			open_settings()
-		elif not _title.pwa_hit(event.position).is_empty():
-			_pwa_act(_title.pwa_hit(event.position))
+		elif _pwa_act(event.position):
+			pass
 		elif not daily_mode and _title.daily_hit(event.position):
 			open_daily()
 		elif daily_mode and _title.daily_home.hit(event.position):

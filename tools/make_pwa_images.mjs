@@ -9,7 +9,7 @@ const { chromium } = createRequire(import.meta.url)(process.env.PW || 'playwrigh
 const [url, sheetDir] = process.argv.slice(2);
 const OUT = path.resolve('web/pwa');
 // 아이폰 화면 (CSS 폭, 높이, 배율). shell.html의 <link rel="apple-touch-startup-image">와 같은 목록
-export const STARTUP = [[375, 667, 2], [375, 812, 3], [390, 844, 3], [393, 852, 3], [402, 874, 3], [414, 896, 2], [414, 896, 3], [420, 912, 3], [428, 926, 3], [430, 932, 3], [440, 956, 3]];
+const STARTUP = [[375, 667, 2], [375, 812, 3], [390, 844, 3], [393, 852, 3], [402, 874, 3], [414, 896, 2], [414, 896, 3], [420, 912, 3], [428, 926, 3], [430, 932, 3], [440, 956, 3]];
 const BG = '#05040d';
 
 const browser = await chromium.launch({ executablePath: process.env.CHROME, headless: true,
