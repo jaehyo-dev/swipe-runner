@@ -45,7 +45,9 @@ jobs:
           godot --headless --path . --export-release "Web" "$PWD/build/web/index.html"
           # 첫 곡 뒤의 음악은 .pck에 없고 메인 화면이 뜬 뒤 music/에서 받는다 (v0.9.1)
           mkdir -p build/web/music && cp assets/audio/music/*.ogg build/web/music/
-          for f in index.html index.js index.wasm index.pck music/bgm_160_b.ogg; do test -s "build/web/$f"; done
+          # 홈 화면 앱: manifest 다듬기·아이콘·서비스 워커(캐시 이름에 버전) (v0.12.0)
+          python3 tools/pwa_build.py build/web
+          for f in index.html index.js index.wasm index.pck music/bgm_160_b.ogg index.manifest.json index.service.worker.js pwa/icon_512.png; do test -s "build/web/$f"; done
 
       # 작업 브랜치에서도 웹 빌드를 내려받아 실제 화면(PC·휴대폰 크기)을 확인할 수 있게 올려 둔다
       - name: 웹 빌드 올리기 (화면 확인용)
@@ -136,6 +138,7 @@ jobs:
           test -s "$site/index.wasm"
           # 첫 곡 뒤의 음악은 .pck에 없고 메인 화면이 뜬 뒤 music/에서 받는다 (v0.9.1부터)
           mkdir -p "$site/music" && cp assets/audio/music/*.ogg "$site/music/"
+          python3 tools/pwa_build.py "$site"  # 홈 화면 앱 (v0.12.0). versions/ 옛 버전은 앱으로 만들지 않는다
 
           # 라이선스 문구 (Godot 엔진 + 서드파티 에셋)
           mkdir -p "$site/licenses"

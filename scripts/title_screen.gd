@@ -5,6 +5,7 @@ extends Control
 ## v0.10.0: "SWIPE TO START" 아래 DAILY 버튼(연보라 테, 오늘 안 했으면 점). 누르면 같은 무대 위에서 0.3초 교차 페이드로
 ## 오늘의 판 시작 화면(DAILY #n, TODAY BEST, STREAK, NEW IN, 왼쪽 위 집 버튼)으로 바뀐다. 시작 글자는 두 화면이 함께 쓴다.
 ## v0.11.0: 젤리 아래 스킨 이름(잠긴 스킨은 조건·진행도)과 위치 점, 시작 글자는 "TAP TO START" (좌우 스와이프 = 스킨 넘기기)
+## v0.12.0: 홈 화면 앱 — 왼쪽 위에 아이폰 브라우저 안내(□↑ ADD TO HOME SCREEN ×) 또는 안드로이드 INSTALL, 오른쪽 아래 UPDATE. 안전 영역만큼 위·아래 버튼을 안쪽으로
 
 const FONT := preload("res://assets/fonts/Poppins-ExtraLight.ttf")
 const LAVENDER := Color(0.788, 0.722, 1.0)       # #C9B8FF: 방울 테와 같은 연보라
@@ -40,6 +41,8 @@ const DOT_SMALL := 5.0       # 점 반지름 (지금 스킨은 DOT_RADIUS)
 const DOT_STEP := 26.0
 const START_AFTER_DOTS := 16.0
 const GUIDE_SIDE_GAP := 24.0  # 안내를 젤리 옆에 둘 때 젤리 가장자리에서 안내 오른쪽 끝까지
+const PWA_SIZE := 26         # 홈 화면 앱 안내·INSTALL·UPDATE 글자 (버전 글자 22보다 조금 크게)
+const PWA_ROW := 56.0        # INSTALL·UPDATE 테 높이
 
 var best_label: Label
 var guide: VBoxContainer
@@ -56,6 +59,13 @@ var _daily_title: Label
 var _daily_lines: Label   # TODAY BEST / STREAK / NEW IN
 var _switch: Tween
 var skin_name: Label   # 젤리 아래 스킨 이름, 잠긴 스킨은 조건·진행도
+var add_hint: HBoxContainer  # 아이폰 브라우저: □↑ ADD TO HOME SCREEN ×
+var add_close: UiIcon
+var install_button: Label   # 안드로이드 크롬: INSTALL
+var update_button: Label    # 새 버전을 받았을 때: UPDATE
+var safe_top := 0.0     # 안전 영역 (화면 단위). 위 버튼들을 이만큼 내린다
+var safe_bottom := 0.0
+var _title_label: Label
 var skin_dots: Control  # 그 아래 스킨 위치 점
 var _skin_index := 0
 var _skin_count := 1
@@ -68,6 +78,7 @@ func _init() -> void:
 	_menu_items = _group("MenuItems")
 	_daily_items = _group("DailyItems")
 	var title := text_label("TitleLabel", "SWIPE\nPULSE", TITLE_SIZE, TITLE_COLOR)
+	_title_label = title
 	title.label_settings.line_spacing = TITLE_LINE
 	title.label_settings.shadow_color = TITLE_GLOW
 	title.label_settings.shadow_size = 18
@@ -93,30 +104,68 @@ func _init() -> void:
 	place(0.0, Rect2(330, 700, 60, 100), Vector2(720, 1280))
 	sound = UiIcon.new(UiIcon.Kind.SOUND_ON, Color(1, 1, 1, 0.7), SOUND_SIDE)
 	sound.name = "SoundButton"
-	corner(sound, true)
 	add_child(sound)
 	gear = UiIcon.new(UiIcon.Kind.GEAR, Color(1, 1, 1, 0.7), SOUND_SIDE)
 	gear.name = "SettingsButton"
-	corner(gear, true)
-	gear.offset_left -= SOUND_SIDE
-	gear.offset_right -= SOUND_SIDE
 	add_child(gear)
+	_build_pwa()
+	set_safe(0.0, 0.0)
 
 
-## 아이콘을 화면 위 모서리(right면 오른쪽, 아니면 왼쪽)에 둔다. 게임 오버의 집 버튼도 같은 자리 규칙을 쓴다
-static func corner(icon: Control, right: bool) -> void:
+## 아이콘을 화면 위 모서리(right면 오른쪽, 아니면 왼쪽)에 둔다. 게임 오버의 집 버튼도 같은 자리 규칙을 쓴다. top: 안전 영역만큼 더 내린다
+static func corner(icon: Control, right: bool, top := 0.0) -> void:
 	var side := icon.custom_minimum_size.x
 	icon.set_anchors_preset(Control.PRESET_TOP_RIGHT if right else Control.PRESET_TOP_LEFT)
 	icon.offset_left = -side - SOUND_MARGIN if right else SOUND_MARGIN
 	icon.offset_right = icon.offset_left + side
-	icon.offset_top = SOUND_MARGIN
-	icon.offset_bottom = SOUND_MARGIN + side
+	icon.offset_top = SOUND_MARGIN + top
+	icon.offset_bottom = SOUND_MARGIN + top + side
+
+
+## 안전 영역(노치·홈 막대, 화면 단위): 위 모서리 버튼·안내와 위 글자(제목·BEST·조작 안내, 오늘의 판 제목·기록)를 top만큼 내리고 UPDATE를 bottom만큼 올린다.
+## 아래 글자(TAP TO START·DAILY)는 main이 place()에 줄인 화면 높이를 넘겨 맞춘다 (place보다 먼저: 조작 안내 자리가 safe_top을 쓴다)
+func set_safe(top: float, bottom: float) -> void:
+	safe_top = top
+	safe_bottom = bottom
+	_title_label.offset_top = TITLE_TOP + top
+	best_label.offset_top = BEST_TOP + top
+	_daily_title.offset_top = DAILY_TITLE_TOP + top
+	_daily_lines.offset_top = BEST_TOP + top
+	corner(sound, true, top)
+	corner(gear, true, top)
+	gear.offset_left -= SOUND_SIDE
+	gear.offset_right -= SOUND_SIDE
+	corner(daily_home, false, top)
+	for item: Control in [add_hint, install_button]:
+		item.position = Vector2(SOUND_MARGIN, SOUND_MARGIN + top + (SOUND_SIDE - item.size.y) * 0.5)
+	update_button.offset_bottom = -SOUND_MARGIN - bottom
+	update_button.offset_top = update_button.offset_bottom - PWA_ROW
+
+
+## 홈 화면 앱 표시. update: UPDATE, hint: "ios"(안내) | "install"(INSTALL) | "". 메인 화면 글자 묶음 안이라 오늘의 판 화면에서는 안 보인다
+func set_pwa(update: bool, hint: String) -> void:
+	update_button.visible = update
+	add_hint.visible = hint == "ios"
+	install_button.visible = hint == "install"
+
+
+## 홈 화면 앱 버튼을 눌렀는가: "update" | "install" | "close"(안내 ×) | "hint"(안내 글자: 시작하지 않고 무시) | ""
+func pwa_hit(point: Vector2) -> String:
+	if daily_shown:
+		return ""
+	if update_button.is_visible_in_tree() and update_button.get_global_rect().has_point(point):
+		return "update"
+	if install_button.is_visible_in_tree() and install_button.get_global_rect().has_point(point):
+		return "install"
+	if add_hint.is_visible_in_tree() and add_hint.get_global_rect().grow(12.0).has_point(point):
+		return "close" if point.x >= add_close.global_position.x - 12.0 else "hint"
+	return ""
 
 
 ## 메인 화면 글자 자리 (화면 좌표, 720x1280 기준 높이). pool: 젤리 빛 웅덩이 앞 끝 y, jelly: 젤리 몸의 화면 사각형, size: 화면 크기.
 ## 아래로 쌓기: 웅덩이 → 스킨 이름 → 점 → TAP TO START → DAILY. 화면이 짧으면 아래 끝(START_FLOOR)에 닿을 때까지만 내려가고 넘치면 위로 민다.
 ## 조작 안내(GUIDE_TOP부터 3줄)가 젤리 위 끝에 닿으면 안내를 젤리 왼쪽 옆으로 옮긴다 (짧은 PC 창·9:16 화면). 결과 {name, dots, start, daily, guide_side, guide_right, guide_top}
-static func layout(pool: float, jelly: Rect2, size: Vector2) -> Dictionary:
+static func layout(pool: float, jelly: Rect2, size: Vector2, top := 0.0) -> Dictionary:
 	var line := LINE_SIZE * 1.6
 	var name := pool + NAME_GAP
 	var start := maxf(name + line + DOTS_ROW + START_AFTER_DOTS, size.y - START_BOTTOM - DAILY_ROW)
@@ -124,7 +173,7 @@ static func layout(pool: float, jelly: Rect2, size: Vector2) -> Dictionary:
 	if over > 0.0:
 		start -= over
 		name = minf(name, start - START_AFTER_DOTS - DOTS_ROW - line)
-	var guide_bottom := GUIDE_TOP + GUIDE_ROW * 3.0
+	var guide_bottom := GUIDE_TOP + top + GUIDE_ROW * 3.0
 	var side := guide_bottom > jelly.position.y
 	return {
 		"name": name,
@@ -133,12 +182,12 @@ static func layout(pool: float, jelly: Rect2, size: Vector2) -> Dictionary:
 		"daily": start + line + DAILY_GAP,
 		"guide_side": side,
 		"guide_right": jelly.position.x - GUIDE_SIDE_GAP,  # 화면 왼쪽 끝에서 안내 오른쪽 끝까지
-		"guide_top": jelly.get_center().y - GUIDE_ROW * 1.5 if side else GUIDE_TOP,
+		"guide_top": jelly.get_center().y - GUIDE_ROW * 1.5 if side else GUIDE_TOP + top,
 	}
 
 
 func place(pool: float, jelly: Rect2, size: Vector2) -> void:
-	var at := layout(pool, jelly, size)
+	var at := layout(pool, jelly, size, safe_top)
 	var line := LINE_SIZE * 1.6
 	start_label.set_anchors_preset(Control.PRESET_TOP_WIDE)
 	start_label.offset_top = at["start"]
@@ -291,9 +340,53 @@ func _build_daily() -> void:
 	_daily_items.add_child(_daily_lines)
 	daily_home = UiIcon.new(UiIcon.Kind.HOME, Color(1, 1, 1, 0.7), SOUND_SIDE)
 	daily_home.name = "DailyHomeButton"
-	corner(daily_home, false)
 	daily_home.visible = false
 	add_child(daily_home)
+
+
+## 홈 화면 앱 안내·버튼 (Poppins ExtraLight, 연보라 가는 테는 DAILY와 같은 모양)
+func _build_pwa() -> void:
+	var dim := Color(1, 1, 1, 0.7)
+	add_hint = HBoxContainer.new()
+	add_hint.name = "AddToHomeHint"
+	add_hint.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	add_hint.add_theme_constant_override("separation", 6)
+	add_hint.add_child(UiIcon.new(UiIcon.Kind.SHARE, Color(LAVENDER, 0.9), 44.0))
+	var text := text_label("", "ADD TO HOME SCREEN", PWA_SIZE, dim)
+	text.size_flags_vertical = Control.SIZE_SHRINK_CENTER
+	add_hint.add_child(text)
+	add_close = UiIcon.new(UiIcon.Kind.CLOSE, Color(1, 1, 1, 0.55), 72.0)  # 누르는 자리는 넉넉히, 그림은 작게
+	add_close.art = 0.22
+	add_hint.add_child(add_close)
+	add_hint.visible = false
+	_menu_items.add_child(add_hint)
+	add_hint.size = add_hint.get_combined_minimum_size()
+	install_button = _pill("InstallButton", "INSTALL")
+	_menu_items.add_child(install_button)
+	install_button.size = install_button.get_combined_minimum_size()
+	update_button = _pill("UpdateButton", "UPDATE")
+	update_button.set_anchors_preset(Control.PRESET_BOTTOM_RIGHT)
+	update_button.grow_horizontal = Control.GROW_DIRECTION_BEGIN
+	update_button.offset_right = -SOUND_MARGIN
+	update_button.offset_left = update_button.offset_right - update_button.get_combined_minimum_size().x
+	_menu_items.add_child(update_button)
+
+
+func _pill(node_name: String, text: String) -> Label:
+	var pill := text_label(node_name, text, PWA_SIZE, Color(1, 1, 1, 0.8))
+	pill.set_anchors_preset(Control.PRESET_TOP_LEFT)
+	pill.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
+	var frame := StyleBoxFlat.new()
+	frame.bg_color = Color(0, 0, 0, 0)
+	frame.border_color = Color(LAVENDER, 0.7)
+	frame.set_border_width_all(2)
+	frame.set_corner_radius_all(int(PWA_ROW * 0.5))
+	frame.content_margin_left = 20.0
+	frame.content_margin_right = 20.0
+	pill.add_theme_stylebox_override("normal", frame)
+	pill.custom_minimum_size.y = PWA_ROW
+	pill.visible = false
+	return pill
 
 
 ## 조작 안내 세 줄: 기호 ‹ › ↑ ↓(연보라, 선으로 그림) + 말(흰색). 기호 칸을 맞춰 세 줄이 같은 세로줄에 선다

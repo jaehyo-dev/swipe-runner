@@ -176,16 +176,49 @@ func test_화면에_점수와_버전_안내_글자만_있음() -> void:
 	await wait_frames()
 	var labels: Array = main._hud.find_children("*", "Label", true, false)
 	assert_eq(labels.size(), 9, "점수 + 최고 + (숨겨진) 다시 시작 안내·배수·PERFECT 한 줄·게임 오버 한 줄·SHARE·NEW SKIN·EQUIP")
-	assert_eq(main._title.find_children("*", "Label", true, false).size(), 10, "메인 화면: 제목 + BEST + 안내 세 줄(기호는 선으로 그림) + 스킨 이름 + 시작 안내 + DAILY 버튼, 오늘의 판: 번호 + 기록 줄")
+	assert_eq(main._title.find_children("*", "Label", true, false).size(), 13, "메인 화면: 제목 + BEST + 안내 세 줄(기호는 선으로 그림) + 스킨 이름 + 시작 안내 + DAILY 버튼 + (숨긴) 홈 화면 앱 안내·INSTALL·UPDATE, 오늘의 판: 번호 + 기록 줄")
 	assert_eq(main._pause_menu.find_children("*", "Label", true, false).size(), 5, "일시정지: PAUSED + 버튼 셋 + 숫자")
 	assert_eq(main._settings.find_children("*", "Label", true, false).size(), 12, "설정: 제목 + 줄 이름 여섯 + 값 넷(PERFORMANCE 포함) + DONE")
-	assert_eq(main.find_children("*", "Label", true, false).size(), 20 + 5 + 12 + 1, "+ 버전 + 성능 표시")
+	assert_eq(main.find_children("*", "Label", true, false).size(), 23 + 5 + 12 + 1, "+ 버전 + 성능 표시")
 	assert_false(main.find_child("ShareButton", true, false).visible, "SHARE 처음엔 숨김")
 	assert_false(main._pause_menu.visible or main._settings.visible, "일시정지·설정은 처음엔 숨김")
 	for hidden in ["MultiplierLabel", "StatsLabel", "RestartLabel", "PerfectLabel"]:
 		assert_false(main.find_child(hidden, true, false).visible, hidden + " 처음엔 숨김")
 	var version: Label = main.find_child("VersionLabel", true, false)
 	assert_eq(version.text, "v" + str(ProjectSettings.get_setting("application/config/version")))
+	main.queue_free()
+
+
+func test_홈_화면_앱_버튼과_안전_영역() -> void:
+	var main := _make_main()
+	await wait_frames()
+	var t: TitleScreen = main._title
+	for item: Control in [t.add_hint, t.install_button, t.update_button]:
+		assert_false(item.visible, item.name + " 처음엔 숨김")
+	assert_eq(t.pwa_hit(Vector2(60, 60)), "", "숨긴 버튼은 누를 수 없음")
+	t.set_pwa(true, "ios")
+	await wait_frames()
+	var hint := t.add_hint.get_global_rect()
+	assert_true(hint.end.x < t.gear.get_global_rect().position.x, "안내가 톱니와 겹치지 않음 %s" % hint)
+	assert_eq(t.pwa_hit(hint.get_center() - Vector2(hint.size.x * 0.3, 0)), "hint", "안내 글자 누름은 시작하지 않음")
+	assert_eq(t.pwa_hit(t.add_close.get_global_rect().get_center()), "close")
+	assert_eq(t.pwa_hit(t.update_button.get_global_rect().get_center()), "update")
+	t.set_pwa(false, "install")
+	await wait_frames()
+	assert_false(t.add_hint.visible)
+	assert_eq(t.pwa_hit(t.install_button.get_global_rect().get_center()), "install")
+	# 노치 흉내: 위 108, 아래 62 (화면 단위) → 모서리 버튼·점수는 아래로, 버전·UPDATE·시작 글자는 위로
+	var size := main.get_viewport().get_visible_rect().size
+	main.apply_safe(Vector2(108.0, 62.0))
+	t.set_pwa(true, "install")
+	await wait_frames()
+	assert_true(t.sound.get_global_rect().position.y >= 108.0, "소리 버튼이 노치 아래")
+	assert_true(t.install_button.get_global_rect().position.y >= 108.0, "INSTALL이 노치 아래")
+	assert_true(main._pause_btn.get_global_rect().position.y >= 108.0, "일시정지 버튼이 노치 아래")
+	assert_true(main._score_label.get_global_rect().position.y >= 108.0, "점수가 노치 아래")
+	assert_true(t._title_label.get_global_rect().position.y >= t.sound.get_global_rect().end.y, "제목이 내려간 모서리 버튼 줄 아래")
+	for item: Control in [t.update_button, main._version_label, t.daily_button, t.start_label]:
+		assert_true(item.get_global_rect().end.y <= size.y - 62.0 + 0.5, item.name + " 이 홈 막대 위 %s" % item.get_global_rect())
 	main.queue_free()
 
 
