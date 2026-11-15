@@ -58,7 +58,7 @@ const SKY_RADIUS := 1500.0
 const RAIL_X := 2.38            # 난간 관 위치: 슬라이드로 퍼진 몸(1.5 + 0.775)이 닿지 않는 바깥
 const RAIL_Y := 0.1
 const RAIL_RADIUS := 0.1
-const DASH_SIZE := Vector3(0.07, 0.02, 1.0)  # 레인 경계 빛 대시. 길이는 속도에 맞춰 셰이더가 늘린다 (dash_length)
+const DASH_SIZE := Vector3(0.07, 0.02, 1.0)  # 레인 경계 빛 대시. 길이는 속도에 맞춰 셰이더가 늘린다 (dash_length). 폭을 바꾸면 dash.gdshader half_width도
 const STREAK_MAX := 64          # 빛 줄기 풀 (data/speed_palette.json의 t = 1 값)
 const STREAK_SEED := 606        # 줄기 자리를 고정하는 시드
 const STREAK_X := Vector2(2.9, 8.0)  # 길 바깥 좌우 거리
@@ -79,7 +79,7 @@ const ORB_RADIUS := 0.21       # 지름 0.42 (보이는 크기만, 먹기 범위
 const ORB_ENERGY := 1.62       # 밝기 순서: 장애물 테두리(1.7 이상) > 방울(+ 박 빛 0.06) > 난간(단계 빛남 때도 1.6 이하). tools/brightness_order.gd가 검사
 const ORB_PULSE_ENERGY := 0.06
 const ORB_HALO_SIZE := 1.1     # 빛 번짐 판의 폭 (연보라 바깥 테)
-const ORB_LINK_WIDTH := 0.035  # 한 줄의 방울을 잇는 빛 실선 굵기
+const ORB_LINK_WIDTH := 0.035  # 한 줄의 방울을 잇는 빛 실선 굵기. 바꾸면 orb_link.gdshader half_width도
 const RING_TIME := 0.15        # 먹을 때 주인공 둘레에 퍼지는 빛 고리 시간
 const ABSORB_TIME := 0.12      # 먹은 방울이 주인공 쪽으로 빨려 들어가며 사라지는 시간
 const MISS_FADE := 0.1         # 놓친 방울이 작아지며 사라지는 시간
@@ -128,7 +128,8 @@ const NEW_SKIN_TOP := 450.0  # 게임 오버 NEW SKIN 묶음 (세로: 한 줄 �
 const PREVIEW_SIZE := Vector2(150.0, 130.0)
 ## 웹: 브라우저가 실제로 그린 프레임 간격(requestAnimationFrame)을 모은다. 엔진 _process 안에서 잰 간격은 화면이 멀쩡해도 크게 흔들려
 ## 자동 낮춤이 잘못 걸렸다 (review/v0.9.0/quality.md: rAF 16.8ms인 2초 동안 _process 간격 99% 25.8ms)
-const FRAMES_JS := "window.gameFrames = []; { let last = 0; const tick = t => { if (last) window.gameFrames.push(t - last); last = t; requestAnimationFrame(tick); }; requestAnimationFrame(tick); }"
+## v0.12.1: 프레임마다 일한 시간도 모은다 = 프레임 시작(rAF 시각)부터 그 프레임의 그리기 작업이 끝난 뒤 첫 메시지까지. 배율을 올릴 여유 판단 (QualityGuard.ROOM)
+const FRAMES_JS := "window.gameFrames = []; window.gameWork = []; { let last = 0; const ch = new MessageChannel(); ch.port1.onmessage = e => window.gameWork.push(performance.now() - e.data); const tick = t => { if (last) { window.gameFrames.push(t - last); ch.port2.postMessage(t); } last = t; requestAnimationFrame(tick); }; requestAnimationFrame(tick); }"
 const FRAMES_POLL := 30      # 이 프레임마다 모인 간격을 한 번에 가져온다
 const PERF_REFRESH := 0.25   # 성능 표시 글자를 바꾸는 간격(초)
 
@@ -197,6 +198,8 @@ var _effect_level := 0  # 지금 적용된 효과 단계
 var phone := false        # 누르는 화면(휴대폰·태블릿): MSAA를 처음부터 2x로
 var dpr := 1.0            # 기기 배율 (devicePixelRatio)
 var perf := PerfStats.new()  # 숨은 성능 표시의 프레임 통계
+var _probe := PackedStringArray()  # ?probe=1: 프레임마다 "프레임 시간 ms,이동 거리,박자 오차 ms" (review/v0.12.1 30fps 측정)
+var _probing := false  # 측정 중에는 부딪혀도 멈추지 않는다
 var _perf_label: Label
 var _dev_points := 0.0
 var _used_slots := {}         # _sync_pieces가 다시 쓰는 종류별 칸 수
@@ -348,6 +351,11 @@ func _ready() -> void:
 
 func _process(delta: float) -> void:
 	advance(delta, AudioManager.music_time)
+	if _probing:
+		_probe.append("%.2f,%.4f,%.1f" % [delta * 1000.0, travel, AudioManager.drift() * 1000.0])
+		if _probe.size() >= FRAMES_POLL:
+			JavaScriptBridge.eval("(window.gameProbe = window.gameProbe || []).push('%s')" % ";".join(_probe))
+			_probe.clear()
 	_sync_pieces()
 	_sync_orbs()
 	if OS.has_feature("web") and warmed:
@@ -421,11 +429,16 @@ func _show_perf() -> void:
 func _watch_frames() -> void:
 	if Engine.get_process_frames() % FRAMES_POLL != 0:
 		return
-	for ms in str(JavaScriptBridge.eval("window.gameFrames.splice(0).join()")).split(",", false):
-		perf.push(ms.to_float() / 1000.0)
-		if save.graphics == "auto" and _quality.push(ms.to_float() / 1000.0):
+	var pair := str(JavaScriptBridge.eval("window.gameFrames.splice(0).join() + ';' + window.gameWork.splice(0).join()")).split(";")
+	var frames := pair[0].split(",", false)
+	var work := pair[1].split(",", false) if pair.size() > 1 else PackedStringArray()
+	for i in frames.size():
+		var frame := frames[i].to_float() / 1000.0
+		perf.push(frame)
+		if save.graphics == "auto" and _quality.push(frame, work[i].to_float() / 1000.0 if i < work.size() else -1.0):
 			apply_quality(_quality.level)
-			print("QUALITY %d %.1f %s" % [_quality.level, Time.get_ticks_msec() / 1000.0, _quality.reason])  # 언제, 왜 낮췄는지
+			_fit_render_scale()
+			print("QUALITY %d %.1f %s" % [_quality.level, Time.get_ticks_msec() / 1000.0, _quality.reason])  # 언제, 왜 바꿨는지
 
 
 ## 효과 단계 (QualityGuard.LEVELS): 1 반사 끄기, 2 빛 줄기 줄이기, 3 넓은 빛 번짐 층 끄기, 4 MSAA 2x. 이 단계까지 전부 적용하고 위 단계는 되돌린다 (설정으로 올릴 수 있다)
@@ -438,7 +451,7 @@ func apply_quality(level: int) -> void:
 		_kind_meshes[kind]["reflect"].set_shader_parameter("reflect_on", 0.0 if level >= 1 else 1.0)
 	runner.set_reflection(level < 1)
 	_env.set_glow_level(3, 0.0 if level >= 3 else GLOW_WIDE)
-	get_viewport().msaa_3d = Viewport.MSAA_2X if level >= 4 or phone else Viewport.MSAA_4X
+	get_viewport().msaa_3d = Viewport.MSAA_2X if level >= 4 or (phone and save.graphics != "high") else Viewport.MSAA_4X  # 휴대폰 HIGH는 4x (v0.12.1)
 
 
 ## 설정 GRAPHICS를 적용한다. AUTO로 돌아오면 자동 단계를 처음부터 다시 판단한다
@@ -446,13 +459,15 @@ func apply_graphics(setting: String) -> void:
 	if setting == "auto":
 		_quality = QualityGuard.new()
 	apply_quality(QualityGuard.level_for(setting, _quality.level))
+	_fit_render_scale()  # HIGH 3.0 · LOW 2.0 · AUTO 지금 배율
 
 
 ## 3D만 낮은 해상도로 그리고 늘린다. 글자는 원래 해상도 그대로다.
 func _fit_render_scale() -> void:
 	if OS.has_feature("web"):  # 브라우저 확대·창 옮김으로 바뀔 수 있다
 		dpr = float(JavaScriptBridge.eval("window.devicePixelRatio || 1"))
-	get_viewport().scaling_3d_scale = QualityGuard.render_scale(DisplayServer.window_get_size(), dpr)
+	_quality.top_cap = minf(_quality.top_cap, QualityGuard.top_for(dpr))
+	get_viewport().scaling_3d_scale = QualityGuard.render_scale(DisplayServer.window_get_size(), dpr, QualityGuard.cap_for(save.graphics, _quality.dpr_cap))
 
 
 ## 메인 화면의 시작 입력: 음악 0초와 함께 세상이 출발한다. 제목은 흐려지고 카메라가 게임 자리로 들어간다.
@@ -544,7 +559,7 @@ func advance(delta: float, music_t := NAN) -> void:
 	_move_world()
 	for item in field.items:
 		var dx := runner.position.x - RunLogic.lane_x(item["lane"])
-		if not item.has("cleared") and PlayerAction.hits(item["kind"], dx, PlayerAction.swept_dz(item), player.height(), player.is_ducking()):
+		if not item.has("cleared") and not _probing and PlayerAction.hits(item["kind"], dx, PlayerAction.swept_dz(item), player.height(), player.is_ducking()):
 			_count_lag = 0.0  # 게임 오버 숫자는 바로 최종 점수
 			_show_score()
 			_game_over(item)
@@ -1329,7 +1344,7 @@ func _input(event: InputEvent) -> void:
 
 
 ## 화면 확인 기록(review/)용 주소 값. 쓰면 이 창에서는 스킨 진행도를 저장하지 않는다.
-## ?icon=1 은 글자를 모두 숨김(앱 아이콘 렌더링), ?points=9990 은 판마다 그 점수에서 시작, ?skin=lemon 은 잠겨 있어도 그 스킨으로, ?skin=all 은 모두 열린 것처럼, ?orbs=499 는 방울 진행도를 그 값으로 (NEW SKIN 캡처), ?quality=4 는 효과 단계를 그만큼 낮춘다, ?slow=0.1 은 시간 배율
+## ?icon=1 은 글자를 모두 숨김(앱 아이콘 렌더링), ?points=9990 은 판마다 그 점수에서 시작, ?skin=lemon 은 잠겨 있어도 그 스킨으로, ?skin=all 은 모두 열린 것처럼, ?orbs=499 는 방울 진행도를 그 값으로 (NEW SKIN 캡처), ?quality=4 는 효과 단계를 그만큼 낮춘다, ?graphics=high 는 GRAPHICS 설정, ?probe=1 은 30fps 측정(부딪혀도 계속), ?slow=0.1 은 시간 배율
 func _dev_view() -> void:
 	var query := func(key: String) -> String: return str(JavaScriptBridge.eval("new URLSearchParams(location.search).get('%s') || ''" % key))
 	var dev_skin: String = query.call("skin")
@@ -1348,7 +1363,8 @@ func _dev_view() -> void:
 	var level := int(query.call("quality"))
 	var slow := float(query.call("slow"))
 	_dev_points = float(query.call("points"))  # ?points=9990: 판마다 이 점수에서 시작 (10000점 연출 캡처). 기록은 저장되지만 이 창의 user://만
-	if _dev_points > 0.0:  # 진짜 기록·스킨 진행도에 섞이지 않게 따로 쓰는 기록으로 (Codex 지적)
+	_probing = query.call("probe") == "1"  # ?probe=1: 30fps 측정 (부딪혀도 계속). 기록은 ?points처럼 따로
+	if _dev_points > 0.0 or _probing:  # 진짜 기록·스킨 진행도에 섞이지 않게 따로 쓰는 기록으로 (Codex 지적)
 		skins._read_only = true
 		normal_record = BestRecord.new("user://dev_points_best.txt", 0)
 		daily = DailyRecord.new("user://dev_points_daily.cfg", today())
@@ -1358,6 +1374,10 @@ func _dev_view() -> void:
 	if level > 0:
 		_quality.level = level  # 자동 낮춤이 이 단계 아래에서 다시 시작하지 않게
 		apply_quality(level)
+	var look := str(query.call("graphics"))
+	if look in QualityGuard.SETTINGS:  # ?graphics=high: GRAPHICS 설정을 바꾼다 (화질 비교 캡처용. 다른 설정을 저장하면 함께 저장된다)
+		save.graphics = look
+		apply_graphics(look)
 
 
 ## 메인 화면(·오늘의 판 시작 화면) 입력. 버튼은 누르는 순간, 시작은 손을 뗄 때(탭) 또는 위 스와이프.
@@ -1527,6 +1547,8 @@ func _change_lane(direction: int) -> void:
 		return
 	score.note_move(_music_t, lane)
 	lane = next
+	if _probing:
+		JavaScriptBridge.eval("window.gameActed = performance.now()")  # 입력 → 동작 지연 측정
 	runner.move_to_lane(lane)
 	AudioManager.play_lane(direction)
 

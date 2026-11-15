@@ -199,7 +199,8 @@ func _process(delta: float) -> void:
 				_web.want(edge["step"], edge["from"])
 		else:
 			_want_next_track()
-		_web.decode_slice(decode_budget(_phone, _held or _blocked or get_tree().paused, _until_plan()))
+		# 시작 곡을 기다리는 가림막 뒤도 쉬는 때다 (v0.12.1: 휴대폰 ?bpm이 예산 0으로 끝없이 기다렸다)
+		_web.decode_slice(decode_budget(_phone, _held or _blocked or get_tree().paused or not first_ready(), _until_plan()))
 		if Engine.get_process_frames() % GAP_POLL == 0:
 			gaps.push(_web.peak(), Time.get_ticks_msec() / 1000.0)
 	if not is_music_on() or _held:  # 일시정지 동안 음악 시계는 멈춘 자리에 둔다

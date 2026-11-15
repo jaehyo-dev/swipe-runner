@@ -4,12 +4,12 @@ extends TestCase
 const FAST := 1.0 / 60.0
 
 
-func _feed(guard: QualityGuard, frame: float, seconds: float) -> int:
+func _feed(guard: QualityGuard, frame: float, seconds: float, work := -1.0) -> int:
 	var raised := 0
 	var t := 0.0
 	while t < seconds:
 		t += frame
-		raised += 1 if guard.push(frame) else 0
+		raised += 1 if guard.push(frame, work) else 0
 	return raised
 
 
@@ -88,3 +88,79 @@ func test_설정_GRAPHICS() -> void:
 	assert_eq(QualityGuard.level_for("auto", 2), 2)
 	assert_eq(QualityGuard.level_for("high", 2), 0)
 	assert_eq(QualityGuard.level_for("low", 0), QualityGuard.LEVELS)
+
+
+## v0.12.1 아이폰(배율 3): 여유가 있으면 2.0 → 2.5 → 3.0
+func _phone_guard() -> QualityGuard:
+	var guard := QualityGuard.new()
+	guard.top_cap = QualityGuard.top_for(3.0)
+	_feed(guard, FAST, QualityGuard.GRACE, 0.004)
+	return guard
+
+
+func test_여유가_3초_이어지면_배율을_한_칸씩_올림() -> void:
+	var guard := _phone_guard()
+	assert_eq(guard.dpr_cap, 2.0, "2.0에서 시작")
+	assert_eq(_feed(guard, FAST, 2.9, 0.004), 0, "3초 전에는 그대로")
+	assert_eq(_feed(guard, FAST, 0.2, 0.004), 1)
+	assert_eq(guard.dpr_cap, 2.5)
+	assert_eq(_feed(guard, FAST, QualityGuard.GRACE + 3.2, 0.004), 1, "바꾼 뒤 쉬고 다시 3초")
+	assert_eq(guard.dpr_cap, 3.0)
+	assert_eq(_feed(guard, FAST, 30.0, 0.004), 0, "3.0이 끝")
+	assert_eq(guard.level, 0)
+
+
+func test_여유가_없거나_모르면_올리지_않음() -> void:
+	var guard := _phone_guard()
+	assert_eq(_feed(guard, FAST, 30.0, 0.012), 0, "일하는 시간 12ms > 간격의 70%% 11.7ms")
+	assert_eq(_feed(guard, FAST, 30.0), 0, "일하는 시간을 모름")
+	var desk := QualityGuard.new()  # 배율 2 이하 화면: 올릴 것이 없다
+	desk.top_cap = QualityGuard.top_for(2.0)
+	assert_eq(_feed(desk, FAST, 30.0, 0.002), 0)
+	assert_eq(desk.dpr_cap, 2.0)
+
+
+func test_밀리면_배율부터_내리고_다시_올리지_않음() -> void:
+	var guard := _phone_guard()
+	_feed(guard, FAST, 3.2, 0.004)
+	_feed(guard, FAST, QualityGuard.GRACE + 3.2, 0.004)
+	assert_eq(guard.dpr_cap, 3.0)
+	assert_eq(_feed(guard, 0.025, QualityGuard.GRACE + 3.2, 0.004), 1, "밀리면 배율을 먼저 (올린 뒤 쉬는 시간 포함)")
+	assert_eq([guard.dpr_cap, guard.level], [2.5, 0])
+	assert_eq(_feed(guard, FAST, 120.0, 0.004), 0, "오르내림 반복 금지: 내린 배율은 다시 올리지 않음")
+	_feed(guard, 0.025, 3.2, 0.004)
+	assert_eq([guard.dpr_cap, guard.level], [2.0, 0], "2.0까지 내린 뒤에야 (앞 120초 동안 쉬는 시간은 끝났다)")
+	_feed(guard, 0.025, QualityGuard.GRACE + 3.2, 0.004)
+	assert_eq([guard.dpr_cap, guard.level], [2.0, 1], "효과를 낮춘다")
+	assert_true(guard.reason.contains("효과 1단계"), guard.reason)
+
+
+func test_30Hz_화면은_한_단계만_낮추고_느림으로_보지_않음() -> void:
+	var guard := _phone_guard()
+	assert_eq(_feed(guard, 1.0 / 30.0, 1.1, 0.004), 1, "30Hz를 알아채면 한 단계")
+	assert_eq([guard.level, guard.dpr_cap], [1, 2.0])
+	assert_true(guard.reason.contains("30Hz"), guard.reason)
+	assert_eq(_feed(guard, 1.0 / 30.0, 60.0, 0.004), 0, "33ms 프레임을 느림으로 보지 않고, 올리지도 않음")
+	assert_true(absf(guard.interval - 1.0 / 30.0) < 0.0001)
+	assert_eq(_feed(guard, 0.045, 3.0 + QualityGuard.GRACE, 0.004), 1, "30Hz에서도 40ms를 넘게 밀리면 낮춤")
+	assert_eq(guard.level, 2)
+	_feed(guard, FAST, 3.0)
+	assert_true(absf(guard.interval - 1.0 / 60.0) < 0.0001, "저전력 모드를 끄면 60Hz 기준으로")
+	var other := QualityGuard.new()  # 60Hz에서 들쭉날쭉 밀리는 기기(16·33·50ms)는 30Hz로 보지 않는다
+	for i in 600:
+		other.push([FAST, 0.033, 0.05][i % 3])
+	assert_true(other.interval < 0.02)
+	assert_true(other.level > 0, "느림으로 낮춤")
+
+
+func test_배율_상한별_그리기_크기() -> void:
+	var size := Vector2i(1179, 2556)  # 아이폰 15 Pro
+	assert_eq(QualityGuard.render_scale(size, 3.0, 3.0), 1.0, "3.0이면 기기 그대로")
+	var s := QualityGuard.render_scale(size, 3.0, 2.5)
+	assert_eq(Vector2i(roundi(1179 * s), roundi(2556 * s)), Vector2i(983, 2130))
+	assert_eq(QualityGuard.top_for(3.0), 3.0)
+	assert_eq(QualityGuard.top_for(2.75), 2.5, "칸 아래로")
+	assert_eq(QualityGuard.top_for(1.0), 2.0)
+	assert_eq(QualityGuard.cap_for("auto", 2.5), 2.5)
+	assert_eq(QualityGuard.cap_for("high", 2.0), 3.0)
+	assert_eq(QualityGuard.cap_for("low", 3.0), 2.0)

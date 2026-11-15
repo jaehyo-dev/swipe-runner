@@ -1,6 +1,6 @@
 shader_type spatial;
 // 장애물 (한 메시, 종류마다 MultiMesh 하나): 불투명한 어두운 몸통 + 색 빛 테두리 + 앞면 기호. 파란 기둥은 이 재질로 테두리만 그리고 몸통은 pillar.gdshader다. UV.y가 부위를, UV.x가 관 반지름을 담는다.
-// 관은 멀어져도 끊기지 않게 화면 기준 최소 굵기까지 넓힌다. 환경 안개 대신 직접 섞는다: 안개 거리는 속도 × 보이는 시간이라 매 프레임 바뀐다 (주인공 z = 0 기준 월드 거리).
+// 관은 멀어져도 끊기지 않게 화면 기준 최소 굵기까지 넓힌다. v0.12.1: 테두리·기호 관의 가장자리는 화면 미분(fwidth)으로 약 1.25픽셀 안에서 몸통 색으로 녹인다 (neon.gdshader와 같은 방법). 환경 안개 대신 직접 섞는다: 안개 거리는 속도 × 보이는 시간이라 매 프레임 바뀐다 (주인공 z = 0 기준 월드 거리).
 render_mode unshaded, fog_disabled;
 
 uniform vec3 body_color : source_color = vec3(0.07, 0.055, 0.14);
@@ -17,6 +17,8 @@ uniform float haze_far = 16.0;
 uniform float fog_near = 24.75;     // 주인공 앞 이 거리부터 안개 속에서 진해진다 (main.gd가 매 프레임: 보이는 시간 기준)
 uniform float fog_far = 27.0;       // 이 거리부터는 안개 색: 툭 나타나지 않게 (생성은 더 먼 곳)
 uniform float wall_stretch = 0.75;  // main.gd가 레인 폭의 절반을 넣는다
+uniform float edge_pixels = 1.25;   // 관 가장자리를 녹이는 폭(픽셀)
+uniform float edge_pad = 0.5;       // 녹이는 만큼 관을 넓힌다(픽셀)
 
 varying float part;
 varying float haze;
@@ -29,7 +31,7 @@ void vertex() {
 	float dist = length((MODELVIEW_MATRIX * vec4(VERTEX, 1.0)).xyz);
 	float pixel = 2.0 * dist / (PROJECTION_MATRIX[0][0] * VIEWPORT_SIZE.x);  // 이 거리에서 1픽셀의 세계 크기
 	if (UV.x > 0.0) {
-		VERTEX += NORMAL * max((part > 1.5 ? mark_min_pixels : min_pixels) * pixel - UV.x, 0.0);
+		VERTEX += NORMAL * max(((part > 1.5 ? mark_min_pixels : min_pixels) + edge_pad) * pixel - UV.x, 0.0);
 	}
 	haze = max(INSTANCE_CUSTOM.r * smoothstep(haze_near, haze_far, dist), smoothstep(fog_near, fog_far, -(MODEL_MATRIX * vec4(VERTEX, 1.0)).z));
 }
@@ -38,7 +40,8 @@ void fragment() {
 	vec3 col;
 	if (part > 0.5) {
 		float facing = abs(dot(normalize(NORMAL), normalize(VIEW)));
-		col = (part > 1.5 ? mark_color : edge_color) * mix(0.7, 1.0, facing * facing);
+		float edge = clamp(facing / max(fwidth(facing) * edge_pixels, 1e-4), 0.0, 1.0);
+		col = mix(body_color, (part > 1.5 ? mark_color : edge_color) * mix(0.7, 1.0, facing * facing), edge);
 	} else {
 		float front = max(local_normal.z, 0.0);
 		float top = max(local_normal.y, 0.0);

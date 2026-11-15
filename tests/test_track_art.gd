@@ -300,11 +300,19 @@ func test_프레임이_밀리면_반사_줄기_넓은_빛_번짐_MSAA_순서로_
 	assert_eq(main._effect_level, 0, "HIGH: 0단계")
 	assert_true(main.runner._mirror.visible and main._env.get_glow_level(3) > 0.0, "되돌림")
 	assert_eq(get_viewport().msaa_3d, Viewport.MSAA_4X)
+	main.save.graphics = "low"
 	main.apply_graphics("low")
 	assert_eq(main._effect_level, QualityGuard.LEVELS, "LOW: 가장 낮은 단계")
 	main.phone = true
-	main.apply_quality(0)
+	main.save.graphics = "auto"
+	main.apply_graphics("auto")
 	assert_eq(get_viewport().msaa_3d, Viewport.MSAA_2X, "휴대폰은 처음부터 2x")
+	main.save.graphics = "high"
+	main.apply_graphics("high")
+	assert_eq(get_viewport().msaa_3d, Viewport.MSAA_4X, "휴대폰 HIGH는 4x (v0.12.1)")
+	main.phone = false
+	main.save.graphics = "auto"
+	main.apply_graphics("auto")
 	get_viewport().msaa_3d = msaa
 	main.queue_free()
 
