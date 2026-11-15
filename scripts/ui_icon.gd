@@ -1,9 +1,9 @@
 class_name UiIcon
 extends Control
-## 기호를 가는 선으로 그린다: 조작 안내 ‹ › ↑ ↓(↑↓는 Poppins에 없고, ‹ ›는 글자로는 너무 작아 같은 굵기로 그린다), 소리 켜기/끄기, 집, 일시정지 ‖, 설정 톱니. 텍스처 그림은 쓰지 않는다.
+## 기호를 가는 선으로 그린다: 조작 안내 ‹ › ↑ ↓(↑↓는 Poppins에 없고, ‹ ›는 글자로는 너무 작아 같은 굵기로 그린다), 소리 켜기/끄기, 집, 일시정지 ‖, 설정 톱니, (v0.12.0) 공유 □↑·닫기 ×. 텍스처 그림은 쓰지 않는다.
 ## 그림은 크기(size)의 가운데 정사각형 안에 art 비율로 그린다. 크기를 넉넉히 두면 누르는 자리가 넓어진다.
 
-enum Kind { LEFT_RIGHT, UP, DOWN, SOUND_ON, SOUND_OFF, HOME, PAUSE, GEAR }
+enum Kind { LEFT_RIGHT, UP, DOWN, SOUND_ON, SOUND_OFF, HOME, PAUSE, GEAR, SHARE, CLOSE }
 
 var kind := Kind.UP:
 	set(value):
@@ -57,6 +57,13 @@ func _draw() -> void:
 			rim.append(rim[0])
 			draw_polyline(rim, color, width, true)
 			draw_arc(c, u * 0.28, 0.0, TAU, 20, color, width, true)
+		Kind.SHARE:  # 사파리 공유 기호: 위가 열린 상자 + 위 화살표
+			draw_polyline(PackedVector2Array([p.call(-0.3, -0.2), p.call(-0.65, -0.2), p.call(-0.65, 0.9), p.call(0.65, 0.9), p.call(0.65, -0.2), p.call(0.3, -0.2)]), color, width, true)
+			draw_line(p.call(0, 0.35), p.call(0, -0.95), color, width, true)
+			draw_polyline(PackedVector2Array([p.call(-0.35, -0.6), p.call(0, -0.95), p.call(0.35, -0.6)]), color, width, true)
+		Kind.CLOSE:
+			draw_line(p.call(-0.6, -0.6), p.call(0.6, 0.6), color, width, true)
+			draw_line(p.call(-0.6, 0.6), p.call(0.6, -0.6), color, width, true)
 
 
 ## 화면 좌표 point가 이 아이콘의 누르는 자리 안인가

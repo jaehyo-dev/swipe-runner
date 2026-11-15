@@ -210,6 +210,9 @@ var _pause_menu: PauseMenu
 var _settings: SettingsPanel
 var _begin_waiting := false  # 준비가 끝나기 전에 시작을 눌렀다: 남은 것을 그리고 시작한다
 var _page_callback: JavaScriptObject  # 웹 탭 가림 알림 (붙들고 있어야 사라지지 않는다)
+var _version_label: Label
+var _safe := Vector2.ZERO   # v0.12.0 안전 영역 (위, 아래, 화면 단위). 노치·홈 막대에 버튼·글자가 가리지 않게
+var _pwa_wait := 0.0       # 홈 화면 앱 상태·안전 영역을 메인 화면에서 0.5초마다 읽는다
 var _fade: ColorRect       # 게임 오버 → 메인 화면 페이드
 var _going_home := false
 var _menu_t := 0.0         # 메인 화면에서 흐른 시간 (음악이 없을 때의 박, 대시 흐름)
@@ -351,11 +354,44 @@ func _process(delta: float) -> void:
 		_watch_frames()
 	elif not OS.has_feature("web"):
 		perf.push(delta)
+	if OS.has_feature("web") and not started:
+		_pwa_wait -= delta
+		if _pwa_wait <= 0.0:
+			_pwa_wait = 0.5
+			_poll_pwa()
 	if _perf_label.visible:
 		_perf_wait -= delta
 		if _perf_wait <= 0.0:
 			_perf_wait = PERF_REFRESH
 			_show_perf()
+
+
+## 웹 홈 화면 앱(v0.12.0): 메인 화면에서 UPDATE·설치 안내 상태와 안전 영역을 읽는다 (JS: web/shell.html window.pwa)
+func _poll_pwa() -> void:
+	var info := PwaState.parse(str(JavaScriptBridge.eval("window.pwa ? pwa.state() : ''")))
+	_title.set_pwa(info["update"], info["hint"])
+	var safe := PwaState.insets(str(JavaScriptBridge.eval("window.pwa ? pwa.insets() : ''")), get_viewport().get_visible_rect().size)
+	if not safe.is_equal_approx(_safe):
+		apply_safe(safe)
+
+
+## 안전 영역(위, 아래): 게임 글자 층 전체를 그만큼 안쪽으로, 메인 화면은 모서리 버튼과 아래 글자만, 버전 글자는 홈 막대 위로
+func apply_safe(safe: Vector2) -> void:
+	_safe = safe
+	_hud.offset_top = safe.x
+	_hud.offset_bottom = -safe.y
+	_title.set_safe(safe.x, safe.y)
+	_version_label.offset_top = -48.0 - safe.y
+	_version_label.offset_bottom = -safe.y
+	_perf_label.position.y = TitleScreen.SOUND_MARGIN + TitleScreen.SOUND_SIDE + 12.0 + safe.x
+	_fit_camera()
+
+
+## 메인 화면 홈 화면 앱 버튼: UPDATE(새로고침), INSTALL(설치 창), 안내 ×(다시 안 뜸)
+func _pwa_act(action: String) -> void:
+	if action in ["update", "install", "close"]:
+		JavaScriptBridge.eval("window.pwa && pwa.act('%s')" % action)
+		_pwa_wait = 0.0  # 바로 다시 읽어 버튼을 숨긴다
 
 
 ## 성능 표시: 설정 PERFORMANCE가 기본 방법. 왼쪽 위 빠른 세 번 탭(PC는 F3)도 같은 설정을 바꾼다
@@ -1290,7 +1326,7 @@ func _input(event: InputEvent) -> void:
 
 
 ## 화면 확인 기록(review/)용 주소 값. 쓰면 이 창에서는 스킨 진행도를 저장하지 않는다.
-## ?points=9990 은 판마다 그 점수에서 시작, ?skin=lemon 은 잠겨 있어도 그 스킨으로, ?skin=all 은 모두 열린 것처럼, ?orbs=499 는 방울 진행도를 그 값으로 (NEW SKIN 캡처), ?quality=4 는 효과 단계를 그만큼 낮춘다, ?slow=0.1 은 시간 배율
+## ?icon=1 은 글자를 모두 숨김(앱 아이콘 렌더링), ?points=9990 은 판마다 그 점수에서 시작, ?skin=lemon 은 잠겨 있어도 그 스킨으로, ?skin=all 은 모두 열린 것처럼, ?orbs=499 는 방울 진행도를 그 값으로 (NEW SKIN 캡처), ?quality=4 는 효과 단계를 그만큼 낮춘다, ?slow=0.1 은 시간 배율
 func _dev_view() -> void:
 	var query := func(key: String) -> String: return str(JavaScriptBridge.eval("new URLSearchParams(location.search).get('%s') || ''" % key))
 	var dev_skin: String = query.call("skin")
@@ -1304,6 +1340,8 @@ func _dev_view() -> void:
 			skins.unlocked.append(item["id"])
 	if SkinBook.index_of(dev_skin) >= 0:
 		skins.selected = dev_skin
+	if query.call("icon") == "1":
+		_title.get_parent().visible = false  # ?icon=1: 글자 없이 젤리만 (홈 화면 앱 아이콘 렌더링, tools/make_pwa_images.mjs)
 	var level := int(query.call("quality"))
 	var slow := float(query.call("slow"))
 	_dev_points = float(query.call("points"))  # ?points=9990: 판마다 이 점수에서 시작 (10000점 연출 캡처). 기록은 저장되지만 이 창의 user://만
@@ -1330,6 +1368,8 @@ func _menu_input(event: InputEvent, pressed: bool) -> void:
 			toggle_sound()
 		elif _title.gear.hit(event.position):
 			open_settings()
+		elif not _title.pwa_hit(event.position).is_empty():
+			_pwa_act(_title.pwa_hit(event.position))
 		elif not daily_mode and _title.daily_hit(event.position):
 			open_daily()
 		elif daily_mode and _title.daily_home.hit(event.position):
@@ -1708,7 +1748,7 @@ func _fit_camera() -> void:
 	var top_left := _camera.unproject_position(Vector3(x - Runner.BODY_RADIUS, Runner.BODY_HEIGHT, 0.0))
 	var bottom_right := _camera.unproject_position(Vector3(x + Runner.BODY_RADIUS, 0.0, 0.0))
 	_set_view(k)
-	_title.place(pool, Rect2(top_left, bottom_right - top_left), size)
+	_title.place(pool, Rect2(top_left, bottom_right - top_left), size - Vector2(0.0, _safe.y))  # 아래 글자는 홈 막대 위까지만
 	# NEW SKIN: 세로는 게임 오버 한 줄 아래 가운데, 가로(PC)는 SHARE·젤리와 겹치지 않게 오른쪽 칸
 	_new_skin.set_anchors_preset(Control.PRESET_CENTER_TOP)
 	_new_skin.offset_left = (-180.0 if portrait else size.x * 0.25 - 180.0)
@@ -2016,6 +2056,7 @@ func _build_ui() -> void:
 
 	# 아주 흐린 버전 표시 (project.godot 버전을 읽음)
 	var version := Label.new()
+	_version_label = version
 	version.name = "VersionLabel"
 	version.text = "v" + str(ProjectSettings.get_setting("application/config/version"))
 	version.set_anchors_and_offsets_preset(Control.PRESET_BOTTOM_WIDE)
