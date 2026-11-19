@@ -230,3 +230,15 @@ func test_열_신호는_그리는_양으로_나눠_비교() -> void:
 	assert_eq(_feed_load(guard, 61.0, 0.0078, 20000.0), 1, "그리는 양은 그대로인데 30% 길면 열")
 	assert_eq(guard.level, 1)
 	assert_true(guard.reason.begins_with("열"), guard.reason)
+
+
+## Codex 지적(v0.12.2): 창 크기·기기 배율로 3D 화소가 바뀌면 이전 기준과 비교하지 않는다
+func test_3D_화소가_바뀌면_열_기준을_새로_잡음() -> void:
+	var guard := _ready_guard()
+	guard.top_cap = QualityGuard.MAX_DPR
+	guard.pixels = 1000000
+	_feed_load(guard, 61.0, 0.006, 20000.0)
+	guard.pixels = 2000000  # 창을 키움: 같은 삼각형이라도 일이 는다
+	assert_eq(_feed_load(guard, 61.0, 0.009, 20000.0), 0, "새 크기의 첫 1분은 새 기준")
+	assert_eq(_feed_load(guard, 61.0, 0.009, 20000.0), 0)
+	assert_eq(guard.level, 0)

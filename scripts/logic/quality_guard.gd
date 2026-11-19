@@ -48,7 +48,9 @@ var _slow: Array[float] = []  # 연속된 느린 구간의 99% 프레임(초)
 var _work: Array[float] = []  # 이번 구간 프레임마다 일한 시간(초). 모르면 비어 있다
 var _room := 0                # 연속 여유 구간 수
 var _hz30_done := false       # 30Hz 때 한 단계 낮추기는 한 번만
-var _heat_key := Vector3.ZERO # 열 신호를 비교하는 조건 (갱신 간격, 단계, 배율). 바뀌면 기준을 새로 잡는다
+## 지금 3D를 그리는 화소 수 (main이 넣는다). 창 크기·기기 배율이 바뀌면 열 신호 기준을 새로 잡는다
+var pixels := 0
+var _heat_key := Vector4.ZERO # 열 신호를 비교하는 조건 (갱신 간격, 단계, 배율, 3D 화소). 바뀌면 기준을 새로 잡는다
 var _heat_base := 0.0         # 처음 구간의 (일한 시간 ÷ 그리는 양). 0이면 아직 없다
 var _heat_sum := 0.0
 var _heat_load := 0.0
@@ -189,7 +191,7 @@ func _step_down() -> bool:
 ## 열 신호: 같은 조건에서 HEAT_WINDOW초 동안의 (일한 시간(모르면 프레임 간격) 합 ÷ 그리는 양 합)이 처음 구간의 HEAT_RISE배 이상이면 한 단계 낮춘다.
 ## hold()로 판이 바뀌어도 누적은 이어진다 (휴대폰은 여러 판에 걸쳐 데워진다). 낮춘 뒤에는 배율을 다시 올리지 않는다
 func _heat(frame: float, work: float, load: float) -> bool:
-	var key := Vector3(interval, level, dpr_cap)
+	var key := Vector4(interval, level, dpr_cap, pixels)
 	if key != _heat_key:
 		_heat_key = key
 		_heat_base = 0.0

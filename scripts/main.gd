@@ -361,18 +361,14 @@ func _process(delta: float) -> void:
 			JavaScriptBridge.eval("(window.gameProbe = window.gameProbe || []).push('%s')" % ";".join(_probe))
 			_probe.clear()
 			# v0.12.2 발열 대리 지표: 그리는 횟수, 삼각형 수, 3D 화소(가로x세로), MSAA, 효과 단계, 엔진이 그린 프레임 수
-			var px := Vector2i(Vector2(DisplayServer.window_get_size()) * get_viewport().scaling_3d_scale)
+			var px := Vector2i(_render_size())
 			JavaScriptBridge.eval("window.gameDraw = [%d, %d, %d, %d, %d, %d, %d]" % [RenderingServer.get_rendering_info(RenderingServer.RENDERING_INFO_TOTAL_DRAW_CALLS_IN_FRAME),
 				RenderingServer.get_rendering_info(RenderingServer.RENDERING_INFO_TOTAL_PRIMITIVES_IN_FRAME), px.x, px.y, get_viewport().msaa_3d, _effect_level, Engine.get_frames_drawn()])
 	_sync_pieces()
 	_sync_orbs()
 	if OS.has_feature("web") and warmed:
 		_watch_frames()
-		# v0.12.2 발열: 움직임이 적은 화면(메인·일시정지·설정·충돌 연출이 끝난 게임 오버)은 30fps (web/shell.html lowRate)
-		var low := not started or paused or (dead and _dead_time >= RESTART_DELAY)
-		if low != _low_rate:
-			_low_rate = low
-			JavaScriptBridge.eval("window.lowRate = %s" % low)
+		_update_low_rate()
 	elif not OS.has_feature("web"):
 		perf.push(delta)
 	if OS.has_feature("web") and not started:
@@ -385,6 +381,15 @@ func _process(delta: float) -> void:
 		if _perf_wait <= 0.0:
 			_perf_wait = PERF_REFRESH
 			_show_perf()
+
+
+## v0.12.2 발열: 움직임이 적은 화면(메인·일시정지·설정·충돌 연출이 끝난 게임 오버)은 30fps (web/shell.html lowRate).
+## 일시정지 중에는 트리가 멈춰 _process가 돌지 않으므로 pause()에서도 부른다
+func _update_low_rate() -> void:
+	var low := not started or paused or (dead and _dead_time >= RESTART_DELAY)
+	if low != _low_rate and OS.has_feature("web"):
+		_low_rate = low
+		JavaScriptBridge.eval("window.lowRate = %s" % low)
 
 
 ## 웹 홈 화면 앱(v0.12.0): 메인 화면에서 UPDATE·설치 안내 상태와 안전 영역을 읽는다 (JS: web/shell.html window.pwa)
@@ -435,7 +440,7 @@ func set_perf(on: bool) -> void:
 
 
 func _show_perf() -> void:
-	var render := Vector2i(Vector2(DisplayServer.window_get_size()) * get_viewport().scaling_3d_scale)
+	var render := Vector2i(_render_size())
 	_perf_label.text = perf.text(render, _effect_level, save.graphics, dpr) + "\n" + AudioManager.audio_text()
 
 
@@ -487,6 +492,13 @@ func _fit_render_scale() -> void:
 		dpr = float(JavaScriptBridge.eval("window.devicePixelRatio || 1"))
 	_quality.top_cap = minf(_quality.top_cap, QualityGuard.top_for(dpr))
 	get_viewport().scaling_3d_scale = QualityGuard.render_scale(DisplayServer.window_get_size(), dpr, QualityGuard.cap_for(save.graphics, _quality.dpr_cap))
+	var size := _render_size()
+	_quality.pixels = roundi(size.x * size.y)  # 3D 화소가 바뀌면 열 신호 기준을 새로 잡는다
+
+
+## 지금 3D를 그리는 해상도 (창 크기 × 3D 배율)
+func _render_size() -> Vector2:
+	return Vector2(DisplayServer.window_get_size()) * get_viewport().scaling_3d_scale
 
 
 ## 메인 화면의 시작 입력: 음악 0초와 함께 세상이 출발한다. 제목은 흐려지고 카메라가 게임 자리로 들어간다.
@@ -1120,6 +1132,7 @@ func pause() -> void:
 	paused = true
 	AudioManager.set_held(true)
 	get_tree().paused = true
+	_update_low_rate()
 	_swipe = SwipeDetector.new()  # 누르던 손가락은 잊는다: 이어 한 뒤 반쯤 민 스와이프가 동작이 되지 않게
 	_pause_btn.visible = false
 	_pause_menu.open()
@@ -1176,6 +1189,8 @@ func _unpause() -> void:
 	get_tree().paused = false
 	paused = false
 	_pause_btn.visible = started and not dead
+	if OS.has_feature("web") and warmed:  # 멈춘 동안 쌓인 프레임은 플레이 프레임이 아니다 (자동 품질·열 신호에 넣지 않는다)
+		JavaScriptBridge.eval("window.gameFrames.length = 0; window.gameWork.length = 0")
 
 
 func _on_pause_home() -> void:
