@@ -2,13 +2,6 @@
 
 지난 기록(v0.1.0 ~ v0.11.3)은 [docs/PROGRESS_ARCHIVE.md](docs/PROGRESS_ARCHIVE.md).
 
-## v0.12.0 홈 화면 앱(PWA)
-- manifest(아이콘 192·512·maskable, 세로·standalone), 아이폰 아이콘 180·시작 화면 11장(tools/make_pwa_images.mjs, 엔진 렌더링), viewport-fit=cover·안전 영역
-- 서비스 워커(web/pwa/sw.js → tools/pwa_build.py가 index.service.worker.js로): 캐시 이름에 버전, 음악 포함, versions/는 건드리지 않음
-- 메인 화면 UPDATE(새 버전), INSTALL(안드로이드), ADD TO HOME SCREEN 안내(아이폰 브라우저, × 저장)
-- 리뷰 반영: pwa_hit 한 번만, STARTUP export 제거. 전체 테스트 383 통과. 확인 스크립트 review/v0.12.0/check_pwa.mjs
-- 주의: test_main_scene 실제 시간 타이머 → 맥이 잠들면 전체 테스트가 멈춘 듯 보임. caffeinate -i로 돌린다
-
 ## v0.12.1 휴대폰 화질, 저전력 모드 30fps, PWA 범위
 - AUTO 3D 배율 2.0 → 2.5 → 3.0: 3초 동안 99% 일하는 시간(rAF 시작 ~ 그리기 뒤 메시지) ≤ 갱신 간격 70%면 올림. 밀리면 배율부터 내리고 그 배율은 다시 안 올림. HIGH = 3.0 + MSAA 4x
 - 가는 선: 난간·테두리·기호는 fwidth로 가장자리 녹이기, 대시·방울 이음선은 1.5픽셀 최소 폭 + 옅게. 엔진(Compatibility)은 alpha-to-coverage가 없어 알파 대신 색 섞기
@@ -16,10 +9,18 @@
 - 휴대폰 ?bpm 로딩 멈춤 버그 수정. 측정 도구 tools/web_probe.mjs(?probe=1), 기록 review/v0.12.1/
 - versions/ 서비스 워커 제외는 이미 됨 → 자동 테스트로 고정
 
+## v0.12.2 발열 줄이기, 저전력 모드 품질 오판, 기둥 뒷면 테두리
+- 30Hz: 가끔 46ms로 Q4까지 내려가던 것 → 30Hz면 한 단계만, 그 뒤는 열 신호만. 열 신호 = 1분 (일한 시간 ÷ 삼각형 수)가 처음의 120% 이상이면 한 단계(다시 안 올림), 갱신 간격·단계·배율·3D 화소가 바뀌면 기준 새로
+- AUTO 배율 2.5까지(3.0은 HIGH). 메인·일시정지·설정·게임 오버 30fps(셸 rAF 감싸기 window.lowRate, 측정은 rawRAF). 음악 디코딩 예산은 프레임 간격 비례
+- 기둥 테두리 전용 셰이더 pillar_edge(block.gdshaderinc + CUT_BEHIND): 카메라 광선이 몸통을 지나 온 뒷면 테두리는 discard
+- 저전력 안내 LOW POWER MODE: 30 FPS, 셸 폴링 0.5 → 2초. 포도 스킨은 그대로(구분됨)
+- 측정: 30j에서 v0.12.1 Q2까지(계속 내려감) / v0.12.2 Q1 유지, 160BPM 넘는 250초 열 오판 0회, 메인 화면 초당 3D 화소 -78%. 헤드리스 CPU 값은 흔들려 판단에 안 씀. 기록 docs/REVIEW_v0.12.2.md
+- 리뷰: architect(디코딩·discard 분리 수용, 열은 기록만 → 거절), Codex 6개 수용, ponytail 1개 수용. 전체 테스트 395 통과
+
 ## 나중에(앱 출시 때)
 - 휴대폰 음악 지지직: 앱(네이티브 오디오)에서 다시 확인. 48kHz 변환·출력 버퍼 조정은 그때
 
 ## 이어서 할 일
-- 맥에서 v0.12.1까지 (작업 브랜치 wip/v0.12.1, main에 올림·배포 확인)
-- 아이폰에서 직접: 화질(난간·블록 테두리), 저전력 모드 끊김, 성능 표시로 AUTO 배율이 3.0까지 오르는지·내려오는지, 홈 화면 앱 UPDATE로 v0.12.1 받기
-- v0.11.3부터 남은 실기기 확인(일시정지 뒤 소리 밀림). 다음 단계는 사용자와 정함
+- 맥에서 v0.12.2까지 (작업 브랜치 wip/v0.12.2, main에 올림)
+- 아이폰에서 직접: 저전력 모드 켬 → 성능 표시 Q1 유지·메인 화면 LOW POWER 안내, 끔 → 10분 플레이 뒤 발열을 v0.12.1과 비교, 기둥 뒷면 테두리, UPDATE로 받기
+- 열 신호 HEAT 콘솔 줄로 실기기 곡선 확인(필요하면 20% 기준 조정). 다음 단계는 사용자와 정함

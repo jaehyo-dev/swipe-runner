@@ -283,3 +283,10 @@ PROGRESS.md에서 옮긴 지난 기록. 내용은 옮기기만 하고 고치지 
 - 일시정지 때 효과음 재생기는 끈다(옛: 멈춤 → 재개 때 꼬리가 늦게 남). 효과음은 원래 지금 바로 재생(예약 0ms)
 - 흉내 측정: 옛 크롬은 이어 한 직후 −85~−110ms, 새는 기준값과 평균 6ms 안·누적 없음. 맥 WebKit은 아이폰 증상 재현 안 됨 → 실기기 확인 남음
 - 휴대폰 디코딩: 메인·일시정지·숫자·숨 고르기 마디 8ms, 보통 마디는 예약 4초 전부터만. 메인·게임 오버에서 첫 경계 곡 미리. 기록 review/v0.11.3/
+
+## v0.12.0 홈 화면 앱(PWA)
+- manifest(아이콘 192·512·maskable, 세로·standalone), 아이폰 아이콘 180·시작 화면 11장(tools/make_pwa_images.mjs, 엔진 렌더링), viewport-fit=cover·안전 영역
+- 서비스 워커(web/pwa/sw.js → tools/pwa_build.py가 index.service.worker.js로): 캐시 이름에 버전, 음악 포함, versions/는 건드리지 않음
+- 메인 화면 UPDATE(새 버전), INSTALL(안드로이드), ADD TO HOME SCREEN 안내(아이폰 브라우저, × 저장)
+- 리뷰 반영: pwa_hit 한 번만, STARTUP export 제거. 전체 테스트 383 통과. 확인 스크립트 review/v0.12.0/check_pwa.mjs
+- 주의: test_main_scene 실제 시간 타이머 → 맥이 잠들면 전체 테스트가 멈춘 듯 보임. caffeinate -i로 돌린다
