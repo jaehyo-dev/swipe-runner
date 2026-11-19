@@ -447,13 +447,17 @@ func _watch_frames() -> void:
 	var frames := pair[0].split(",", false)
 	var work := pair[1].split(",", false) if pair.size() > 1 else PackedStringArray()
 	var live := started and not paused and not dead  # 자동 품질은 플레이 중 프레임만 본다 (메인 화면 등은 30fps로 줄였다)
+	var load := float(RenderingServer.get_rendering_info(RenderingServer.RENDERING_INFO_TOTAL_PRIMITIVES_IN_FRAME))  # 열 신호의 그리는 양 (이 묶음의 프레임에 같이 쓴다)
 	for i in frames.size():
 		var frame := frames[i].to_float() / 1000.0
 		perf.push(frame)
-		if live and save.graphics == "auto" and _quality.push(frame, work[i].to_float() / 1000.0 if i < work.size() else -1.0):
+		if live and save.graphics == "auto" and _quality.push(frame, work[i].to_float() / 1000.0 if i < work.size() else -1.0, load):
 			apply_quality(_quality.level)
 			_fit_render_scale()
 			print("QUALITY %d %.1f %s" % [_quality.level, Time.get_ticks_msec() / 1000.0, _quality.reason])  # 언제, 왜 바꿨는지
+		if not _quality.heat_log.is_empty():  # 열 신호 1분 구간마다 한 줄 (오판 확인용)
+			print("%s %.1f" % [_quality.heat_log, Time.get_ticks_msec() / 1000.0])
+			_quality.heat_log = ""
 
 
 ## 효과 단계 (QualityGuard.LEVELS): 1 반사 끄기, 2 빛 줄기 줄이기, 3 넓은 빛 번짐 층 끄기, 4 MSAA 2x. 이 단계까지 전부 적용하고 위 단계는 되돌린다 (설정으로 올릴 수 있다)
@@ -1890,7 +1894,7 @@ func _build_obstacle_resources() -> void:
 			body_override = null
 			_kind_meshes[kind]["pillar"] = pillar
 			block.shader = PILLAR_EDGE_SHADER
-			var inset: float = ArtMeshes.CORNER[kind]
+			var inset: float = ArtMeshes.CORNER[kind] * (1.0 - sqrt(0.5))  # 테두리 관의 중심선 (ArtMeshes._box_edges). 모서리 반지름만큼 줄이면 뒷모서리 광선이 상자 옆을 스친다
 			block.set_shader_parameter("box_half", Vector3(ObstacleField.BLOCK_SIZE, ObstacleField.BLOCK_HEIGHT, ObstacleField.BLOCK_SIZE) * 0.5 - Vector3.ONE * inset)
 			block.set_shader_parameter("box_center_y", ObstacleField.BLOCK_HEIGHT * 0.5)
 		for pair: Array in [[body, body_override], [mirror, reflect]]:

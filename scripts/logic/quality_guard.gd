@@ -6,7 +6,8 @@ extends RefCounted
 ## (요청은 "30초 동안 올리지 않음"이었지만 30초 뒤 다시 올렸다 내리면 그 반복이 끊김으로 보인다).
 ## 판단 기준은 화면 갱신 간격(interval)에 맞춘다: 아이폰 저전력 모드(30Hz)에서 모든 프레임을 '느림'으로 보고 끝까지 낮추지 않게.
 ## v0.12.2: 발열이 화질보다 우선. AUTO 배율은 2.5까지(3.0은 HIGH만). 30Hz에서는 가끔 밀린 프레임으로 낮추지 않고(실기기 33·46ms로 Q4까지 내려갔다)
-## 열 신호만 본다: 같은 갱신 간격·배율·단계에서 1분 평균 일한 시간이 처음 1분보다 20% 이상 길면 한 단계 낮춘다.
+## 열 신호만 본다: 같은 갱신 간격·배율·단계에서 1분 동안의 (일한 시간 ÷ 그리는 양)이 처음 1분보다 20% 이상 크면 한 단계 낮춘다.
+## 그리는 양으로 나누는 까닭: 판 후반에 장애물·방울이 늘어 일이 많아진 것을 열로 착각하지 않게 (그리는 양 = 그 프레임의 삼각형 수)
 
 const MAX_HEIGHT := 1920.0    # 세로 1280 × 기기 화소 1.5배
 const MAX_PIXELS := 2880.0 * 1620.0  # 맥북 전체 화면처럼 가로로 넓은 창은 세로 상한만으로 부족하다 (review/v0.5.1/perf_mac.md)
@@ -21,7 +22,7 @@ const MAX_DPR := 2.0          # 3D 기본 배율 상한 (아이폰 배율 3: 117
 const DPR_STEP := 0.5         # AUTO가 여유 있을 때 올리는 배율 한 칸: 2.0 → 2.5 → 3.0
 const DPR_TOP := 3.0          # 배율 상한 (HIGH)
 const AUTO_TOP := 2.5         # AUTO가 올리는 배율 상한 (v0.12.2 발열)
-const HEAT_WINDOW := 60.0     # 열 신호: 이만큼(초, 판단하는 프레임만)의 평균 일한 시간을 비교한다
+const HEAT_WINDOW := 60.0     # 열 신호: 이만큼(초, 판단하는 프레임만)의 (일한 시간 합 ÷ 그리는 양 합)을 비교한다
 const HEAT_RISE := 1.2        # 처음 구간 평균의 이 배 이상이면 뜨거워져 느려진 것으로 본다
 const ROOM := 0.7             # 3초 동안 99% 프레임의 일하는 시간이 갱신 간격의 이 비율 이하면 여유
 const HZ30 := Vector2(0.030, 0.037)  # 한 구간의 25%·75% 프레임 간격이 모두 이 안이면 30Hz 화면(저전력 모드)
@@ -37,6 +38,8 @@ var top_cap := AUTO_TOP
 var interval := 1.0 / 60.0
 ## 마지막으로 바꾼 이유 (콘솔 기록용)
 var reason := ""
+## 열 신호 구간이 끝날 때마다 남기는 한 줄 (main이 콘솔에 찍고 비운다. 오판 확인용)
+var heat_log := ""
 
 var _frames: Array[float] = []
 var _sum := 0.0
@@ -46,8 +49,9 @@ var _work: Array[float] = []  # 이번 구간 프레임마다 일한 시간(초)
 var _room := 0                # 연속 여유 구간 수
 var _hz30_done := false       # 30Hz 때 한 단계 낮추기는 한 번만
 var _heat_key := Vector3.ZERO # 열 신호를 비교하는 조건 (갱신 간격, 단계, 배율). 바뀌면 기준을 새로 잡는다
-var _heat_base := 0.0         # 처음 구간의 평균 일한 시간(초). 0이면 아직 없다
+var _heat_base := 0.0         # 처음 구간의 (일한 시간 ÷ 그리는 양). 0이면 아직 없다
 var _heat_sum := 0.0
+var _heat_load := 0.0
 var _heat_n := 0
 var _heat_time := 0.0
 
@@ -107,14 +111,15 @@ static func _pick(sorted: Array[float], q: float) -> float:
 
 ## 프레임 간격(초)과 그 프레임에 일한 시간(초, 모르면 음수)을 넣는다.
 ## 이번에 효과 단계·배율을 바꿨으면 true (이유는 reason, 바뀐 값은 level·dpr_cap)
-func push(frame: float, work := -1.0) -> bool:
+## load: 그 프레임의 그리는 양(삼각형 수, 모르면 0 이하)
+func push(frame: float, work := -1.0, load := -1.0) -> bool:
 	if frame > IGNORE_OVER:
 		hold()
 		return false
 	if _grace > 0.0:
 		_grace -= frame
 		return false
-	if _heat(frame, work):
+	if _heat(frame, work, load):
 		return true
 	_frames.append(frame)
 	if work >= 0.0:
@@ -181,31 +186,38 @@ func _step_down() -> bool:
 	return true
 
 
-## 열 신호: 같은 조건에서 HEAT_WINDOW초 평균 일한 시간(모르면 프레임 간격)이 처음 구간의 HEAT_RISE배 이상이면 한 단계 낮춘다.
+## 열 신호: 같은 조건에서 HEAT_WINDOW초 동안의 (일한 시간(모르면 프레임 간격) 합 ÷ 그리는 양 합)이 처음 구간의 HEAT_RISE배 이상이면 한 단계 낮춘다.
 ## hold()로 판이 바뀌어도 누적은 이어진다 (휴대폰은 여러 판에 걸쳐 데워진다). 낮춘 뒤에는 배율을 다시 올리지 않는다
-func _heat(frame: float, work: float) -> bool:
+func _heat(frame: float, work: float, load: float) -> bool:
 	var key := Vector3(interval, level, dpr_cap)
 	if key != _heat_key:
 		_heat_key = key
 		_heat_base = 0.0
 		_heat_sum = 0.0
+		_heat_load = 0.0
 		_heat_n = 0
 		_heat_time = 0.0
 	_heat_sum += work if work >= 0.0 else frame
+	_heat_load += load if load > 0.0 else 1.0  # 모르면 1: 예전처럼 평균 일한 시간 비교 (웹은 늘 안다)
 	_heat_n += 1
 	_heat_time += frame
 	if _heat_time < HEAT_WINDOW:
 		return false
+	var value := _heat_sum / _heat_load
 	var avg := _heat_sum / _heat_n
 	_heat_sum = 0.0
+	_heat_load = 0.0
 	_heat_n = 0
 	_heat_time = 0.0
 	if _heat_base <= 0.0:
-		_heat_base = avg
+		_heat_base = value
+		heat_log = "HEAT 기준 일한 시간 %.2fms, 그리는 양 대비 100%%" % [avg * 1000.0]
 		return false
-	if avg < _heat_base * HEAT_RISE or not _step_down():
+	var rise := value / _heat_base
+	heat_log = "HEAT 일한 시간 %.2fms, 그리는 양 대비 처음의 %d%%" % [avg * 1000.0, roundi(rise * 100.0)]
+	if rise < HEAT_RISE or not _step_down():
 		return false
 	top_cap = minf(top_cap, dpr_cap)
-	reason = "열: 1분 평균 %.1fms ≥ 처음 %.1fms의 %d%% → 효과 %d단계, 배율 %.1f" % [avg * 1000.0, _heat_base * 1000.0, roundi(HEAT_RISE * 100.0), level, dpr_cap]
+	reason = "열: 1분 (일한 시간 ÷ 그리는 양)이 처음의 %d%% ≥ %d%% → 효과 %d단계, 배율 %.1f" % [roundi(rise * 100.0), roundi(HEAT_RISE * 100.0), level, dpr_cap]
 	hold()
 	return true

@@ -208,3 +208,25 @@ func test_30Hz에서도_열_신호로는_낮춤() -> void:
 	_feed(guard, 1.0 / 30.0, QualityGuard.GRACE + 61.0, 0.012)
 	assert_eq(_feed(guard, 1.0 / 30.0, 61.0, 0.016), 1)
 	assert_eq(guard.level, 2)
+
+
+## 사용자 요청(v0.12.2): 판 후반에 장애물·방울이 늘어 일이 많아진 것은 열이 아니다 → 그리는 양으로 나눠 비교
+func _feed_load(guard: QualityGuard, seconds: float, work: float, load: float) -> int:
+	var changed := 0
+	var t := 0.0
+	while t < seconds:
+		t += FAST
+		changed += 1 if guard.push(FAST, work, load) else 0
+	return changed
+
+
+func test_열_신호는_그리는_양으로_나눠_비교() -> void:
+	var guard := _ready_guard()
+	guard.top_cap = QualityGuard.MAX_DPR
+	assert_eq(_feed_load(guard, 61.0, 0.006, 20000.0), 0, "처음 1분이 기준")
+	assert_eq(_feed_load(guard, 61.0, 0.009, 30000.0), 0, "일이 50% 늘어도 그리는 양도 50% 늘었으면 열이 아님")
+	assert_true(guard.heat_log.contains("100%"), guard.heat_log)
+	assert_eq(_feed_load(guard, 61.0, 0.0081, 30000.0), 0, "그리는 양 대비 90%")
+	assert_eq(_feed_load(guard, 61.0, 0.0078, 20000.0), 1, "그리는 양은 그대로인데 30% 길면 열")
+	assert_eq(guard.level, 1)
+	assert_true(guard.reason.begins_with("열"), guard.reason)

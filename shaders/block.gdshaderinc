@@ -20,10 +20,11 @@ uniform float edge_pixels = 1.25;   // 관 가장자리를 녹이는 폭(픽셀)
 uniform float edge_pad = 0.5;       // 녹이는 만큼 관을 넓힌다(픽셀)
 #ifdef CUT_BEHIND
 // v0.12.2 파란 기둥 테두리(pillar_edge.gdshader): 반투명 몸통 너머의 뒷면 테두리가 앞면을 통해 비치지 않게,
-// 카메라 → 화소 광선이 몸통 상자(모서리 반지름만큼 줄인 것)에 화소보다 cut_margin 넘게 먼저 들어가면 그리지 않는다
-uniform vec3 box_half = vec3(0.45, 0.6, 0.45);  // main.gd가 기둥 크기 - 모서리 반지름을 넣는다
+// 카메라 → 화소 광선이 몸통 상자(테두리 관 중심선까지)에 화소보다 cut_margin 넘게 먼저 들어가면 그리지 않는다.
+// cut_margin은 멀리서 화면 최소 굵기로 넓어진 앞 테두리 관(반지름 약 0.1m)은 남기고, 약 1m 뒤의 뒷모서리는 자를 만큼
+uniform vec3 box_half = vec3(0.45, 0.6, 0.45);  // main.gd가 기둥 크기의 절반 - 테두리 관 중심까지 들어간 거리를 넣는다
 uniform float box_center_y = 0.7;
-uniform float cut_margin = 0.06;
+uniform float cut_margin = 0.15;
 varying vec3 local_pos;
 varying vec3 cam_local;
 varying float half_x;

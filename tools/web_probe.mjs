@@ -7,12 +7,13 @@
 // fps: ?seed=7&bpm=160&probe=1 처음부터 160BPM, 시작 뒤 20초. rAF 간격 분포·튀는 프레임(앞 프레임의 1.5배 이상), 게임이 받은 프레임 시간·이동 거리·박자 오차,
 //      1.1초마다 ←/→ 입력 → 동작까지 지연(ms), QUALITY 줄. 30이면 rAF를 한 번 건너 하나씩만 불러 30Hz 화면을 흉내 낸다 (아이폰 저전력 모드), mix는 16·33ms 섞기
 //      게임 쪽 값(프레임 시간·이동·박자 오차·지연)은 ?probe=1이 있는 v0.12.1부터. 옛 버전은 rAF와 QUALITY 줄만
-// shots: ?seed=7 시작 뒤 WAIT ms(기본 3500)에 화면 전체 (난간·블록·방울은 compare.py가 잘라 키운다)
+// shots: ?seed=7 시작 뒤 WAIT ms(기본 3500)에 화면 전체 (난간·블록·방울은 compare.py가 잘라 키운다). HZ=30·NOTAP=1이면 30Hz 메인 화면
 import { createRequire } from 'module'; import fs from 'fs'; import os from 'os'; import path from 'path';
 const { chromium } = createRequire(import.meta.url)(process.env.PW || 'playwright');
 const [url, out, mode, a1, a2, a3] = process.argv.slice(2);
 fs.mkdirSync(out, { recursive: true });
-const PHONE = { width: 393, height: 852 };
+const PC = process.env.PC === '1';  // PC=1: 1280x720 배율 1, 마우스 (PC 화면 확인)
+const PHONE = PC ? { width: 1280, height: 720 } : { width: 393, height: 852 };
 const report = { errors: [], logs: [] };
 
 const INIT = (hz) => `
@@ -30,13 +31,13 @@ async function open(query, hz, throttle) {
   const args = ['--disable-audio-output', '--autoplay-policy=no-user-gesture-required', '--use-angle=metal', '--enable-gpu', '--ignore-gpu-blocklist'];
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'probe-'));
   const ctx = await chromium.launchPersistentContext(dir, {
-    executablePath: process.env.CHROME, headless: true, viewport: PHONE, deviceScaleFactor: 3, isMobile: true, hasTouch: true, args,
+    executablePath: process.env.CHROME, headless: true, viewport: PHONE, deviceScaleFactor: PC ? 1 : 3, isMobile: !PC, hasTouch: !PC, args,
   });
   const page = ctx.pages()[0] || await ctx.newPage();
   await page.addInitScript(INIT(hz));
   page.on('console', m => {
     if (m.type() === 'error') report.errors.push(`${query}: ${m.text()}`);
-    if (/^QUALITY/.test(m.text())) report.logs.push(`${(performance.now() / 1000).toFixed(1)}s ${m.text()}`);
+    if (/^(QUALITY|HEAT)/.test(m.text())) report.logs.push(`${(performance.now() / 1000).toFixed(1)}s ${m.text()}`);
   });
   page.on('pageerror', e => report.errors.push(`${query}: ${e}`));
   if (process.env.VERBOSE) page.on('console', m => console.log('console', m.type(), m.text().slice(0, 200)));
@@ -51,10 +52,15 @@ async function open(query, hz, throttle) {
   return { ctx, page, dir };
 }
 
-// 이 측정의 브라우저 프로세스들(사용자 폴더 이름으로 찾음)의 누적 CPU 시간(초)
+// 이 측정의 브라우저 프로세스들(사용자 폴더 이름으로 본체를 찾고 그 자식들: GPU·렌더러 포함)의 누적 CPU 시간(초)
 import { execSync } from 'child_process';
-const cpuTime = dir => execSync('ps -A -o time=,command=').toString().split('\n').filter(l => l.includes(path.basename(dir)))
-  .reduce((sum, l) => { const [t] = l.trim().split(/\s+/); const p = t.split(':').map(Number); return sum + (p.length === 3 ? p[0] * 3600 + p[1] * 60 + p[2] : p[0] * 60 + p[1]); }, 0);
+const cpuTime = dir => {
+  const rows = execSync('ps -A -o pid=,ppid=,time=,command=').toString().split('\n').filter(Boolean).map(l => { const [pid, ppid, t, ...cmd] = l.trim().split(/\s+/); return { pid, ppid, t, cmd: cmd.join(' ') }; });
+  const ids = new Set(rows.filter(r => r.cmd.includes(path.basename(dir))).map(r => r.pid));
+  for (let grew = true; grew;) { grew = false; for (const r of rows) if (ids.has(r.ppid) && !ids.has(r.pid)) { ids.add(r.pid); grew = true; } }
+  const sec = t => { const p = t.split(':').map(Number); return p.length === 3 ? p[0] * 3600 + p[1] * 60 + p[2] : p[0] * 60 + p[1]; };
+  return rows.filter(r => ids.has(r.pid)).reduce((sum, r) => sum + sec(r.t), 0);
+};
 
 const q = (s, p) => s.length ? s[Math.min(s.length - 1, Math.floor((s.length - 1) * p))] : 0;
 const dist = a => { const s = [...a].sort((x, y) => x - y); return { n: s.length, median: q(s, 0.5), p95: q(s, 0.95), p99: q(s, 0.99), max: q(s, 1) }; };
@@ -90,16 +96,21 @@ if (mode === 'fps') {
   await ctx.close();
 } else if (mode === 'shots') {
   const label = a1, extra = a2 || '';
-  const { ctx, page } = await open('?seed=7' + extra, 60, 1);
-  await page.touchscreen.tap(PHONE.width / 2, PHONE.height * 0.7);
+  const { ctx, page } = await open('?seed=7' + extra, +(process.env.HZ || 60), 1);  // HZ=30: 저전력 안내 캡처
+  if (!process.env.NOTAP) await (PC ? page.mouse.click(PHONE.width / 2, PHONE.height * 0.7) : page.touchscreen.tap(PHONE.width / 2, PHONE.height * 0.7));  // NOTAP=1: 메인 화면 그대로
   await page.waitForTimeout(+(process.env.WAIT || 3500));
   await page.screenshot({ path: path.join(out, `shot_${label}.png`) });
+  for (let i = 1; i <= +(process.env.SERIES || 0); i++) {  // SERIES=n: 그 뒤 2초마다 n장 더 (2칸 벽 같은 장면 찾기, ?probe=1이면 부딪혀도 계속)
+    await page.waitForTimeout(2000);
+    await page.screenshot({ path: path.join(out, `shot_${label}_${i}.png`) });
+  }
   const canvas = await page.evaluate(() => { const c = document.querySelector('canvas'); return [c.width, c.height]; });
   console.log(JSON.stringify({ label, canvas, errors: report.errors, quality: report.logs }));
   await ctx.close();
 } else if (mode === 'heat') {
   const label = a1, menuSec = +(a2 || 60), playSec = +(a3 || 30);
   const { ctx, page, dir } = await open('?seed=7&probe=1', 60, 1);
+  await page.waitForTimeout(+(process.env.SETTLE || 0) * 1000);  // SETTLE초: 메인 화면 음악 미리 풀기가 끝난 뒤 재기 (휴대폰 흉내는 처음 1~2분 디코딩이 CPU 대부분)
   const span = async (sec) => {
     const c0 = cpuTime(dir), d0 = await page.evaluate(() => { window.probe.frames = []; window.probe.on = true; return window.gameDraw || null; });
     await page.waitForTimeout(sec * 1000);
