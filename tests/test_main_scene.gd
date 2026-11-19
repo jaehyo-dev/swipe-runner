@@ -176,10 +176,10 @@ func test_화면에_점수와_버전_안내_글자만_있음() -> void:
 	await wait_frames()
 	var labels: Array = main._hud.find_children("*", "Label", true, false)
 	assert_eq(labels.size(), 9, "점수 + 최고 + (숨겨진) 다시 시작 안내·배수·PERFECT 한 줄·게임 오버 한 줄·SHARE·NEW SKIN·EQUIP")
-	assert_eq(main._title.find_children("*", "Label", true, false).size(), 13, "메인 화면: 제목 + BEST + 안내 세 줄(기호는 선으로 그림) + 스킨 이름 + 시작 안내 + DAILY 버튼 + (숨긴) 홈 화면 앱 안내·INSTALL·UPDATE, 오늘의 판: 번호 + 기록 줄")
+	assert_eq(main._title.find_children("*", "Label", true, false).size(), 14, "메인 화면: 제목 + BEST + 안내 세 줄(기호는 선으로 그림) + 스킨 이름 + 시작 안내 + DAILY 버튼 + (숨긴) 홈 화면 앱 안내·INSTALL·UPDATE·LOW POWER, 오늘의 판: 번호 + 기록 줄")
 	assert_eq(main._pause_menu.find_children("*", "Label", true, false).size(), 5, "일시정지: PAUSED + 버튼 셋 + 숫자")
 	assert_eq(main._settings.find_children("*", "Label", true, false).size(), 12, "설정: 제목 + 줄 이름 여섯 + 값 넷(PERFORMANCE 포함) + DONE")
-	assert_eq(main.find_children("*", "Label", true, false).size(), 23 + 5 + 12 + 1, "+ 버전 + 성능 표시")
+	assert_eq(main.find_children("*", "Label", true, false).size(), 24 + 5 + 12 + 1, "+ 버전 + 성능 표시")
 	assert_false(main.find_child("ShareButton", true, false).visible, "SHARE 처음엔 숨김")
 	assert_false(main._pause_menu.visible or main._settings.visible, "일시정지·설정은 처음엔 숨김")
 	for hidden in ["MultiplierLabel", "StatsLabel", "RestartLabel", "PerfectLabel"]:
@@ -1245,4 +1245,16 @@ func test_게임_오버_NEW_SKIN과_EQUIP() -> void:
 	assert_false(main._new_skin.visible)
 	main._game_over({"kind": ObstacleField.Kind.BLOCK, "lane": 1, "z": 0.0})
 	assert_eq(main.new_skin_id, "", "이미 열린 스킨은 다시 알리지 않음")
+	main.queue_free()
+
+
+## v0.12.2 저전력 안내: 메인 화면 아래, 처음엔 숨김, 버전 글자 위
+func test_저전력_안내는_메인_화면_아래에_숨겨져_있음() -> void:
+	var main := _make_main()
+	await wait_frames()
+	var label: Label = main._title.low_power
+	assert_eq(label.text, "LOW POWER MODE: 30 FPS")
+	assert_false(label.visible, "30Hz를 알아채기 전에는 숨김")
+	assert_true(label.get_global_rect().end.y <= main._version_label.get_global_rect().position.y + 2.0, "버전 글자 위")
+	assert_true(label.get_global_rect().position.y > main.get_viewport().get_visible_rect().size.y * 0.85, "화면 아래")
 	main.queue_free()

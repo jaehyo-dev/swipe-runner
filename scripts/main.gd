@@ -5,6 +5,7 @@ extends Node3D
 const FLOOR_SHADER := preload("res://shaders/floor.gdshader")
 const BLOCK_SHADER := preload("res://shaders/block.gdshader")
 const PILLAR_SHADER := preload("res://shaders/pillar.gdshader")
+const PILLAR_EDGE_SHADER := preload("res://shaders/pillar_edge.gdshader")  # 기둥 테두리: 몸통 너머 뒷면 테두리를 잘라 낸다 (v0.12.2)
 const NEON_SHADER := preload("res://shaders/neon.gdshader")
 const MIRROR_SHADER := preload("res://shaders/mirror.gdshader")
 const DASH_SHADER := preload("res://shaders/dash.gdshader")
@@ -129,9 +130,10 @@ const PREVIEW_SIZE := Vector2(150.0, 130.0)
 ## 웹: 브라우저가 실제로 그린 프레임 간격(requestAnimationFrame)을 모은다. 엔진 _process 안에서 잰 간격은 화면이 멀쩡해도 크게 흔들려
 ## 자동 낮춤이 잘못 걸렸다 (review/v0.9.0/quality.md: rAF 16.8ms인 2초 동안 _process 간격 99% 25.8ms)
 ## v0.12.1: 프레임마다 일한 시간도 모은다 = 프레임 시작(rAF 시각)부터 그 프레임의 그리기 작업이 끝난 뒤 첫 메시지까지. 배율을 올릴 여유 판단 (QualityGuard.ROOM)
-const FRAMES_JS := "window.gameFrames = []; window.gameWork = []; { let last = 0; const ch = new MessageChannel(); ch.port1.onmessage = e => window.gameWork.push(performance.now() - e.data); const tick = t => { if (last) { window.gameFrames.push(t - last); ch.port2.postMessage(t); } last = t; requestAnimationFrame(tick); }; requestAnimationFrame(tick); }"
+const FRAMES_JS := "window.gameFrames = []; window.gameWork = []; { const raf = window.rawRAF || requestAnimationFrame; let last = 0; const ch = new MessageChannel(); ch.port1.onmessage = e => window.gameWork.push(performance.now() - e.data); const tick = t => { if (last) { window.gameFrames.push(t - last); ch.port2.postMessage(t); } last = t; raf(tick); }; raf(tick); }"
 const FRAMES_POLL := 30      # 이 프레임마다 모인 간격을 한 번에 가져온다
 const PERF_REFRESH := 0.25   # 성능 표시 글자를 바꾸는 간격(초)
+const PWA_POLL := 2.0        # v0.12.2: 0.5 → 2초 (상시 작업 줄이기)
 
 ## 0이면 실행할 때마다 무작위. 테스트에서는 0이 아닌 값을 줘서 장애물 레인을 고정한다.
 @export var seed_value := 0
@@ -215,7 +217,8 @@ var _begin_waiting := false  # 준비가 끝나기 전에 시작을 눌렀다: �
 var _page_callback: JavaScriptObject  # 웹 탭 가림 알림 (붙들고 있어야 사라지지 않는다)
 var _version_label: Label
 var _safe := Vector2.ZERO   # v0.12.0 안전 영역 (위, 아래, 화면 단위). 노치·홈 막대에 버튼·글자가 가리지 않게
-var _pwa_wait := 0.0       # 홈 화면 앱 상태·안전 영역을 메인 화면에서 0.5초마다 읽는다
+var _pwa_wait := 0.0       # 홈 화면 앱 상태·안전 영역·저전력 안내를 메인 화면에서 PWA_POLL초마다 읽는다 (창 크기가 바뀌면 바로)
+var _low_rate := false     # 지금 엔진 프레임을 30fps로 줄였는가 (window.lowRate)
 var _fade: ColorRect       # 게임 오버 → 메인 화면 페이드
 var _going_home := false
 var _menu_t := 0.0         # 메인 화면에서 흐른 시간 (음악이 없을 때의 박, 대시 흐름)
@@ -340,6 +343,7 @@ func _ready() -> void:
 	_apply_skin_view()
 	get_viewport().size_changed.connect(_fit_camera)
 	get_viewport().size_changed.connect(_fit_render_scale)
+	get_viewport().size_changed.connect(func() -> void: _pwa_wait = 0.0)  # 안전 영역을 바로 다시 읽는다
 	_fit_camera()
 	_fit_render_scale()
 	_show_title()
@@ -356,16 +360,25 @@ func _process(delta: float) -> void:
 		if _probe.size() >= FRAMES_POLL:
 			JavaScriptBridge.eval("(window.gameProbe = window.gameProbe || []).push('%s')" % ";".join(_probe))
 			_probe.clear()
+			# v0.12.2 발열 대리 지표: 그리는 횟수, 삼각형 수, 3D 화소(가로x세로), MSAA, 효과 단계, 엔진이 그린 프레임 수
+			var px := Vector2i(Vector2(DisplayServer.window_get_size()) * get_viewport().scaling_3d_scale)
+			JavaScriptBridge.eval("window.gameDraw = [%d, %d, %d, %d, %d, %d, %d]" % [RenderingServer.get_rendering_info(RenderingServer.RENDERING_INFO_TOTAL_DRAW_CALLS_IN_FRAME),
+				RenderingServer.get_rendering_info(RenderingServer.RENDERING_INFO_TOTAL_PRIMITIVES_IN_FRAME), px.x, px.y, get_viewport().msaa_3d, _effect_level, Engine.get_frames_drawn()])
 	_sync_pieces()
 	_sync_orbs()
 	if OS.has_feature("web") and warmed:
 		_watch_frames()
+		# v0.12.2 발열: 움직임이 적은 화면(메인·일시정지·설정·충돌 연출이 끝난 게임 오버)은 30fps (web/shell.html lowRate)
+		var low := not started or paused or (dead and _dead_time >= RESTART_DELAY)
+		if low != _low_rate:
+			_low_rate = low
+			JavaScriptBridge.eval("window.lowRate = %s" % low)
 	elif not OS.has_feature("web"):
 		perf.push(delta)
 	if OS.has_feature("web") and not started:
 		_pwa_wait -= delta
 		if _pwa_wait <= 0.0:
-			_pwa_wait = 0.5
+			_pwa_wait = PWA_POLL
 			_poll_pwa()
 	if _perf_label.visible:
 		_perf_wait -= delta
@@ -378,6 +391,7 @@ func _process(delta: float) -> void:
 func _poll_pwa() -> void:
 	var info := PwaState.parse(str(JavaScriptBridge.eval("window.pwa ? pwa.state() : ''")))
 	_title.set_pwa(info["update"], info["hint"])
+	_title.low_power.visible = perf.refresh_rate() == 30  # 화면 갱신이 30Hz로 제한됨 (아이폰 저전력 모드)
 	var safe := PwaState.insets(str(JavaScriptBridge.eval("window.pwa ? pwa.insets() : ''")), get_viewport().get_visible_rect().size)
 	if not safe.is_equal_approx(_safe):
 		apply_safe(safe)
@@ -432,10 +446,11 @@ func _watch_frames() -> void:
 	var pair := str(JavaScriptBridge.eval("window.gameFrames.splice(0).join() + ';' + window.gameWork.splice(0).join()")).split(";")
 	var frames := pair[0].split(",", false)
 	var work := pair[1].split(",", false) if pair.size() > 1 else PackedStringArray()
+	var live := started and not paused and not dead  # 자동 품질은 플레이 중 프레임만 본다 (메인 화면 등은 30fps로 줄였다)
 	for i in frames.size():
 		var frame := frames[i].to_float() / 1000.0
 		perf.push(frame)
-		if save.graphics == "auto" and _quality.push(frame, work[i].to_float() / 1000.0 if i < work.size() else -1.0):
+		if live and save.graphics == "auto" and _quality.push(frame, work[i].to_float() / 1000.0 if i < work.size() else -1.0):
 			apply_quality(_quality.level)
 			_fit_render_scale()
 			print("QUALITY %d %.1f %s" % [_quality.level, Time.get_ticks_msec() / 1000.0, _quality.reason])  # 언제, 왜 바꿨는지
@@ -1874,6 +1889,10 @@ func _build_obstacle_resources() -> void:
 			meshes["body"].surface_set_material(1, block)
 			body_override = null
 			_kind_meshes[kind]["pillar"] = pillar
+			block.shader = PILLAR_EDGE_SHADER
+			var inset: float = ArtMeshes.CORNER[kind]
+			block.set_shader_parameter("box_half", Vector3(ObstacleField.BLOCK_SIZE, ObstacleField.BLOCK_HEIGHT, ObstacleField.BLOCK_SIZE) * 0.5 - Vector3.ONE * inset)
+			block.set_shader_parameter("box_center_y", ObstacleField.BLOCK_HEIGHT * 0.5)
 		for pair: Array in [[body, body_override], [mirror, reflect]]:
 			var node := MultiMeshInstance3D.new()
 			node.multimesh = pair[0]

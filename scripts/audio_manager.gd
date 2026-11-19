@@ -200,7 +200,8 @@ func _process(delta: float) -> void:
 		else:
 			_want_next_track()
 		# 시작 곡을 기다리는 가림막 뒤도 쉬는 때다 (v0.12.1: 휴대폰 ?bpm이 예산 0으로 끝없이 기다렸다)
-		_web.decode_slice(decode_budget(_phone, _held or _blocked or get_tree().paused or not first_ready(), _until_plan()))
+		# v0.12.2: 메인 화면 30fps·저전력 30Hz에도 초당 디코딩량이 같게 프레임 간격에 비례 (60fps 기준, 최대 2배)
+		_web.decode_slice(roundi(decode_budget(_phone, _held or _blocked or get_tree().paused or not first_ready(), _until_plan()) * clampf(delta * 60.0, 1.0, 2.0)))
 		if Engine.get_process_frames() % GAP_POLL == 0:
 			gaps.push(_web.peak(), Time.get_ticks_msec() / 1000.0)
 	if not is_music_on() or _held:  # 일시정지 동안 음악 시계는 멈춘 자리에 둔다

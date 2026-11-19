@@ -90,7 +90,7 @@ func test_설정_GRAPHICS() -> void:
 	assert_eq(QualityGuard.level_for("low", 0), QualityGuard.LEVELS)
 
 
-## v0.12.1 아이폰(배율 3): 여유가 있으면 2.0 → 2.5 → 3.0
+## v0.12.1 아이폰(배율 3): 여유가 있으면 2.0 → 2.5 (v0.12.2: AUTO는 2.5까지, 3.0은 HIGH만)
 func _phone_guard() -> QualityGuard:
 	var guard := QualityGuard.new()
 	guard.top_cap = QualityGuard.top_for(3.0)
@@ -104,9 +104,7 @@ func test_여유가_3초_이어지면_배율을_한_칸씩_올림() -> void:
 	assert_eq(_feed(guard, FAST, 2.9, 0.004), 0, "3초 전에는 그대로")
 	assert_eq(_feed(guard, FAST, 0.2, 0.004), 1)
 	assert_eq(guard.dpr_cap, 2.5)
-	assert_eq(_feed(guard, FAST, QualityGuard.GRACE + 3.2, 0.004), 1, "바꾼 뒤 쉬고 다시 3초")
-	assert_eq(guard.dpr_cap, 3.0)
-	assert_eq(_feed(guard, FAST, 30.0, 0.004), 0, "3.0이 끝")
+	assert_eq(_feed(guard, FAST, 30.0, 0.004), 0, "AUTO는 2.5가 끝 (발열)")
 	assert_eq(guard.level, 0)
 
 
@@ -123,14 +121,11 @@ func test_여유가_없거나_모르면_올리지_않음() -> void:
 func test_밀리면_배율부터_내리고_다시_올리지_않음() -> void:
 	var guard := _phone_guard()
 	_feed(guard, FAST, 3.2, 0.004)
-	_feed(guard, FAST, QualityGuard.GRACE + 3.2, 0.004)
-	assert_eq(guard.dpr_cap, 3.0)
+	assert_eq(guard.dpr_cap, 2.5)
 	assert_eq(_feed(guard, 0.025, QualityGuard.GRACE + 3.2, 0.004), 1, "밀리면 배율을 먼저 (올린 뒤 쉬는 시간 포함)")
-	assert_eq([guard.dpr_cap, guard.level], [2.5, 0])
-	assert_eq(_feed(guard, FAST, 120.0, 0.004), 0, "오르내림 반복 금지: 내린 배율은 다시 올리지 않음")
+	assert_eq([guard.dpr_cap, guard.level], [2.0, 0])
+	assert_eq(_feed(guard, FAST, 50.0, 0.004), 0, "오르내림 반복 금지: 내린 배율은 다시 올리지 않음")
 	_feed(guard, 0.025, 3.2, 0.004)
-	assert_eq([guard.dpr_cap, guard.level], [2.0, 0], "2.0까지 내린 뒤에야 (앞 120초 동안 쉬는 시간은 끝났다)")
-	_feed(guard, 0.025, QualityGuard.GRACE + 3.2, 0.004)
 	assert_eq([guard.dpr_cap, guard.level], [2.0, 1], "효과를 낮춘다")
 	assert_true(guard.reason.contains("효과 1단계"), guard.reason)
 
@@ -158,9 +153,58 @@ func test_배율_상한별_그리기_크기() -> void:
 	assert_eq(QualityGuard.render_scale(size, 3.0, 3.0), 1.0, "3.0이면 기기 그대로")
 	var s := QualityGuard.render_scale(size, 3.0, 2.5)
 	assert_eq(Vector2i(roundi(1179 * s), roundi(2556 * s)), Vector2i(983, 2130))
-	assert_eq(QualityGuard.top_for(3.0), 3.0)
+	assert_eq(QualityGuard.top_for(3.0), 2.5, "AUTO는 2.5까지")
 	assert_eq(QualityGuard.top_for(2.75), 2.5, "칸 아래로")
 	assert_eq(QualityGuard.top_for(1.0), 2.0)
 	assert_eq(QualityGuard.cap_for("auto", 2.5), 2.5)
 	assert_eq(QualityGuard.cap_for("high", 2.0), 3.0)
 	assert_eq(QualityGuard.cap_for("low", 3.0), 2.0)
+
+
+## v0.12.2 아이폰 저전력 모드 실측: 33.3ms 사이에 가끔 46ms. 예전에는 99% 프레임 46 > 40ms로 3초마다 낮춰 Q4까지 갔다
+func test_30Hz에서_가끔_46ms는_낮추지_않음() -> void:
+	var guard := _phone_guard()
+	var changes := 0
+	for i in 30 * 300:  # 5분
+		changes += 1 if guard.push(0.046 if i % 25 == 0 else 1.0 / 30.0, 0.012) else 0
+	assert_eq(changes, 1, "30Hz를 알아챈 한 단계만")
+	assert_eq([guard.level, guard.dpr_cap], [1, 2.0])
+
+
+func _feed_heat(guard: QualityGuard, seconds: float, work: float) -> int:
+	return _feed(guard, FAST, seconds, work)
+
+
+func test_열_신호_1분_평균이_처음보다_20퍼센트_길면_한_단계() -> void:
+	var guard := _phone_guard()
+	_feed(guard, FAST, 3.2, 0.004)
+	assert_eq(guard.dpr_cap, 2.5, "여유로 2.5")
+	assert_eq(_feed_heat(guard, 125.0, 0.008), 0, "처음 1분이 기준, 같은 값이면 그대로")
+	assert_eq(_feed_heat(guard, 61.0, 0.0094), 0, "17% 늘어남은 그대로")
+	assert_eq(_feed_heat(guard, 61.0, 0.0097), 1, "21%면 한 단계")
+	assert_true(guard.reason.begins_with("열"), guard.reason)
+	assert_eq([guard.dpr_cap, guard.level], [2.0, 0], "배율부터")
+	assert_eq(_feed_heat(guard, 200.0, 0.004), 0, "식어도 다시 올리지 않음")
+	assert_eq(guard.dpr_cap, 2.0)
+
+
+func test_열_신호는_판이_바뀌어도_이어지고_조건이_바뀌면_새로_잼() -> void:
+	var guard := _ready_guard()
+	guard.top_cap = QualityGuard.MAX_DPR  # 배율 2 화면: 여유로 배율이 오르지 않게
+	_feed_heat(guard, 40.0, 0.008)
+	guard.hold()  # 판이 끝나고 다음 판 (쉬는 5초는 세지 않는다)
+	_feed_heat(guard, QualityGuard.GRACE + 21.0, 0.008)
+	assert_eq(_feed_heat(guard, 61.0, 0.010), 1, "두 판에 걸친 1분이 기준")
+	assert_eq(guard.level, 1)
+	assert_eq(_feed_heat(guard, QualityGuard.GRACE + 61.0, 0.012), 0, "단계가 바뀌면 그 뒤 1분이 새 기준")
+	assert_eq(_feed_heat(guard, 61.0, 0.016), 1)
+	assert_eq(guard.level, 2)
+
+
+func test_30Hz에서도_열_신호로는_낮춤() -> void:
+	var guard := _phone_guard()
+	_feed(guard, 1.0 / 30.0, 1.1, 0.012)
+	assert_eq(guard.level, 1)
+	_feed(guard, 1.0 / 30.0, QualityGuard.GRACE + 61.0, 0.012)
+	assert_eq(_feed(guard, 1.0 / 30.0, 61.0, 0.016), 1)
+	assert_eq(guard.level, 2)

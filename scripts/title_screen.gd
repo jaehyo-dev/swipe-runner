@@ -43,6 +43,7 @@ const START_AFTER_DOTS := 16.0
 const GUIDE_SIDE_GAP := 24.0  # 안내를 젤리 옆에 둘 때 젤리 가장자리에서 안내 오른쪽 끝까지
 const PWA_SIZE := 26         # 홈 화면 앱 안내·INSTALL·UPDATE 글자 (버전 글자 22보다 조금 크게)
 const PWA_ROW := 56.0        # INSTALL·UPDATE 테 높이
+const LOW_POWER_BOTTOM := 50.0  # 저전력 안내는 버전 글자(아래 48) 바로 위
 
 var best_label: Label
 var guide: VBoxContainer
@@ -59,6 +60,7 @@ var _daily_title: Label
 var _daily_lines: Label   # TODAY BEST / STREAK / NEW IN
 var _switch: Tween
 var skin_name: Label   # 젤리 아래 스킨 이름, 잠긴 스킨은 조건·진행도
+var low_power: Label  # v0.12.2: 화면 갱신이 30Hz로 제한되면 아래에 작게 "LOW POWER MODE: 30 FPS" (main이 켠다)
 var add_hint: HBoxContainer  # 아이폰 브라우저: □↑ ADD TO HOME SCREEN ×
 var add_close: UiIcon
 var install_button: Label   # 안드로이드 크롬: INSTALL
@@ -140,6 +142,8 @@ func set_safe(top: float, bottom: float) -> void:
 		item.position = Vector2(SOUND_MARGIN, SOUND_MARGIN + top + (SOUND_SIDE - item.size.y) * 0.5)
 	update_button.offset_bottom = -SOUND_MARGIN - bottom
 	update_button.offset_top = update_button.offset_bottom - PWA_ROW
+	low_power.offset_bottom = -LOW_POWER_BOTTOM - bottom
+	low_power.offset_top = low_power.offset_bottom - 32.0
 
 
 ## 홈 화면 앱 표시. update: UPDATE, hint: "ios"(안내) | "install"(INSTALL) | "". 메인 화면 글자 묶음 안이라 오늘의 판 화면에서는 안 보인다
@@ -370,6 +374,11 @@ func _build_pwa() -> void:
 	update_button.offset_right = -SOUND_MARGIN
 	update_button.offset_left = update_button.offset_right - update_button.get_combined_minimum_size().x
 	_menu_items.add_child(update_button)
+	low_power = text_label("LowPowerLabel", "LOW POWER MODE: 30 FPS", 20, Color(1, 1, 1, 0.45))
+	low_power.set_anchors_preset(Control.PRESET_BOTTOM_WIDE)
+	low_power.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	low_power.visible = false
+	_menu_items.add_child(low_power)
 
 
 func _pill(node_name: String, text: String) -> Label:

@@ -1,6 +1,9 @@
 // v0.12.1 휴대폰 화질·30fps 확인 도구 (결과: review/v0.12.1/README.md). 창 없이: 헤드리스 크롬 + 맥 Metal GPU, 393x852 배율 3, 터치)
 // 사용: PW=<playwright 폴더> CHROME=<크롬> node tools/web_probe.mjs <주소> <결과 폴더> fps <30|60> <이름> [cpu 배율=4]
 //       PW=... CHROME=... node tools/web_probe.mjs <주소> <결과 폴더> shots <이름> [추가 쿼리]
+//       PW=... CHROME=... node tools/web_probe.mjs <주소> <결과 폴더> heat <이름> [메인 화면 초=60] [플레이 초=30]
+// v0.12.2: fps 30j = 30Hz에 시드 고정으로 4% 정도 한 번 더 건너뛰기(50ms, 아이폰 저전력 모드 실측 33·46ms 흉내). N=입력 횟수(기본 18, 1.4초씩)
+// heat: 발열 대리 지표. 메인 화면 가만히 / 플레이 중 브라우저 전체 프로세스(GPU 프로세스 포함) CPU 시간 비율, rAF·엔진 프레임 수, 그리는 횟수·삼각형·3D 화소(v0.12.2부터)
 // fps: ?seed=7&bpm=160&probe=1 처음부터 160BPM, 시작 뒤 20초. rAF 간격 분포·튀는 프레임(앞 프레임의 1.5배 이상), 게임이 받은 프레임 시간·이동 거리·박자 오차,
 //      1.1초마다 ←/→ 입력 → 동작까지 지연(ms), QUALITY 줄. 30이면 rAF를 한 번 건너 하나씩만 불러 30Hz 화면을 흉내 낸다 (아이폰 저전력 모드), mix는 16·33ms 섞기
 //      게임 쪽 값(프레임 시간·이동·박자 오차·지연)은 ?probe=1이 있는 v0.12.1부터. 옛 버전은 rAF와 QUALITY 줄만
@@ -16,7 +19,7 @@ const INIT = (hz) => `
 window.probe = { on: false, frames: [], last: 0 };
 ${hz !== 60 ? `{ // 30Hz 흉내: 진짜 rAF를 두 번에 한 번만 넘긴다. mix: 시드 고정 난수로 16·33ms가 섞이게 (반쯤 건너뜀). 게임·엔진·이 측정 모두 같은 rAF를 쓴다
   const raf = window.requestAnimationFrame.bind(window); let queue = [], odd = false, seed = 7;
-  const skip = () => ${hz === 30 ? '(odd = !odd, !odd)' : '(seed = (seed * 1103515245 + 12345) % 2147483648, seed % 3 === 0)'};
+  const skip = () => ${hz === 30 ? '(odd = !odd, !odd)' : hz === '30j' ? '(odd = !odd, !odd || (seed = (seed * 1103515245 + 12345) % 2147483648, seed % 25 === 0))' : '(seed = (seed * 1103515245 + 12345) % 2147483648, seed % 3 === 0)'};
   const pump = t => { if (!skip()) { const q = queue; queue = []; for (const cb of q) cb(t); } raf(pump); };
   raf(pump); window.requestAnimationFrame = cb => { queue.push(cb); return queue.length; }; window.cancelAnimationFrame = () => {}; }` : ''}
 { const tick = t => { if (window.probe.on && window.probe.last) window.probe.frames.push(+(t - window.probe.last).toFixed(2)); window.probe.last = t; requestAnimationFrame(tick); }; requestAnimationFrame(tick); }
@@ -25,7 +28,8 @@ addEventListener('keydown', () => { window.keyAt = performance.now(); }, true);
 
 async function open(query, hz, throttle) {
   const args = ['--disable-audio-output', '--autoplay-policy=no-user-gesture-required', '--use-angle=metal', '--enable-gpu', '--ignore-gpu-blocklist'];
-  const ctx = await chromium.launchPersistentContext(fs.mkdtempSync(path.join(os.tmpdir(), 'v0121-')), {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'probe-'));
+  const ctx = await chromium.launchPersistentContext(dir, {
     executablePath: process.env.CHROME, headless: true, viewport: PHONE, deviceScaleFactor: 3, isMobile: true, hasTouch: true, args,
   });
   const page = ctx.pages()[0] || await ctx.newPage();
@@ -44,8 +48,13 @@ async function open(query, hz, throttle) {
     await cdp.send('Emulation.setCPUThrottlingRate', { rate: throttle });
     await page.waitForTimeout(2000);
   }
-  return { ctx, page };
+  return { ctx, page, dir };
 }
+
+// 이 측정의 브라우저 프로세스들(사용자 폴더 이름으로 찾음)의 누적 CPU 시간(초)
+import { execSync } from 'child_process';
+const cpuTime = dir => execSync('ps -A -o time=,command=').toString().split('\n').filter(l => l.includes(path.basename(dir)))
+  .reduce((sum, l) => { const [t] = l.trim().split(/\s+/); const p = t.split(':').map(Number); return sum + (p.length === 3 ? p[0] * 3600 + p[1] * 60 + p[2] : p[0] * 60 + p[1]); }, 0);
 
 const q = (s, p) => s.length ? s[Math.min(s.length - 1, Math.floor((s.length - 1) * p))] : 0;
 const dist = a => { const s = [...a].sort((x, y) => x - y); return { n: s.length, median: q(s, 0.5), p95: q(s, 0.95), p99: q(s, 0.99), max: q(s, 1) }; };
@@ -54,13 +63,13 @@ const jumps = a => a.filter((x, i) => i > 0 && x >= a[i - 1] * 1.5).length;  // 
 const hist = a => { const h = {}; for (const x of a) { const k = Math.floor(x / 4) * 4; h[k] = (h[k] || 0) + 1; } return Object.keys(h).map(Number).sort((x, y) => x - y).map(k => `${k}-${k + 4}ms ${h[k]}`); };
 
 if (mode === 'fps') {
-  const hz = a1 === 'mix' ? 'mix' : +a1, label = a2, cpu = +(a3 || 4);
+  const hz = ['mix', '30j'].includes(a1) ? a1 : +a1, label = a2, cpu = +(a3 || 4);
   const { ctx, page } = await open(process.env.Q || '?seed=7&bpm=160&probe=1', hz, cpu);
   await page.touchscreen.tap(PHONE.width / 2, PHONE.height * 0.7);  // 시작
   await page.waitForTimeout(1500);
   await page.evaluate(() => { window.probe.frames = []; window.probe.on = true; window.gameProbe = []; });
   const lag = [];
-  for (let i = 0; i < 18; i++) {
+  for (let i = 0; i < +(process.env.N || 18); i++) {
     await page.waitForTimeout(1100);
     await page.evaluate(() => { window.gameActed = 0; });
     await page.keyboard.press(i % 2 ? 'ArrowRight' : 'ArrowLeft');
@@ -87,5 +96,24 @@ if (mode === 'fps') {
   await page.screenshot({ path: path.join(out, `shot_${label}.png`) });
   const canvas = await page.evaluate(() => { const c = document.querySelector('canvas'); return [c.width, c.height]; });
   console.log(JSON.stringify({ label, canvas, errors: report.errors, quality: report.logs }));
+  await ctx.close();
+} else if (mode === 'heat') {
+  const label = a1, menuSec = +(a2 || 60), playSec = +(a3 || 30);
+  const { ctx, page, dir } = await open('?seed=7&probe=1', 60, 1);
+  const span = async (sec) => {
+    const c0 = cpuTime(dir), d0 = await page.evaluate(() => { window.probe.frames = []; window.probe.on = true; return window.gameDraw || null; });
+    await page.waitForTimeout(sec * 1000);
+    const d1 = await page.evaluate(() => { window.probe.on = false; return window.gameDraw || null; });
+    const raf = await page.evaluate(() => window.probe.frames.length);
+    return { cpu_pct: +((cpuTime(dir) - c0) / sec * 100).toFixed(1), raf_fps: +(raf / sec).toFixed(1), engine_fps: d0 && d1 ? +((d1[6] - d0[6]) / sec).toFixed(1) : null,
+      draws: d1 && d1[0], primitives: d1 && d1[1], render: d1 && `${d1[2]}x${d1[3]}`, pixels: d1 && d1[2] * d1[3], msaa: d1 && [0, 2, 4, 8][d1[4]], level: d1 && d1[5] };
+  };
+  const menu = await span(menuSec);
+  await page.touchscreen.tap(PHONE.width / 2, PHONE.height * 0.7);
+  await page.waitForTimeout(2000);
+  const play = await span(playSec);
+  const res = { label, menu, play, quality: report.logs, errors: report.errors };
+  fs.writeFileSync(path.join(out, `heat_${label}.json`), JSON.stringify(res));
+  console.log(JSON.stringify(res, null, 1));
   await ctx.close();
 }
